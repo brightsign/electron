@@ -39,16 +39,10 @@ environment:
 
   matrix:
 
-    - job_name: Build
-      job_group: TEST GROUP NAME
+    - job_name: Build      
     - job_name: Test
       job_depends_on: Build
-      job_group: TEST GROUP NAME
-      
-platform:
-  - x86
-  - x64
-  - arm64
+
 
 clone_folder: C:\projects\src\electron
 
@@ -86,6 +80,7 @@ for:
   - matrix:
       only:
         - job_name: Test
+        - configuration: Config1
 
     build_script:
       - ps: |
@@ -94,3 +89,12 @@ for:
           } else {
             echo 'NO VAR WORKS: $env:JK_TEST'
           }
+
+  - matrix:
+      only:
+        - job_name: Test
+        - ELECTRON_BUILDING_WOA: 1
+
+    build_script:
+      - ps: |
+          echo 'SPECIAL TEST FOR WOA'
