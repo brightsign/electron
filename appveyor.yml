@@ -42,6 +42,7 @@ environment:
     - job_name: Build      
     - job_name: Test
       job_depends_on: Build
+    - job_name: Test2
 
 
 clone_folder: C:\projects\src\electron
@@ -80,7 +81,8 @@ for:
   - matrix:
       only:
         - job_name: Test
-        - configuration: Config1
+      exclude:
+        - configuration: Config2
 
     build_script:
       - ps: |
@@ -92,8 +94,9 @@ for:
 
   - matrix:
       only:
-        - job_name: Test
-        - ELECTRON_BUILDING_WOA: 1
+        - job_name: Test2
+      exclude:
+        - configuration: Config1
 
     build_script:
       - ps: |
