@@ -97,6 +97,11 @@ std::string MakePartitionName(const std::string& input) {
   return base::EscapePath(base::ToLowerASCII(input));
 }
 
+// base::escape a path based partition string.
+std::string MakePathBasedPartitionName(const std::string& input) {
+  return base::EscapePath(input);
+}
+
 }  // namespace
 
 // static
@@ -126,11 +131,17 @@ ElectronBrowserContext::ElectronBrowserContext(const std::string& partition,
                     &max_cache_size_);
 
   base::PathService::Get(DIR_SESSION_DATA, &path_);
-  if (!in_memory && !partition.empty())
-    path_ = path_.Append(FILE_PATH_LITERAL("Partitions"))
-                .Append(base::FilePath::FromUTF8Unsafe(
-                    MakePartitionName(partition)));
-
+  if (!in_memory && !partition.empty()) {
+    if (partition.starts_with(base::FilePath::kSeparators)) {
+      /* When an absolute path is provided, use it. */
+      path_ =
+          base::FilePath::FromUTF8Unsafe(MakePathBasedPartitionName(partition));
+    } else {
+      path_ = path_.Append(FILE_PATH_LITERAL("Partitions"))
+                  .Append(base::FilePath::FromUTF8Unsafe(
+                      MakePartitionName(partition)));
+    }
+  }
   BrowserContextDependencyManager::GetInstance()->MarkBrowserContextLive(this);
 
   // Initialize Pref Registry.

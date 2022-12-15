@@ -1198,6 +1198,10 @@ gin::Handle<Session> Session::FromPartition(v8::Isolate* isolate,
     std::string name = partition.substr(8);
     browser_context =
         ElectronBrowserContext::From(name, false, std::move(options));
+  } else if (base::StartsWith(partition, base::FilePath::kSeparators,
+                              base::CompareCase::SENSITIVE)) {
+    browser_context =
+        ElectronBrowserContext::From(partition, false, std::move(options));
   } else {
     browser_context =
         ElectronBrowserContext::From(partition, true, std::move(options));
