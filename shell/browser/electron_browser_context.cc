@@ -121,6 +121,9 @@ ElectronBrowserContext::ElectronBrowserContext(const std::string& partition,
   if (auto use_cache_opt = options.FindBool("cache")) {
     use_cache_ = use_cache_opt.value();
   }
+  if (auto quota_size_opt = options.FindInt("quota")) {
+    quota_size = quota_size_opt.value();
+  }
 
   base::StringToInt(command_line->GetSwitchValueASCII(switches::kDiskCacheSize),
                     &max_cache_size_);
@@ -161,6 +164,15 @@ ElectronBrowserContext::~ElectronBrowserContext() {
 
   BrowserThread::DeleteSoon(BrowserThread::IO, FROM_HERE,
                             std::move(resource_context_));
+}
+
+content::StoragePartition*
+ElectronBrowserContext::GetDefaultStoragePartition() {
+  if (quota_size) {
+    return GetStoragePartition(
+        content::StoragePartitionConfig::CreateDefault(this, quota_size));
+  }
+  return BrowserContext::GetDefaultStoragePartition();
 }
 
 void ElectronBrowserContext::InitPrefs() {
