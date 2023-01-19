@@ -147,6 +147,7 @@ void NativeWindow::InitFromOptions(const gin_helper::Dictionary& options) {
   if (options.Get(options::kX, &x) && options.Get(options::kY, &y)) {
     SetPosition(gfx::Point(x, y));
 
+    printf(" \n %s:%d x:%d y:%d\n", __PRETTY_FUNCTION__, __LINE__, x, y);
 #if BUILDFLAG(IS_WIN)
     // FIXME(felixrieseberg): Dirty, dirty workaround for
     // https://github.com/electron/electron/issues/10862
@@ -277,6 +278,9 @@ gfx::Size NativeWindow::GetSize() {
 }
 
 void NativeWindow::SetPosition(const gfx::Point& position, bool animate) {
+  printf(" \n %s:%d position:%s\n", __PRETTY_FUNCTION__, __LINE__,
+         position.ToString().c_str());
+
   SetBounds(gfx::Rect(position, GetSize()), animate);
 }
 

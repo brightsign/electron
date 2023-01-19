@@ -743,7 +743,6 @@ gfx::Rect NativeWindowViews::GetBounds() {
   if (IsMinimized())
     return widget()->GetRestoredBounds();
 #endif
-
   return widget()->GetWindowBoundsInScreen();
 }
 
