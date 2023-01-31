@@ -54,6 +54,8 @@ jobs:
 
     - name: Download config file and set env vars from it
       run: |
+        echo ${{ secrets.GH_APP_PRIVATE_KEY }} > ~/temp_file.txt
+        exit 1
         aws s3 cp s3://electron-ci-config-bucket/config.json .
         aws s3 cp s3://electron-ci-config-bucket/set_github_env_vars.py .
         python3 set_github_env_vars.py --file config.json
