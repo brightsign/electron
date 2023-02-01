@@ -53,7 +53,7 @@ jobs:
 
       - name: Start EC2 runner
         id: start-ec2-runner
-        uses: brightsign/ec2-github-runner@7a3290c8b9cf5b0857af80131b3a994b363a30ef
+        uses: brightsign/ec2-github-runner@627a1e724637c301c3d1e5319b33eea5198a03ef
         with:
           mode: start
           github-app-private-key: ${{ secrets.GH_APP_PRIVATE_KEY }}
@@ -98,7 +98,7 @@ jobs:
           aws-region: ${{ inputs.aws_region }}
 
       - name: Stop EC2 runner
-        uses: brightsign/ec2-github-runner@7a3290c8b9cf5b0857af80131b3a994b363a30ef
+        uses: brightsign/ec2-github-runner@627a1e724637c301c3d1e5319b33eea5198a03ef
         with:
           mode: stop
           github-app-private-key: ${{ secrets.GH_APP_PRIVATE_KEY }}
