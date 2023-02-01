@@ -53,11 +53,12 @@ jobs:
 
       - name: Start EC2 runner
         id: start-ec2-runner
-        uses: brightsign/ec2-github-runner@v2
+        uses: brightsign/ec2-github-runner@7a3290c8b9cf5b0857af80131b3a994b363a30ef
         with:
           mode: start
-          github-token: ${{ secrets.GH_PERSONAL_ACCESS_TOKEN }}
-          ec2-image-id: ami-03f8668eaec2343fe
+          github-app-private-key: ${{ secrets.GH_APP_PRIVATE_KEY }}
+          github-app-id: 287690
+          ec2-image-id: ami-0c6f6932ae966dcc6
           ec2-instance-type: ${{ inputs.instance_type }}
           subnet-id: ${{ env.VPC_SUBNET_ID }}
           security-group-id: ${{ env.VPC_SG_ID }}
@@ -97,9 +98,10 @@ jobs:
           aws-region: ${{ inputs.aws_region }}
 
       - name: Stop EC2 runner
-        uses: brightsign/ec2-github-runner@v2
+        uses: brightsign/ec2-github-runner@7a3290c8b9cf5b0857af80131b3a994b363a30ef
         with:
           mode: stop
-          github-token: ${{ secrets.GH_PERSONAL_ACCESS_TOKEN }}
+          github-app-private-key: ${{ secrets.GH_APP_PRIVATE_KEY }}
+          github-app-id: 287690
           label: ${{ needs.start-runner.outputs.label }}
           ec2-instance-id: ${{ needs.start-runner.outputs.ec2-instance-id }}
