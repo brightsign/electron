@@ -16,6 +16,7 @@ jobs:
       build_type: test
       aws_arn_role: arn:aws:iam::307112297008:role/github-actions-electron-private-repo
       aws_region: us-east-1
+      leave_ec2_instance_running: false
 
   # debug:
   #   runs-on: ubuntu-latest
