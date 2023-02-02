@@ -18,10 +18,10 @@ on:
         - c5.2xlarge
         - c5.4xlarge
 
-      stop_instance_after_use:
-        description: 'Stop EC2 instance after use'
+      leave_ec2_instance_running:
+        description: 'Leave EC2 instance running after use'
         type: boolean
-        default: true
+        default: false
 
 permissions:
   id-token: write # This is required for requesting the JWT
@@ -34,7 +34,7 @@ jobs:
     with:
       build_type: ${{ inputs.build_type }}
       instance_type: ${{ inputs.instance_type }}
-      stop_instance_after_use: ${{ inputs.stop_instance_after_use }}
+      leave_ec2_instance_running: ${{ inputs.leave_ec2_instance_running }}
       instance_name_postfix: manual--${{ github.actor }}
       aws_arn_role: arn:aws:iam::307112297008:role/github-actions-electron-private-repo
       aws_region: us-east-1
