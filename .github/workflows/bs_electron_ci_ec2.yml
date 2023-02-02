@@ -58,7 +58,7 @@ jobs:
           mode: start
           github-app-private-key: ${{ secrets.GH_APP_PRIVATE_KEY }}
           github-app-id: 287690
-          ec2-image-id: ami-04c32b0f8ff6564d1
+          ec2-image-id: ami-05c26e8a000d329e6
           ec2-instance-type: ${{ inputs.instance_type }}
           subnet-id: ${{ env.VPC_SUBNET_ID }}
           security-group-id: ${{ env.VPC_SG_ID }}
