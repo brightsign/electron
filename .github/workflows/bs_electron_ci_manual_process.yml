@@ -36,5 +36,5 @@ jobs:
       instance_type: ${{ inputs.instance_type }}
       leave_ec2_instance_running: ${{ inputs.leave_ec2_instance_running }}
       instance_name_postfix: manual--${{ github.actor }}
-      aws_arn_role: arn:aws:iam::307112297008:role/github-actions-electron-private-repo
+      aws_arn_role: arn:aws:iam::195607249165:role/github-actions-electron-repo
       aws_region: us-east-1

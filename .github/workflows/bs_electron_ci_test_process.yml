@@ -14,7 +14,7 @@ jobs:
     secrets: inherit
     with:
       build_type: test
-      aws_arn_role: arn:aws:iam::307112297008:role/github-actions-electron-private-repo
+      aws_arn_role: arn:aws:iam::195607249165:role/github-actions-electron-repo
       aws_region: us-east-1
 
   # debug:
