@@ -39,3 +39,4 @@ test_mark_cpu_prof_tests_as_flaky_in_electron.patch
 lib_fix_broadcastchannel_initialization_location.patch
 chore_remove_errant_semicolons.patch
 chore_remove_unreached_return.patch
+test_mark_cpu_prof_tests_as_flaky_in_electron.patch
