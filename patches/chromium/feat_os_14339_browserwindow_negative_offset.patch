@@ -1,0 +1,175 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: George Kottackal <kottackal.george@gmail.com>
+Date: Thu, 19 Jan 2023 11:37:56 +0000
+Subject: feat:OS_14339_BrowserWindow_negative_offset
+
+This patch adds the capability for a window
+to have a negative offset.
+
+Fixup errors
+
+diff --git a/ui/aura/window.cc b/ui/aura/window.cc
+index 024c2db5610ababb08649a7ab3e4aaed406c5275..292c8ea9a0130e50c07930818088d6261b8436b3 100644
+--- a/ui/aura/window.cc
++++ b/ui/aura/window.cc
+@@ -972,7 +972,15 @@ void Window::SetBoundsInternal(const gfx::Rect& new_bounds) {
+  // Always need to set the layer's bounds -- even if it is to the same thing.
+  // This may cause important side effects such as stopping animation.
+  -layer()->SetBounds(new_bounds);
+  +  // layer()->SetBounds(new_bounds);
+      +if ((old_bounds.x() == 0) && (old_bounds.y() == 0) &&
+           +(old_bounds.width() == 0) && (old_bounds.height() == 0)) {
+    +layer()->SetBounds(new_bounds);
+    +
+  }
+  +else {
+    +layer()->SetBounds(old_bounds);
+    +
+  }
+  +
+
+      // If we are currently not the layer's delegate, we will not get bounds
+      // changed notification from the layer (this typically happens after
+      // animating
+      @ @-1777,
+      4 + 1785,
+      4 @ @ADD_PROPERTY_METADATA(client::WindowType, Type)
+              ADD_PROPERTY_METADATA(bool, Visible) END_METADATA
+
+          -
+}  // namespace aura
++
+}  // namespace aura
+\ No newline at end of file diff-- git a / ui / ozone / common / features.cc b /
+        ui / ozone / common /
+        features.cc index ec153a46080650a55a0aec5f2e20c01539b2d9ab.
+            .fd5bdbe7c6288cf58501047e37382cd4abec8cf8 100644 -- -a /
+        ui / ozone / common / features.cc++ +
+    b / ui / ozone / common / features.cc @ @-17,
+    7 + 17,
+    7 @ @BASE_FEATURE(kWaylandOverlayDelegation,
+#if BUILDFLAG(IS_CHROMEOS_LACROS)
+                      base::FEATURE_ENABLED_BY_DEFAULT
+#else
+                      -base::FEATURE_DISABLED_BY_DEFAULT +
+                          base::FEATURE_ENABLED_BY_DEFAULT
+#endif
+    );
+
+diff-- git a / ui / ozone / platform / wayland / host /
+        wayland_subsurface.cc b / ui / ozone / platform / wayland / host /
+        wayland_subsurface.cc index f2985237a68289fe277dde4daa834d149fe876a5.
+            .ef78f078003db3e20e9613f27a1789ccc7a0a982 100644 -- -a /
+        ui / ozone / platform / wayland / host / wayland_subsurface.cc++ +
+    b / ui / ozone / platform / wayland / host / wayland_subsurface.cc @ @-111,
+    13 + 111,
+    25 @ @ void WaylandSubsurface::ConfigureAndShowSurface(
+        float buffer_scale,
+        WaylandSubsurface*new_below,
+        WaylandSubsurface*new_above) {
+  + +gfx::RectF& try_parent_bounds_px(
+      const_cast<gfx::RectF&>(parent_bounds_px));
+  + +/* The intent here is extend the Rect to hold the child window's
+  +   * Rect parameters.
+  +   * */
+    +try_parent_bounds_px.set_x(2500);
+  +try_parent_bounds_px.set_y(1900);
+  +try_parent_bounds_px.set_width(1920);
+  +try_parent_bounds_px.set_height(1080);
+  +Show();
+
+  // Chromium positions quads in display::Display coordinates in physical
+  // pixels, but Wayland requires them to be in local surface coordinates a.k.a
+  // relative to parent window.
+  auto bounds_dip_in_parent_surface = AdjustSubsurfaceBounds(
+      -bounds_px, parent_bounds_px,
+      +  // bounds_px, parent_bounds_px,
+      +bounds_px,
+      try_parent_bounds_px,
+      connection_->surface_submission_in_pixel_coordinates() ? 1.f
+                                                             : buffer_scale);
+  if (bounds_dip_in_parent_surface.origin() != position_dip_) {
+@@ -142,7 +154,8 @@ void WaylandSubsurface::ConfigureAndShowSurface(
+     absl::optional<gfx::RectF> clip_dip_in_parent_surface;
+     if (clip_rect_px) {
+      clip_dip_in_parent_surface = AdjustSubsurfaceBounds(
+          -gfx::RectF(*clip_rect_px), parent_bounds_px,
+          +  // gfx::RectF(*clip_rect_px), parent_bounds_px,
+          +gfx::RectF(*clip_rect_px),
+          try_parent_bounds_px,
+          connection_->surface_submission_in_pixel_coordinates()
+              ? 1.f
+              : buffer_scale);
+      diff-- git a / ui / ozone / platform / wayland / host /
+              wayland_toplevel_window.cc b / ui / ozone / platform / wayland /
+              host /
+              wayland_toplevel_window
+                  .cc index e7772242e63e2596198cb489d2b9854dfa03c630.
+                  .a91955373d76bc4c74115c2e9a8170816ec13afe 100644 -- -a /
+              ui / ozone / platform / wayland / host /
+              wayland_toplevel_window.cc++ +
+          b / ui / ozone / platform / wayland / host /
+              wayland_toplevel_window.cc @ @-582,
+          7 + 582,
+          15 @ @ void WaylandToplevelWindow::SetWindowGeometry(
+              gfx::Rect bounds_dip) {
+        if (!shell_toplevel_)
+          return;
+
+        -gfx::Rect geometry_dip(bounds_dip.size());
+        + +gfx::Rect geometry_dip;
+        + +if (bounds_dip.x() != 0 && bounds_dip.y() != 0) {
+          +geometry_dip = bounds_dip;
+          +
+        }
+        +else {
+          +geometry_dip.set_size(bounds_dip.size());
+          +
+        }
+
+        const auto insets = GetDecorationInsetsInDIP();
+        if (state_ == PlatformWindowState::kNormal && !insets.IsEmpty())
+          diff-- git a / ui / ozone / platform / wayland / host /
+                  wayland_window.cc b / ui / ozone / platform / wayland / host /
+                  wayland_window.cc
+                      index 23145cfc77286a2584bc8a955f718bf8db0e4a9f..e86a8565d3f6c2a7887ad575f072269e5d45debf 100644 -- -a /
+                  ui / ozone / platform / wayland / host / wayland_window.cc++ +
+              b / ui / ozone / platform / wayland / host /
+                  wayland_window.cc @ @-629,
+              8 + 629,
+              13 @ @ void WaylandWindow::UpdateBoundsInDIP(
+                  const gfx::Rect&bounds_dip) {
+            if (bounds_dip_ == adjusted_bounds_dip)
+              return;
+            bool origin_changed = bounds_dip_.origin() != bounds_dip.origin();
+            -bounds_dip_ = adjusted_bounds_dip;
+            -size_px_ = delegate_->ConvertRectToPixels(bounds_dip).size();
+            +      /* This part needs to be revisited, since the real solution
+                +   * is to check if the AdjustBoundsToConstraintsDIP should be
+                applied
+                +   * in the case of a bigger-than-screen parent window.
+                +   */
+                +  // bounds_dip_ = adjusted_bounds_dip;
+                + +size_px_ =
+                delegate_->ConvertRectToPixels(bounds_dip_).size();
+
+            if (update_visual_size_immediately_for_testing_)
+              UpdateVisualSize(size_px());
+            @ @-689, 6 + 694,
+                7 @ @ bool WaylandWindow::Initialize(
+                    PlatformWindowInitProperties properties) {
+              void WaylandWindow::SetWindowGeometry(gfx::Rect bounds){}
+
+                  + gfx::Vector2d WaylandWindow::GetWindowGeometryOffsetInDIP()
+                        const {
+                if (!frame_insets_px_.has_value())
+                  return {};
+                @ @-752, 6 + 758,
+                    7 @ @ bool WaylandWindow::IsScreenCoordinatesEnabled()
+                        const {
+                  uint32_t WaylandWindow::DispatchEventToDelegate(
+                      const PlatformEvent& native_event) {
+                    +bool handled = DispatchEventFromNativeUiEvent(
+                        native_event,
+                        base::BindOnce(&PlatformWindowDelegate::DispatchEvent,
+                                       base::Unretained(delegate_)));
