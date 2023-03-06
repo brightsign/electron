@@ -291,7 +291,7 @@ jobs:
         echo "$(jq '. += {"keywords": [ "electron" ] }' package.json)" > package.json
         echo "$(jq '. += {"version": "${{ env.ELECTRON_VERSION }}"}' package.json)" > package.json
 
-        electron_package_name="electron-package-${{ env.TARGET_OS_CPU }}-${{ env.SOURCE_RELEASE_FILE_NAME }}.tar.tgz"
+        electron_package_name="electron-package-${{ env.TARGET_OS_CPU }}-${{ env.SOURCE_RELEASE_FILE_NAME }}.tar.gz"
         echo "Creating $electron_package_name"
         tar --use-compress-program=pigz -cf "../$electron_package_name" .
         cd ..
