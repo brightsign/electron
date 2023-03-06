@@ -229,7 +229,7 @@ jobs:
         git clone https://chromium.googlesource.com/chromium/tools/build --depth 1
 
         echo "Running export_tarball.py"
-        ./build/recipes/recipe_modules/chromium/resources/export_tarball.py $RELEASE_SRC_FOLDER/${{ env.SOURCE_RELEASE_FILE_NAME }} --basename src --src-dir=./src --version={{ env.ELECTRON_VERSION }} --remove-nonessential-files    
+        ./build/recipes/recipe_modules/chromium/resources/export_tarball.py $RELEASE_SRC_FOLDER/${{ env.SOURCE_RELEASE_FILE_NAME }} --basename src --src-dir=./src --version=${{ env.ELECTRON_VERSION }} --remove-nonessential-files    
 
         echo "Uploading source tarball"
         aws s3 cp ${{ env.RELEASE_SRC_FOLDER }}/${{ env.SOURCE_RELEASE_FILE_NAME }}.tar.xz s3://${{ env.ARTIFACT_BUCKET_NAME }}/${{ env.RELEASE_DST_FOLDER }}/ --acl public-read --quiet
