@@ -179,6 +179,20 @@ jobs:
         tar --use-compress-program=pigz -cf $GIT_CACHE_FILENAME ./$GIT_CACHE_FOLDER_NAME
         aws s3 cp $GIT_CACHE_FILENAME s3://${{ env.GIT_CACHE_BUCKET_NAME }}/$GIT_CACHE_FILENAME --storage-class ONEZONE_IA --quiet
 
+    - name: Create source tarball and copy to artifacts bucket
+      if: inputs.build_type == 'release'
+      run: |
+        mkdir -p ${{ env.RELEASE_SRC_FOLDER }}
+
+        echo "Fetching chromium build tools to get export_tarball.py"
+        git clone https://chromium.googlesource.com/chromium/tools/build --depth 1
+
+        echo "Running export_tarball.py"
+        ./build/recipes/recipe_modules/chromium/resources/export_tarball.py $RELEASE_SRC_FOLDER/${{ env.SOURCE_RELEASE_FILE_NAME }} --basename src --src-dir=./src --version=${{ env.ELECTRON_VERSION }} --remove-nonessential-files    
+
+        echo "Uploading source tarball"
+        aws s3 cp ${{ env.RELEASE_SRC_FOLDER }}/${{ env.SOURCE_RELEASE_FILE_NAME }}.tar.xz s3://${{ env.ARTIFACT_BUCKET_NAME }}/${{ env.RELEASE_DST_FOLDER }}/ --acl public-read --quiet
+
     - name: Set CHROMIUM_BUILDTOOLS_PATH env var
       run: echo 'CHROMIUM_BUILDTOOLS_PATH='"$PWD"'/src/buildtools' >> $GITHUB_ENV  
 
@@ -219,20 +233,6 @@ jobs:
       run: |
         cd src/electron
         xvfb-run node script/node-spec-runner.js --default
-
-    - name: Create source tarball and copy to artifacts bucket
-      if: inputs.build_type == 'release'
-      run: |
-        mkdir -p ${{ env.RELEASE_SRC_FOLDER }}
-
-        echo "Fetching chromium build tools to get export_tarball.py"
-        git clone https://chromium.googlesource.com/chromium/tools/build --depth 1
-
-        echo "Running export_tarball.py"
-        ./build/recipes/recipe_modules/chromium/resources/export_tarball.py $RELEASE_SRC_FOLDER/${{ env.SOURCE_RELEASE_FILE_NAME }} --basename src --src-dir=./src --version=${{ env.ELECTRON_VERSION }} --remove-nonessential-files    
-
-        echo "Uploading source tarball"
-        aws s3 cp ${{ env.RELEASE_SRC_FOLDER }}/${{ env.SOURCE_RELEASE_FILE_NAME }}.tar.xz s3://${{ env.ARTIFACT_BUCKET_NAME }}/${{ env.RELEASE_DST_FOLDER }}/ --acl public-read --quiet
 
     - name: Prepare release dist and upload
       if: inputs.build_type == 'release'
