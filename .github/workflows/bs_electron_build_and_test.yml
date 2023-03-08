@@ -262,7 +262,6 @@ jobs:
         echo "Checking dist_zip.${target_os}.${target_cpu}.manifest"
         echo "TARGET_OS_CPU=${target_os}-${target_cpu}" >> $GITHUB_ENV
         electron/script/zip_manifests/check-zip-manifest.py $OUTPUT_FOLDER/dist.zip electron/script/zip_manifests/dist_zip.$target_os.$target_cpu.manifest
-        # aws s3 cp $OUTPUT_FOLDER/dist.zip s3://${{ env.ARTIFACT_BUCKET_NAME }}/${{ env.RELEASE_DST_FOLDER }}/dist-$target_os-$target_cpu.zip --acl public-read --quiet
 
     - name: Prepare release package and upload to artifacts bucket
       if: inputs.build_type == 'release'
