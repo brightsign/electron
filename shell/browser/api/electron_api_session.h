@@ -17,6 +17,7 @@
 #include "shell/browser/event_emitter_mixin.h"
 #include "shell/browser/net/resolve_proxy_helper.h"
 #include "shell/common/gin_helper/cleaned_up_at_exit.h"
+#include "shell/common/gin_helper/constructible.h"
 #include "shell/common/gin_helper/error_thrower.h"
 #include "shell/common/gin_helper/function_template_extensions.h"
 #include "shell/common/gin_helper/pinnable.h"
@@ -57,6 +58,7 @@ namespace api {
 
 class Session : public gin::Wrappable<Session>,
                 public gin_helper::Pinnable<Session>,
+                public gin_helper::Constructible<Session>,
                 public gin_helper::EventEmitterMixin<Session>,
                 public gin_helper::CleanedUpAtExit,
 #if BUILDFLAG(ENABLE_BUILTIN_SPELLCHECKER)
@@ -71,6 +73,7 @@ class Session : public gin::Wrappable<Session>,
   static gin::Handle<Session> CreateFrom(
       v8::Isolate* isolate,
       ElectronBrowserContext* browser_context);
+  static gin::Handle<Session> New();  // Dummy, do not use!
 
   static Session* FromBrowserContext(content::BrowserContext* context);
 
@@ -79,12 +82,17 @@ class Session : public gin::Wrappable<Session>,
                                             const std::string& partition,
                                             base::Value::Dict options = {});
 
+  // Gets the Session based on |path|.
+  static absl::optional<gin::Handle<Session>> FromPath(
+      v8::Isolate* isolate,
+      const base::FilePath& path,
+      base::Value::Dict options = {});
+
   ElectronBrowserContext* browser_context() const { return browser_context_; }
 
   // gin::Wrappable
   static gin::WrapperInfo kWrapperInfo;
-  gin::ObjectTemplateBuilder GetObjectTemplateBuilder(
-      v8::Isolate* isolate) override;
+  static void FillObjectTemplate(v8::Isolate*, v8::Local<v8::ObjectTemplate>);
   const char* GetTypeName() override;
 
   // Methods.

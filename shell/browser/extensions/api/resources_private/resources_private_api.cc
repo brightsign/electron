@@ -4,7 +4,6 @@
 
 #include "shell/browser/extensions/api/resources_private/resources_private_api.h"
 
-#include <memory>
 #include <string>
 #include <utility>
 
@@ -26,7 +25,7 @@
 // To add a new component to this API, simply:
 // 1. Add your component to the Component enum in
 //      chrome/common/extensions/api/resources_private.idl
-// 2. Create an AddStringsForMyComponent(base::DictionaryValue * dict) method.
+// 2. Create an AddStringsForMyComponent(base::Value::Dict* dict) method.
 // 3. Tie in that method to the switch statement in Run()
 
 namespace extensions {
@@ -79,7 +78,7 @@ ResourcesPrivateGetStringsFunction::~ResourcesPrivateGetStringsFunction() =
     default;
 
 ExtensionFunction::ResponseAction ResourcesPrivateGetStringsFunction::Run() {
-  std::unique_ptr<get_strings::Params> params(
+  absl::optional<get_strings::Params> params(
       get_strings::Params::Create(args()));
   base::Value::Dict dict;
 

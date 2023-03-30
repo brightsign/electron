@@ -19,6 +19,36 @@ const contents = win.webContents
 console.log(contents)
 ```
 
+## Navigation Events
+
+Several events can be used to monitor navigations as they occur within a `webContents`.
+
+### Document Navigations
+
+When a `webContents` navigates to another page (as opposed to an [in-page navigation](web-contents.md#in-page-navigation)), the following events will be fired.
+
+* [`did-start-navigation`](web-contents.md#event-did-start-navigation)
+* [`will-frame-navigate`](web-contents.md#event-will-frame-navigate)
+* [`will-navigate`](web-contents.md#event-will-navigate) (only fired when main frame navigates)
+* [`will-redirect`](web-contents.md#event-will-redirect) (only fired when a redirect happens during navigation)
+* [`did-redirect-navigation`](web-contents.md#event-did-redirect-navigation) (only fired when a redirect happens during navigation)
+* [`did-frame-navigate`](web-contents.md#event-did-frame-navigate)
+* [`did-navigate`](web-contents.md#event-did-navigate) (only fired when main frame navigates)
+
+Subsequent events will not fire if `event.preventDefault()` is called on any of the cancellable events.
+
+### In-page Navigation
+
+In-page navigations don't cause the page to reload, but instead navigate to a location within the current page. These events are not cancellable. For an in-page navigations, the following events will fire in this order:
+
+* [`did-start-navigation`](web-contents.md#event-did-start-navigation)
+* [`did-navigate-in-page`](web-contents.md#event-did-navigate-in-page)
+
+### Frame Navigation
+
+The [`will-navigate`](web-contents.md#event-will-navigate) and [`did-navigate`](web-contents.md#event-did-navigate) events only fire when the [mainFrame](web-contents.md#contentsmainframe-readonly) navigates.
+If you want to also observe navigations in `<iframe>`s, use [`will-frame-navigate`](web-contents.md#event-will-frame-navigate) and [`did-frame-navigate`](web-contents.md#event-did-frame-navigate) events.
+
 ## Methods
 
 These methods can be accessed from the `webContents` module:
@@ -207,11 +237,54 @@ See [`window.open()`](window-open.md) for more details and how to use this in co
 
 Returns:
 
-* `event` Event
-* `url` string
+* `details` Event<>
+  * `url` string - The URL the frame is navigating to.
+  * `isSameDocument` boolean - Whether the navigation happened without changing
+    document. Examples of same document navigations are reference fragment
+    navigations, pushState/replaceState, and same page history navigation.
+  * `isMainFrame` boolean - True if the navigation is taking place in a main frame.
+  * `frame` WebFrameMain - The frame to be navigated.
+  * `initiator` WebFrameMain (optional) - The frame which initiated the
+    navigation, which can be a parent frame (e.g. via `window.open` with a
+    frame's name), or null if the navigation was not initiated by a frame. This
+    can also be null if the initiating frame was deleted before the event was
+    emitted.
+* `url` string _Deprecated_
+* `isInPlace` boolean _Deprecated_
+* `isMainFrame` boolean _Deprecated_
+* `frameProcessId` Integer _Deprecated_
+* `frameRoutingId` Integer _Deprecated_
 
-Emitted when a user or the page wants to start navigation. It can happen when
+Emitted when a user or the page wants to start navigation on the main frame. It can happen when
 the `window.location` object is changed or a user clicks a link in the page.
+
+This event will not emit when the navigation is started programmatically with
+APIs like `webContents.loadURL` and `webContents.back`.
+
+It is also not emitted for in-page navigations, such as clicking anchor links
+or updating the `window.location.hash`. Use `did-navigate-in-page` event for
+this purpose.
+
+Calling `event.preventDefault()` will prevent the navigation.
+
+#### Event: 'will-frame-navigate'
+
+Returns:
+
+* `details` Event<>
+  * `url` string - The URL the frame is navigating to.
+  * `isMainFrame` boolean - True if the navigation is taking place in a main frame.
+  * `frame` WebFrameMain - The frame to be navigated.
+  * `initiator` WebFrameMain (optional) - The frame which initiated the
+    navigation, which can be a parent frame (e.g. via `window.open` with a
+    frame's name), or null if the navigation was not initiated by a frame. This
+    can also be null if the initiating frame was deleted before the event was
+    emitted.
+
+Emitted when a user or the page wants to start navigation in any frame. It can happen when
+the `window.location` object is changed or a user clicks a link in the page.
+
+Unlike `will-navigate`, `will-frame-navigate` is fired when the main frame or any of its subframes attempts to navigate. When the navigation event comes from the main frame, `isMainFrame` will be `true`.
 
 This event will not emit when the navigation is started programmatically with
 APIs like `webContents.loadURL` and `webContents.back`.
@@ -226,26 +299,47 @@ Calling `event.preventDefault()` will prevent the navigation.
 
 Returns:
 
-* `event` Event
-* `url` string
-* `isInPlace` boolean
-* `isMainFrame` boolean
-* `frameProcessId` Integer
-* `frameRoutingId` Integer
+* `details` Event<>
+  * `url` string - The URL the frame is navigating to.
+  * `isSameDocument` boolean - Whether the navigation happened without changing
+    document. Examples of same document navigations are reference fragment
+    navigations, pushState/replaceState, and same page history navigation.
+  * `isMainFrame` boolean - True if the navigation is taking place in a main frame.
+  * `frame` WebFrameMain - The frame to be navigated.
+  * `initiator` WebFrameMain (optional) - The frame which initiated the
+    navigation, which can be a parent frame (e.g. via `window.open` with a
+    frame's name), or null if the navigation was not initiated by a frame. This
+    can also be null if the initiating frame was deleted before the event was
+    emitted.
+* `url` string _Deprecated_
+* `isInPlace` boolean _Deprecated_
+* `isMainFrame` boolean _Deprecated_
+* `frameProcessId` Integer _Deprecated_
+* `frameRoutingId` Integer _Deprecated_
 
-Emitted when any frame (including main) starts navigating. `isInPlace` will be
-`true` for in-page navigations.
+Emitted when any frame (including main) starts navigating.
 
 #### Event: 'will-redirect'
 
 Returns:
 
-* `event` Event
-* `url` string
-* `isInPlace` boolean
-* `isMainFrame` boolean
-* `frameProcessId` Integer
-* `frameRoutingId` Integer
+* `details` Event<>
+  * `url` string - The URL the frame is navigating to.
+  * `isSameDocument` boolean - Whether the navigation happened without changing
+    document. Examples of same document navigations are reference fragment
+    navigations, pushState/replaceState, and same page history navigation.
+  * `isMainFrame` boolean - True if the navigation is taking place in a main frame.
+  * `frame` WebFrameMain - The frame to be navigated.
+  * `initiator` WebFrameMain (optional) - The frame which initiated the
+    navigation, which can be a parent frame (e.g. via `window.open` with a
+    frame's name), or null if the navigation was not initiated by a frame. This
+    can also be null if the initiating frame was deleted before the event was
+    emitted.
+* `url` string _Deprecated_
+* `isInPlace` boolean _Deprecated_
+* `isMainFrame` boolean _Deprecated_
+* `frameProcessId` Integer _Deprecated_
+* `frameRoutingId` Integer _Deprecated_
 
 Emitted when a server side redirect occurs during navigation.  For example a 302
 redirect.
@@ -260,12 +354,23 @@ redirect).
 
 Returns:
 
-* `event` Event
-* `url` string
-* `isInPlace` boolean
-* `isMainFrame` boolean
-* `frameProcessId` Integer
-* `frameRoutingId` Integer
+* `details` Event<>
+  * `url` string - The URL the frame is navigating to.
+  * `isSameDocument` boolean - Whether the navigation happened without changing
+    document. Examples of same document navigations are reference fragment
+    navigations, pushState/replaceState, and same page history navigation.
+  * `isMainFrame` boolean - True if the navigation is taking place in a main frame.
+  * `frame` WebFrameMain - The frame to be navigated.
+  * `initiator` WebFrameMain (optional) - The frame which initiated the
+    navigation, which can be a parent frame (e.g. via `window.open` with a
+    frame's name), or null if the navigation was not initiated by a frame. This
+    can also be null if the initiating frame was deleted before the event was
+    emitted.
+* `url` string _Deprecated_
+* `isInPlace` boolean _Deprecated_
+* `isMainFrame` boolean _Deprecated_
+* `frameProcessId` Integer _Deprecated_
+* `frameRoutingId` Integer _Deprecated_
 
 Emitted after a server side redirect occurs during navigation.  For example a 302
 redirect.
@@ -492,6 +597,14 @@ The `focus` and `blur` events of `WebContents` should only be used to detect
 focus change between different `WebContents` and `BrowserView` in the same
 window.
 
+#### Event: 'devtools-open-url'
+
+Returns:
+
+* `url` string - URL of the link that was clicked or selected.
+
+Emitted when a link is clicked in DevTools or 'Open in new tab' is selected for a link in its context menu.
+
 #### Event: 'devtools-opened'
 
 Emitted when DevTools is opened.
@@ -570,7 +683,7 @@ Returns:
   * `finalUpdate` boolean
 
 Emitted when a result is available for
-[`webContents.findInPage`] request.
+[`webContents.findInPage`](#contentsfindinpagetext-options) request.
 
 #### Event: 'media-started-playing'
 
@@ -579,6 +692,15 @@ Emitted when media starts playing.
 #### Event: 'media-paused'
 
 Emitted when media is paused or done playing.
+
+#### Event: 'audio-state-changed'
+
+Returns:
+
+* `event` Event<>
+  * `audible` boolean - True if one or more frames or child `webContents` are emitting audio.
+
+Emitted when media becomes audible or inaudible.
 
 #### Event: 'did-change-theme-color'
 
@@ -713,20 +835,24 @@ Returns:
 * `callback` Function
   * `deviceId` string
 
-Emitted when bluetooth device needs to be selected on call to
-`navigator.bluetooth.requestDevice`. To use `navigator.bluetooth` api
-`webBluetooth` should be enabled. If `event.preventDefault` is not called,
-first available device will be selected. `callback` should be called with
-`deviceId` to be selected, passing empty string to `callback` will
-cancel the request.
+Emitted when a bluetooth device needs to be selected when a call to
+`navigator.bluetooth.requestDevice` is made. `callback` should be called with
+the `deviceId` of the device to be selected.  Passing an empty string to
+`callback` will cancel the request.
 
-If no event listener is added for this event, all bluetooth requests will be cancelled.
+If an event listener is not added for this event, or if `event.preventDefault`
+is not called when handling this event, the first available device will be
+automatically selected.
 
-```javascript
+Due to the nature of bluetooth, scanning for devices when
+`navigator.bluetooth.requestDevice` is called may take time and will cause
+`select-bluetooth-device` to fire multiple times until `callback` is called
+with either a device id or an empty string to cancel the request.
+
+```javascript title='main.js'
 const { app, BrowserWindow } = require('electron')
 
 let win = null
-app.commandLine.appendSwitch('enable-experimental-web-platform-features')
 
 app.whenReady().then(() => {
   win = new BrowserWindow({ width: 800, height: 600 })
@@ -736,6 +862,9 @@ app.whenReady().then(() => {
       return device.deviceName === 'test'
     })
     if (!result) {
+      // The device wasn't found so we need to either wait longer (eg until the
+      // device is turned on) or cancel the request by calling the callback 
+      // with an empty string.
       callback('')
     } else {
       callback(result.deviceId)
@@ -823,7 +952,7 @@ Emitted when the preload script `preloadPath` throws an unhandled exception `err
 
 Returns:
 
-* `event` Event
+* `event` [IpcMainEvent](structures/ipc-main-event.md)
 * `channel` string
 * `...args` any[]
 
@@ -835,7 +964,7 @@ See also [`webContents.ipc`](#contentsipc-readonly), which provides an [`IpcMain
 
 Returns:
 
-* `event` Event
+* `event` [IpcMainEvent](structures/ipc-main-event.md)
 * `channel` string
 * `...args` any[]
 
@@ -1324,7 +1453,7 @@ can be obtained by subscribing to [`found-in-page`](web-contents.md#event-found-
 #### `contents.stopFindInPage(action)`
 
 * `action` string - Specifies the action to take place when ending
-  [`webContents.findInPage`] request.
+  [`webContents.findInPage`](#contentsfindinpagetext-options) request.
   * `clearSelection` - Clear the selection.
   * `keepSelection` - Translate the selection into a normal selection.
   * `activateSelection` - Focus and click the selection node.
@@ -1358,31 +1487,6 @@ If you would like the page to stay hidden, you should ensure that `stayHidden` i
 
 Returns `boolean` - Whether this page is being captured. It returns true when the capturer count
 is large then 0.
-
-#### `contents.incrementCapturerCount([size, stayHidden, stayAwake])` _Deprecated_
-
-* `size` [Size](structures/size.md) (optional) - The preferred size for the capturer.
-* `stayHidden` boolean (optional) -  Keep the page hidden instead of visible.
-* `stayAwake` boolean (optional) -  Keep the system awake instead of allowing it to sleep.
-
-Increase the capturer count by one. The page is considered visible when its browser window is
-hidden and the capturer count is non-zero. If you would like the page to stay hidden, you should ensure that `stayHidden` is set to true.
-
-This also affects the Page Visibility API.
-
-**Deprecated:** This API's functionality is now handled automatically within `contents.capturePage()`. See [breaking changes](../breaking-changes.md).
-
-#### `contents.decrementCapturerCount([stayHidden, stayAwake])` _Deprecated_
-
-* `stayHidden` boolean (optional) -  Keep the page in hidden state instead of visible.
-* `stayAwake` boolean (optional) -  Keep the system awake instead of allowing it to sleep.
-
-Decrease the capturer count by one. The page will be set to hidden or occluded state when its
-browser window is hidden or occluded and the capturer count reaches zero. If you want to
-decrease the hidden capturer count instead you should set `stayHidden` to true.
-
-**Deprecated:** This API's functionality is now handled automatically within `contents.capturePage()`.
-See [breaking changes](../breaking-changes.md).
 
 #### `contents.getPrinters()` _Deprecated_
 
@@ -1426,8 +1530,8 @@ Returns `Promise<PrinterInfo[]>` - Resolves with a [`PrinterInfo[]`](structures/
     * `vertical` number (optional) - The vertical dpi.
   * `header` string (optional) - string to be printed as page header.
   * `footer` string (optional) - string to be printed as page footer.
-  * `pageSize` string | Size (optional) - Specify page size of the printed document. Can be `A3`,
-  `A4`, `A5`, `Legal`, `Letter`, `Tabloid` or an Object containing `height` and `width`.
+  * `pageSize` string | Size (optional) - Specify page size of the printed document. Can be `A0`, `A1`, `A2`, `A3`,
+  `A4`, `A5`, `A6`, `Legal`, `Letter`, `Tabloid` or an Object containing `height` and `width`.
 * `callback` Function (optional)
   * `success` boolean - Indicates success of the print call.
   * `failureReason` string - Error description called back if the print fails.
@@ -1592,7 +1696,7 @@ ipcMain.on('open-devtools', (event, targetContentsId, devtoolsContentsId) => {
 
 An example of showing devtools in a `BrowserWindow`:
 
-```js
+```js title='main.js'
 const { app, BrowserWindow } = require('electron')
 
 let win = null
@@ -1675,44 +1779,18 @@ Algorithm][SCA], just like [`postMessage`][], so prototype chains will not be
 included. Sending Functions, Promises, Symbols, WeakMaps, or WeakSets will
 throw an exception.
 
-> **NOTE**: Sending non-standard JavaScript types such as DOM objects or
-> special Electron objects will throw an exception.
+:::warning
 
-The renderer process can handle the message by listening to `channel` with the
-[`ipcRenderer`](ipc-renderer.md) module.
+Sending non-standard JavaScript types such as DOM objects or
+special Electron objects will throw an exception.
 
-An example of sending messages from the main process to the renderer process:
+:::
 
-```javascript
-// In the main process.
-const { app, BrowserWindow } = require('electron')
-let win = null
-
-app.whenReady().then(() => {
-  win = new BrowserWindow({ width: 800, height: 600 })
-  win.loadURL(`file://${__dirname}/index.html`)
-  win.webContents.on('did-finish-load', () => {
-    win.webContents.send('ping', 'whoooooooh!')
-  })
-})
-```
-
-```html
-<!-- index.html -->
-<html>
-<body>
-  <script>
-    require('electron').ipcRenderer.on('ping', (event, message) => {
-      console.log(message) // Prints 'whoooooooh!'
-    })
-  </script>
-</body>
-</html>
-```
+For additional reading, refer to [Electron's IPC guide](../tutorial/ipc.md).
 
 #### `contents.sendToFrame(frameId, channel, ...args)`
 
-* `frameId` Integer | [number, number] - the ID of the frame to send to, or a
+* `frameId` Integer | \[number, number] - the ID of the frame to send to, or a
   pair of `[processId, frameId]` if the frame is in a different process to the
   main frame.
 * `channel` string

@@ -96,9 +96,9 @@ bool IsPlainObject(const v8::Local<v8::Value>& object) {
            object->IsWeakMap() || object->IsWeakSet() ||
            object->IsArrayBuffer() || object->IsArrayBufferView() ||
            object->IsArray() || object->IsDataView() ||
-           object->IsSharedArrayBuffer() || object->IsProxy() ||
+           object->IsSharedArrayBuffer() || object->IsGeneratorObject() ||
            object->IsWasmModuleObject() || object->IsWasmMemoryObject() ||
-           object->IsModuleNamespaceObject());
+           object->IsModuleNamespaceObject() || object->IsProxy());
 }
 
 bool IsPlainArray(const v8::Local<v8::Value>& arr) {
@@ -740,4 +740,4 @@ void Initialize(v8::Local<v8::Object> exports,
 
 }  // namespace
 
-NODE_LINKED_MODULE_CONTEXT_AWARE(electron_renderer_context_bridge, Initialize)
+NODE_LINKED_BINDING_CONTEXT_AWARE(electron_renderer_context_bridge, Initialize)

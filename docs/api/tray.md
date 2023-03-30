@@ -29,8 +29,9 @@ __Platform Considerations__
 
 __Linux__
 
-* Tray icon requires support of [StatusNotifierItem](https://www.freedesktop.org/wiki/Specifications/StatusNotifierItem/)
-  in user's desktop environment.
+* Tray icon uses [StatusNotifierItem](https://www.freedesktop.org/wiki/Specifications/StatusNotifierItem/)
+  by default, when it is not available in user's desktop environment the
+  `GtkStatusIcon` will be used instead.
 * The `click` event is emitted when the tray icon receives activation from
   user, however the StatusNotifierItem spec does not specify which action would
   cause an activation, for some environments it is left mouse click, but for
@@ -234,7 +235,7 @@ Sets the hover text for this tray icon.
 
 * `title` string
 * `options` Object (optional)
-  * `fontType` string (optional) - The font family variant to display, can be `monospaced` or `monospacedDigit`. `monospaced` is available in macOS 10.15+ and `monospacedDigit` is available in macOS 10.11+.  When left blank, the title uses the default system font.
+  * `fontType` string (optional) - The font family variant to display, can be `monospaced` or `monospacedDigit`. `monospaced` is available in macOS 10.15+ When left blank, the title uses the default system font.
 
 Sets the title displayed next to the tray icon in the status bar (Support ANSI colors).
 
@@ -268,9 +269,9 @@ Returns `boolean` - Whether double click events will be ignored.
 
 Displays a tray balloon.
 
-[NIIF_NOSOUND]: https://docs.microsoft.com/en-us/windows/win32/api/shellapi/ns-shellapi-notifyicondataa#niif_nosound-0x00000010
-[NIIF_LARGE_ICON]: https://docs.microsoft.com/en-us/windows/win32/api/shellapi/ns-shellapi-notifyicondataa#niif_large_icon-0x00000020
-[NIIF_RESPECT_QUIET_TIME]: https://docs.microsoft.com/en-us/windows/win32/api/shellapi/ns-shellapi-notifyicondataa#niif_respect_quiet_time-0x00000080
+[NIIF_NOSOUND]: https://learn.microsoft.com/en-us/windows/win32/api/shellapi/ns-shellapi-notifyicondataa#niif_nosound-0x00000010
+[NIIF_LARGE_ICON]: https://learn.microsoft.com/en-us/windows/win32/api/shellapi/ns-shellapi-notifyicondataa#niif_large_icon-0x00000020
+[NIIF_RESPECT_QUIET_TIME]: https://learn.microsoft.com/en-us/windows/win32/api/shellapi/ns-shellapi-notifyicondataa#niif_respect_quiet_time-0x00000080
 
 #### `tray.removeBalloon()` _Windows_
 
