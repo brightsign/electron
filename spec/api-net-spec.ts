@@ -1370,7 +1370,7 @@ describe('net module', () => {
           expect.fail('Request should not be intercepted by the default session');
         });
 
-        const customSession = session.fromPartition(customPartitionName, { cache: false });
+        const customSession = session.fromPartition(customPartitionName, { cache: false, quota: 0 });
         let requestIsIntercepted = false;
         customSession.webRequest.onBeforeRequest((details, callback) => {
           if (details.url === `${serverUrl}${requestUrl}`) {
@@ -1411,7 +1411,7 @@ describe('net module', () => {
           expect.fail('Request should not be intercepted by the default session');
         });
 
-        const customSession = session.fromPartition(customPartitionName, { cache: false });
+        const customSession = session.fromPartition(customPartitionName, { cache: false, quota: 0 });
         let requestIsIntercepted = false;
         customSession.webRequest.onBeforeRequest((details, callback) => {
           if (details.url === `${serverUrl}${requestUrl}`) {

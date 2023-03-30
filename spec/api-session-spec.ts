@@ -31,6 +31,30 @@ describe('session module', () => {
     });
   });
 
+  describe('session.fromPartition(partition, options)', () => {
+    afterEach(closeAllWindows);
+    it('assert that a set quota value is returned when a quota value is specified for a session', async () => {
+      const quotasize = 256000;
+      const localsession = session.fromPartition('persist:test', { cache: false, quota: quotasize });
+      const w = new BrowserWindow({
+        show: false,
+        webPreferences: {
+          session: localsession
+        }
+      });
+
+      const readQuotaSize: any = () => {
+        return w.webContents.executeJavaScript(`
+          navigator.storage.estimate().then(estimate => estimate.quota).catch(err => err.message);
+        `);
+      };
+
+      await w.loadURL('https://www.google.com');
+      const size = await readQuotaSize();
+      expect(size).to.equal(quotasize);
+    });
+  });
+
   describe('session.fromPath(path)', () => {
     it('returns storage path of a session which was created with an absolute path', () => {
       const tmppath = require('electron').app.getPath('temp');
