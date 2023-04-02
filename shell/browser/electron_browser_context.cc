@@ -121,9 +121,6 @@ ElectronBrowserContext::ElectronBrowserContext(
   if (auto use_cache_opt = options.FindBool("cache")) {
     use_cache_ = use_cache_opt.value();
   }
-  if (auto quota_size_opt = options.FindInt("quota")) {
-    quota_size = quota_size_opt.value();
-  }
 
   base::StringToInt(command_line->GetSwitchValueASCII(switches::kDiskCacheSize),
                     &max_cache_size_);
@@ -142,6 +139,9 @@ ElectronBrowserContext::ElectronBrowserContext(
                      &partition_location)) {
     const base::FilePath& partition_path = filepath_partition->get();
     path_ = std::move(partition_path);
+    if (auto quota_size_opt = options.FindInt("quota")) {
+      user_set_quota_ = quota_size_opt.value();
+    }
   }
 
   BrowserContextDependencyManager::GetInstance()->MarkBrowserContextLive(this);
@@ -178,9 +178,9 @@ ElectronBrowserContext::~ElectronBrowserContext() {
 
 content::StoragePartition*
 ElectronBrowserContext::GetDefaultStoragePartition() {
-  if (quota_size) {
+  if (user_set_quota_) {
     return GetStoragePartition(
-        content::StoragePartitionConfig::CreateDefault(this, quota_size));
+        content::StoragePartitionConfig::CreateDefault(this, user_set_quota_));
   }
   return BrowserContext::GetDefaultStoragePartition();
 }

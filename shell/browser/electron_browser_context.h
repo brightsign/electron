@@ -256,7 +256,7 @@ class ElectronBrowserContext : public content::BrowserContext {
   base::FilePath path_;
   bool in_memory_ = false;
   bool use_cache_ = true;
-  int quota_size = 0;
+  absl::optional<int> user_set_quota_ = absl::nullopt;
   int max_cache_size_ = 0;
 
 #if BUILDFLAG(ENABLE_ELECTRON_EXTENSIONS)
