@@ -672,7 +672,7 @@ describe('protocol module', () => {
     });
 
     it('can use custom session', async () => {
-      const customSession = session.fromPartition('custom-ses', { cache: false, quota: 0 });
+      const customSession = session.fromPartition('custom-ses', { cache: false });
       customSession.webRequest.onBeforeRequest((details, callback) => {
         expect(details.url).to.equal('http://fake-host/');
         callback({ cancel: true });
