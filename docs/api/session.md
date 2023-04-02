@@ -46,7 +46,8 @@ of an existing `Session` object.
 
 * `path` string
 * `options` Object (optional)
-  * `cache` boolean - Whether to enable cache.
+  * `cache` boolean (optional) - Whether to enable cache.
+  * `quota` number (optional) - Use a quota size for a partition (in bytes).
 
 Returns `Session` - A session instance from the absolute path as specified by the `path`
 string. When there is an existing `Session` with the same absolute path, it
