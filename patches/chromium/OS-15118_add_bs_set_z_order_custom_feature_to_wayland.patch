@@ -4,13 +4,12 @@ Date: Wed, 15 Mar 2023 11:37:56 +0000
 Subject: OS-15118: add bs set z order custom feature to wayland
 
 A custom feature has been added to BrightSign Weston server to enable
-a z-index to be set to top level xdg windows. 
-This patch adds the functionality into third_party/wayland and 
+a z-index to be set to top level xdg windows.
+This patch adds the functionality into third_party/wayland and
 chromium ui/ozone/platform/wayland.
 
-
 diff --git a/third_party/wayland/BUILD.gn b/third_party/wayland/BUILD.gn
-index 0e0cb4846633d..76ab248cb7281 100644
+index 0e0cb4846633d76fe4b74b7061ed274b330a8b46..76ab248cb72813c2aabea14b567b5a2d9e780350 100644
 --- a/third_party/wayland/BUILD.gn
 +++ b/third_party/wayland/BUILD.gn
 @@ -9,7 +9,7 @@ import("//tools/generate_stubs/rules.gni")
@@ -33,7 +32,7 @@ index 0e0cb4846633d..76ab248cb7281 100644
  
 diff --git a/third_party/wayland/src/protocol/bs-z-order-unstable-v1.xml b/third_party/wayland/src/protocol/bs-z-order-unstable-v1.xml
 new file mode 100644
-index 0000000000000..da7ae7a6e2024
+index 0000000000000000000000000000000000000000..da7ae7a6e20242d1593d5cfcc4bb41ba16f2e775
 --- /dev/null
 +++ b/third_party/wayland/src/protocol/bs-z-order-unstable-v1.xml
 @@ -0,0 +1,14 @@
@@ -52,7 +51,7 @@ index 0000000000000..da7ae7a6e2024
 +
 +</protocol>
 diff --git a/ui/ozone/platform/wayland/common/wayland_object.cc b/ui/ozone/platform/wayland/common/wayland_object.cc
-index 54edc6a910391..4d08be815afcd 100644
+index 54edc6a9103911120c8dda7de0afc9960ed87206..4d08be815afcd4372ef7e7768af8b47f8ca1dad1 100644
 --- a/ui/ozone/platform/wayland/common/wayland_object.cc
 +++ b/ui/ozone/platform/wayland/common/wayland_object.cc
 @@ -184,6 +184,7 @@ void (*ObjectTraits<wl_proxy>::deleter)(void*) = &wl_proxy_wrapper_destroy;
@@ -64,7 +63,7 @@ index 54edc6a910391..4d08be815afcd 100644
  IMPLEMENT_WAYLAND_OBJECT_TRAITS(gtk_primary_selection_device_manager)
  IMPLEMENT_WAYLAND_OBJECT_TRAITS(gtk_primary_selection_offer)
 diff --git a/ui/ozone/platform/wayland/common/wayland_object.h b/ui/ozone/platform/wayland/common/wayland_object.h
-index 5f486509ff583..1be7773a1f35f 100644
+index 5f486509ff5838fcb4e8df782c0213695dd9c241..1be7773a1f35fb53cf6f2c9fb82056040dc485c7 100644
 --- a/ui/ozone/platform/wayland/common/wayland_object.h
 +++ b/ui/ozone/platform/wayland/common/wayland_object.h
 @@ -105,6 +105,7 @@ bool CanBind(const std::string& interface,
@@ -76,7 +75,7 @@ index 5f486509ff583..1be7773a1f35f 100644
  DECLARE_WAYLAND_OBJECT_TRAITS(gtk_primary_selection_device_manager)
  DECLARE_WAYLAND_OBJECT_TRAITS(gtk_primary_selection_offer)
 diff --git a/ui/ozone/platform/wayland/host/wayland_connection.cc b/ui/ozone/platform/wayland/host/wayland_connection.cc
-index 556240c00925d..15f33d660c278 100644
+index 556240c00925dc96645fc328fd8f4f210dd3a1ad..15f33d660c278e0ae5d61475d635288becaff3e3 100644
 --- a/ui/ozone/platform/wayland/host/wayland_connection.cc
 +++ b/ui/ozone/platform/wayland/host/wayland_connection.cc
 @@ -8,6 +8,7 @@
@@ -111,7 +110,7 @@ index 556240c00925d..15f33d660c278 100644
               strcmp(interface, "wl_compositor") == 0) {
      connection->compositor_ = wl::Bind<wl_compositor>(
 diff --git a/ui/ozone/platform/wayland/host/wayland_connection.h b/ui/ozone/platform/wayland/host/wayland_connection.h
-index 73080d1ca13e1..07ea6ba8ec3a0 100644
+index 73080d1ca13e1ffa903fe9f2b7f6ebdc47216b04..07ea6ba8ec3a02b4d0b183dc5e8cc21c66b55fa4 100644
 --- a/ui/ozone/platform/wayland/host/wayland_connection.h
 +++ b/ui/ozone/platform/wayland/host/wayland_connection.h
 @@ -104,6 +104,8 @@ class WaylandConnection {
@@ -132,7 +131,7 @@ index 73080d1ca13e1..07ea6ba8ec3a0 100644
    wl::Object<wl_proxy> wrapped_display_;
    wl::Object<wl_event_queue> event_queue_;
 diff --git a/ui/ozone/platform/wayland/host/xdg_toplevel_wrapper_impl.cc b/ui/ozone/platform/wayland/host/xdg_toplevel_wrapper_impl.cc
-index 6234df61b0786..d80cb43540b87 100644
+index 6234df61b0786be1388c27ae2e6e5eb06bec7610..d80cb43540b87b54406578b2e0ee9333ca79eca2 100644
 --- a/ui/ozone/platform/wayland/host/xdg_toplevel_wrapper_impl.cc
 +++ b/ui/ozone/platform/wayland/host/xdg_toplevel_wrapper_impl.cc
 @@ -6,6 +6,7 @@
