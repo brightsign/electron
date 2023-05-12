@@ -5632,6 +5632,8 @@ describe('BrowserWindow module', () => {
       await w.loadURL(url);
       const { scrollWidth } = await w.webContents.executeJavaScript('({scrollWidth: window.innerWidth - document.documentElement.clientWidth})');
       expect(scrollWidth).to.be.greaterThan(0);
+      const { scrollHeight } = await w.webContents.executeJavaScript('({scrollHeight: window.innerHeight - document.documentElement.clientHeight})');
+      expect(scrollHeight).to.be.greaterThan(0);
     });
 
     it('shows scrollbar when set to false', async () => {
@@ -5640,6 +5642,8 @@ describe('BrowserWindow module', () => {
       await w.loadURL(url);
       const { scrollWidth } = await w.webContents.executeJavaScript('({scrollWidth: window.innerWidth - document.documentElement.clientWidth})');
       expect(scrollWidth).to.be.greaterThan(0);
+      const { scrollHeight } = await w.webContents.executeJavaScript('({scrollHeight: window.innerHeight - document.documentElement.clientHeight})');
+      expect(scrollHeight).to.be.greaterThan(0);
     });
 
     it('hides scrollbar when set to true', async () => {
@@ -5648,6 +5652,8 @@ describe('BrowserWindow module', () => {
       await w.loadURL(url);
       const { scrollWidth } = await w.webContents.executeJavaScript('({scrollWidth: window.innerWidth - document.documentElement.clientWidth})');
       expect(scrollWidth).to.be.equal(0);
+      const { scrollHeight } = await w.webContents.executeJavaScript('({scrollHeight: window.innerHeight - document.documentElement.clientHeight})');
+      expect(scrollHeight).to.be.equal(0);
     });
   });
 });
