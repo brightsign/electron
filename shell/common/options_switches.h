@@ -172,6 +172,8 @@ inline constexpr std::string_view kSandbox = "sandbox";
 
 inline constexpr std::string_view kWebSecurity = "webSecurity";
 
+inline constexpr std::string_view kHideScrollBars = "hideScrollBars";
+
 inline constexpr std::string_view kAllowRunningInsecureContent =
     "allowRunningInsecureContent";
 
