@@ -1,4 +1,4 @@
-From 473ab1c297567c4141c9a91c58d67c1b92af731b Mon Sep 17 00:00:00 2001
+From a7f977ff3c676c4ed3dacbdb8d5ee2644689e407 Mon Sep 17 00:00:00 2001
 From: Caner Altinbasak <cal@brightsign.biz>
 Date: Tue, 23 May 2023 11:15:31 +0100
 Subject: [PATCH] brightsign: Add support for Brightsign video player
@@ -12,12 +12,12 @@ with libvid.
  media/base/media_switches.h                   |   4 +
  media/media_options.gni                       |   4 +
  .../blink/renderer/platform/media/BUILD.gn    |  23 +
- .../media/brightsign/video_player_proxy.cc    | 135 +++
+ .../media/brightsign/video_player_proxy.cc    | 135 ++++
  .../media/brightsign/video_player_proxy.h     |  50 ++
- .../brightsign/web_media_player_brightsign.cc | 843 ++++++++++++++++++
- .../brightsign/web_media_player_brightsign.h  | 246 +++++
+ .../brightsign/web_media_player_brightsign.cc | 755 ++++++++++++++++++
+ .../brightsign/web_media_player_brightsign.h  | 246 ++++++
  .../media/web_media_player_builder.cc         |  45 +-
- 11 files changed, 1346 insertions(+), 15 deletions(-)
+ 11 files changed, 1258 insertions(+), 15 deletions(-)
  create mode 100644 build/config/brightsign_build.gni
  create mode 100644 third_party/blink/renderer/platform/media/brightsign/video_player_proxy.cc
  create mode 100644 third_party/blink/renderer/platform/media/brightsign/video_player_proxy.h
@@ -342,10 +342,10 @@ index 0000000000000..ec11c71e81201
 +#endif
 diff --git a/third_party/blink/renderer/platform/media/brightsign/web_media_player_brightsign.cc b/third_party/blink/renderer/platform/media/brightsign/web_media_player_brightsign.cc
 new file mode 100644
-index 0000000000000..3acfc83207f10
+index 0000000000000..7a61499360d27
 --- /dev/null
 +++ b/third_party/blink/renderer/platform/media/brightsign/web_media_player_brightsign.cc
-@@ -0,0 +1,843 @@
+@@ -0,0 +1,755 @@
 +// Copyright 2017 The Chromium Authors
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
@@ -371,31 +371,6 @@ index 0000000000000..3acfc83207f10
 +#include "gpu/command_buffer/client/gles2_interface.h"
 +
 +using media::BindToCurrentLoop;
-+
-+#define BS_DEBUG(...)                 \
-+  do {                                \
-+    if (1)                            \
-+      fprintf(stderr, ##__VA_ARGS__); \
-+  } while (0)
-+
-+#define BS_DEBUG2(...)                \
-+  do {                                \
-+    if (0)                            \
-+      fprintf(stderr, ##__VA_ARGS__); \
-+  } while (0)
-+
-+#define BS_DEBUG3(...)                \
-+  do {                                \
-+    if (0)                            \
-+      fprintf(stderr, ##__VA_ARGS__); \
-+  } while (0)
-+
-+#define BS_DEBUG4(...)                \
-+  do {                                \
-+    if (0)                            \
-+      fprintf(stderr, ##__VA_ARGS__); \
-+  } while (0)
-+
 +namespace blink {
 +
 +static void VidPlayerErrorCallback(void *context, enum VidPlayerErrorCode code, const char *message)
@@ -532,14 +507,12 @@ index 0000000000000..3acfc83207f10
 +
 +  weak_this_ = weak_factory_.GetWeakPtr();
 +
-+  BS_DEBUG("%s: this:%p\n", __PRETTY_FUNCTION__, this);
-+  DVLOG(1) << __func__;
++  VLOG(1) << __func__;
 +  DCHECK(main_task_runner_->BelongsToCurrentThread());
 +}
 +
 +WebMediaPlayerBrightsign::~WebMediaPlayerBrightsign() {
-+  BS_DEBUG("%s: this:%p\n", __PRETTY_FUNCTION__, this);
-+  DVLOG(1) << __func__;
++  VLOG(1) << __func__;
 +  DCHECK(main_task_runner_->BelongsToCurrentThread());
 +  frame_ready_timer_.AbandonAndStop();
 +  SetVideoFrameProviderClient(NULL);
@@ -559,8 +532,7 @@ index 0000000000000..3acfc83207f10
 +    const WebMediaPlayerSource& source,
 +    CorsMode cors,
 +    bool is_cache_disabled) {
-+  BS_DEBUG("%s: this:%p\n", __PRETTY_FUNCTION__, this);
-+  DVLOG(1) << __func__;
++  VLOG(1) << __func__;
 +  DCHECK(main_task_runner_->BelongsToCurrentThread());
 +  std::map<std::string, std::string> attributes;
 +  return Load(type, source, cors, attributes);
@@ -571,8 +543,7 @@ index 0000000000000..3acfc83207f10
 +    const WebMediaPlayerSource& source,
 +    CorsMode cors,
 +    std::map<std::string, std::string>& attributes) {
-+  BS_DEBUG("%s: this:%p\n",__PRETTY_FUNCTION__, this);
-+  DVLOG(1) << __func__;
++  VLOG(1) << __func__;
 +  DCHECK(main_task_runner_->BelongsToCurrentThread());
 +
 +  current_time_ = 0.0;
@@ -596,24 +567,21 @@ index 0000000000000..3acfc83207f10
 +
 +// Playback controls.
 +void WebMediaPlayerBrightsign::Play() {
-+  BS_DEBUG2("%s: this:%p\n", __PRETTY_FUNCTION__, this);
-+  DVLOG(1) << __func__;
++  VLOG(1) << __func__;
 +  DCHECK(main_task_runner_->BelongsToCurrentThread());
 +  vid_player_play(vid_player_);
 +  playing_ = true;
 +}
 +
 +void WebMediaPlayerBrightsign::Pause() {
-+  BS_DEBUG2("%s: this:%p\n", __PRETTY_FUNCTION__, this);
-+  DVLOG(1) << __func__;
++  VLOG(1) << __func__;
 +  DCHECK(main_task_runner_->BelongsToCurrentThread());
 +  vid_player_pause(vid_player_);
 +  playing_ = false;
 +}
 +
 +void WebMediaPlayerBrightsign::Seek(double seconds) {
-+  BS_DEBUG2("%s: this:%p, seektime: %f\n", __PRETTY_FUNCTION__, this, seconds);
-+  DVLOG(1) << __func__;
++  VLOG(1) << __func__;
 +  DCHECK(main_task_runner_->BelongsToCurrentThread());
 +
 +  vid_player_seek(vid_player_, (uint64_t)(seconds * 1000000));
@@ -623,21 +591,19 @@ index 0000000000000..3acfc83207f10
 +}
 +
 +void WebMediaPlayerBrightsign::SetRate(double rate) {
-+  BS_DEBUG2("%s: this:%p\n", __PRETTY_FUNCTION__, this);
-+  DVLOG(1) << __func__;
++  VLOG(1) << __func__;
 +  DCHECK(main_task_runner_->BelongsToCurrentThread());
 +  vid_player_set_rate(vid_player_, rate);
 +}
 +
 +void WebMediaPlayerBrightsign::SetVolume(double vol) {
-+  BS_DEBUG2("%s: this:%p\n", __PRETTY_FUNCTION__, this);
-+  DVLOG(1) << __func__;
++  VLOG(1) << __func__;
 +  DCHECK(main_task_runner_->BelongsToCurrentThread());
 +  vid_player_set_volume(vid_player_, vol);
 +}
 +
 +void WebMediaPlayerBrightsign::SetLatencyHint(double seconds) {
-+  DVLOG(1) << __func__ << "(" << seconds << ")";
++  VLOG(1) << __func__ << "(" << seconds << ")";
 +  DCHECK(main_task_runner_->BelongsToCurrentThread());
 +}
 +
@@ -648,8 +614,7 @@ index 0000000000000..3acfc83207f10
 +void WebMediaPlayerBrightsign::OnRequestPictureInPicture() {}
 +
 +WebTimeRanges WebMediaPlayerBrightsign::Buffered() const {
-+  BS_DEBUG2("%s: this:%p\n", __PRETTY_FUNCTION__, this);
-+  DVLOG(1) << __func__;
++  VLOG(1) << __func__;
 +  DCHECK(main_task_runner_->BelongsToCurrentThread());
 +  // Claim to be fully buffered
 +  const blink::WebTimeRange buffered_range(0.0, Duration());
@@ -657,8 +622,7 @@ index 0000000000000..3acfc83207f10
 +}
 +
 +WebTimeRanges WebMediaPlayerBrightsign::Seekable() const {
-+  BS_DEBUG2("%s: this:%p\n", __PRETTY_FUNCTION__, this);
-+  DVLOG(1) << __func__;
++  VLOG(1) << __func__;
 +  DCHECK(main_task_runner_->BelongsToCurrentThread());
 +  const blink::WebTimeRange seekable_range(0.0, Duration());
 +  return WebTimeRanges(&seekable_range, 1);
@@ -673,68 +637,59 @@ index 0000000000000..3acfc83207f10
 +// (i.e., the blink thread).
 +bool WebMediaPlayerBrightsign::SetSinkId(const WebString& sink_id,
 +                                         WebSetSinkIdCompleteCallback) {
-+  BS_DEBUG("%s: this:%p\n", __PRETTY_FUNCTION__, this);
-+  DVLOG(1) << __func__;
++  VLOG(1) << __func__;
 +  DCHECK(main_task_runner_->BelongsToCurrentThread());
 +  return true;
 +}
 +
 +// True if the loaded media has a playable video/audio track.
 +bool WebMediaPlayerBrightsign::HasVideo() const {
-+  BS_DEBUG2("%s: this:%p\n", __PRETTY_FUNCTION__, this);
-+  DVLOG(1) << __func__;
++  VLOG(1) << __func__;
 +  DCHECK(main_task_runner_->BelongsToCurrentThread());
 +  return true;
 +}
 +
 +bool WebMediaPlayerBrightsign::HasAudio() const {
-+  BS_DEBUG2("%s: this:%p\n", __PRETTY_FUNCTION__, this);
-+  DVLOG(1) << __func__;
++  VLOG(1) << __func__;
 +  DCHECK(main_task_runner_->BelongsToCurrentThread());
 +  return true;
 +}
 +
 +// Dimension of the video.
 +gfx::Size WebMediaPlayerBrightsign::NaturalSize() const {
-+  BS_DEBUG2("%s: this:%p\n", __PRETTY_FUNCTION__, this);
-+  DVLOG(1) << __func__;
++  VLOG(1) << __func__;
 +  DCHECK(main_task_runner_->BelongsToCurrentThread());
 +  return natural_size_;
 +}
 +
 +gfx::Size WebMediaPlayerBrightsign::VisibleSize() const {
-+  BS_DEBUG2("%s: this:%p\n", __PRETTY_FUNCTION__, this);
-+  DVLOG(1) << __func__;
++  VLOG(1) << __func__;
 +  DCHECK(main_task_runner_->BelongsToCurrentThread());
 +  return natural_size_;
 +}
 +
 +// Getters of playback state.
 +bool WebMediaPlayerBrightsign::Paused() const {
-+  BS_DEBUG2("%s: this:%p\n", __PRETTY_FUNCTION__, this);
-+  DVLOG(1) << __func__;
++  VLOG(1) << __func__;
 +  DCHECK(main_task_runner_->BelongsToCurrentThread());
 +  return ended_ || !playing_;
 +}
 +
 +bool WebMediaPlayerBrightsign::Seeking() const {
-+  BS_DEBUG2("%s: this:%p\n", __PRETTY_FUNCTION__, this);
-+  DVLOG(1) << __func__;
++  VLOG(1) << __func__;
 +  DCHECK(main_task_runner_->BelongsToCurrentThread());
 +  return seeking_;
 +}
 +
 +double WebMediaPlayerBrightsign::Duration() const {
-+  BS_DEBUG2("%s: this:%p\n", __PRETTY_FUNCTION__, this);
-+  DVLOG(1) << __func__;
++  VLOG(1) << __func__;
 +
 +  DCHECK(main_task_runner_->BelongsToCurrentThread());
 +  return duration_;
 +}
 +
 +double WebMediaPlayerBrightsign::CurrentTime() const {
-+  BS_DEBUG2("%s: this:%p\n", __PRETTY_FUNCTION__, this);
-+  DVLOG(1) << __func__;
++  VLOG(1) << __func__;
 +  DCHECK(main_task_runner_->BelongsToCurrentThread());
 +  return current_time_;
 +}
@@ -746,15 +701,13 @@ index 0000000000000..3acfc83207f10
 +
 +// Internal states of loading and network.
 +WebMediaPlayer::NetworkState WebMediaPlayerBrightsign::GetNetworkState() const {
-+  BS_DEBUG2("%s: this:%p\n", __PRETTY_FUNCTION__, this);
-+  DVLOG(1) << __func__;
++  VLOG(1) << __func__;
 +  DCHECK(main_task_runner_->BelongsToCurrentThread());
 +  return network_state_;
 +}
 +
 +WebMediaPlayer::ReadyState WebMediaPlayerBrightsign::GetReadyState() const {
-+  BS_DEBUG2("%s: this:%p\n", __PRETTY_FUNCTION__, this);
-+  DVLOG(1) << __func__;
++  VLOG(1) << __func__;
 +  DCHECK(main_task_runner_->BelongsToCurrentThread());
 +  return ready_state_;
 +}
@@ -764,64 +717,55 @@ index 0000000000000..3acfc83207f10
 +// UA-specific-error-code (without any ':'), optionally followed by ': ' and
 +// further description of the error.
 +WebString WebMediaPlayerBrightsign::GetErrorMessage() const {
-+  BS_DEBUG("%s: this:%p\n", __PRETTY_FUNCTION__, this);
-+  DVLOG(1) << __func__;
++  VLOG(1) << __func__;
 +  DCHECK(main_task_runner_->BelongsToCurrentThread());
 +  return error_message_;
 +}
 +
 +bool WebMediaPlayerBrightsign::DidLoadingProgress() {
-+  BS_DEBUG2("%s: this:%p\n", __PRETTY_FUNCTION__, this);
-+  DVLOG(1) << __func__;
++  VLOG(1) << __func__;
 +  DCHECK(main_task_runner_->BelongsToCurrentThread());
 +  return true;
 +}
 +
 +bool WebMediaPlayerBrightsign::WouldTaintOrigin() const {
-+  BS_DEBUG2("%s: this:%p\n", __PRETTY_FUNCTION__, this);
-+  DVLOG(1) << __func__;
++  VLOG(1) << __func__;
 +  DCHECK(main_task_runner_->BelongsToCurrentThread());
 +  return false;
 +}
 +
 +double WebMediaPlayerBrightsign::MediaTimeForTimeValue(double timeValue) const {
-+  BS_DEBUG2("%s: this:%p\n", __PRETTY_FUNCTION__, this);
-+  DVLOG(1) << __func__;
++  VLOG(1) << __func__;
 +  DCHECK(main_task_runner_->BelongsToCurrentThread());
 +  return base::Seconds(timeValue).InSecondsF();
 +}
 +
 +unsigned WebMediaPlayerBrightsign::DecodedFrameCount() const {
-+  BS_DEBUG2("%s: this:%p\n", __PRETTY_FUNCTION__, this);
-+  DVLOG(1) << __func__;
++  VLOG(1) << __func__;
 +  DCHECK(main_task_runner_->BelongsToCurrentThread());
 +  return decode_stats_.m_DecodedVideoFrames;
 +}
 +
 +unsigned WebMediaPlayerBrightsign::DroppedFrameCount() const {
-+  BS_DEBUG2("%s: this:%p\n", __PRETTY_FUNCTION__, this);
-+  DVLOG(1) << __func__;
++  VLOG(1) << __func__;
 +  DCHECK(main_task_runner_->BelongsToCurrentThread());
 +  return decode_stats_.m_DroppedVideoFrames;
 +}
 +
 +unsigned WebMediaPlayerBrightsign::CorruptedFrameCount() const {
-+  BS_DEBUG2("%s: this:%p\n", __PRETTY_FUNCTION__, this);
-+  DVLOG(1) << __func__;
++  VLOG(1) << __func__;
 +  DCHECK(main_task_runner_->BelongsToCurrentThread());
 +  return decode_stats_.m_CorruptedVideoFrames;
 +}
 +
 +uint64_t WebMediaPlayerBrightsign::AudioDecodedByteCount() const {
-+  BS_DEBUG2("%s: this:%p\n", __PRETTY_FUNCTION__, this);
-+  DVLOG(1) << __func__;
++  VLOG(1) << __func__;
 +  DCHECK(main_task_runner_->BelongsToCurrentThread());
 +  return decode_stats_.m_DecodedAudioBytes;
 +}
 +
 +uint64_t WebMediaPlayerBrightsign::VideoDecodedByteCount() const {
-+  BS_DEBUG2("%s: this:%p\n", __PRETTY_FUNCTION__, this);
-+  DVLOG(1) << __func__;
++  VLOG(1) << __func__;
 +  DCHECK(main_task_runner_->BelongsToCurrentThread());
 +  return decode_stats_.m_DecodedVideoBytes;
 +}
@@ -831,30 +775,26 @@ index 0000000000000..3acfc83207f10
 +}
 +
 +void OnReleaseTexture(gpu::Mailbox mbox) {
-+  BS_DEBUG("%s\n", __FUNCTION__);
 +}
 +
 +/*
 +void WebMediaPlayerBrightsign::SetAttribute(const std::string& name,
 +                                            const std::string& value) {
-+  BS_DEBUG("%s: this:%p\n",__PRETTY_FUNCTION__, this);
-+  DVLOG(1) << __func__;
++  VLOG(1) << __func__;
 +  vid_player_->SetAttribute(name, value);
 +}
 +
 +void WebMediaPlayerBrightsign::SetSyncParams(const std::string& domain,
 +                                             const std::string& id,
 +                                             const std::string& timestamp) {
-+  BS_DEBUG("%s: this:%p\n",__PRETTY_FUNCTION__, this);
-+  DVLOG(1) << __func__;
++  VLOG(1) << __func__;
 +  vid_player_->SetSyncParams(domain, id, timestamp);
 +}
 +*/
 +
 +void WebMediaPlayerBrightsign::SetNetworkState(
 +    WebMediaPlayer::NetworkState state) {
-+  BS_DEBUG("%s: this:%p\n", __PRETTY_FUNCTION__, this);
-+  DVLOG(1) << __func__ << "(" << state << ")";
++  VLOG(1) << __func__ << "(" << state << ")";
 +  DCHECK(main_task_runner_->BelongsToCurrentThread());
 +  network_state_ = state;
 +  // Always notify to ensure client has the latest value.
@@ -862,8 +802,7 @@ index 0000000000000..3acfc83207f10
 +}
 +
 +void WebMediaPlayerBrightsign::SetReadyState(WebMediaPlayer::ReadyState state) {
-+  BS_DEBUG("%s: this:%p\n", __PRETTY_FUNCTION__, this);
-+  DVLOG(1) << __func__ << "(" << state << ")";
++  VLOG(1) << __func__ << "(" << state << ")";
 +  DCHECK(main_task_runner_->BelongsToCurrentThread());
 +
 +  if (state == WebMediaPlayer::kReadyStateHaveEnoughData &&
@@ -880,18 +819,15 @@ index 0000000000000..3acfc83207f10
 +void WebMediaPlayerBrightsign::OnEncryptedMediaInitData(
 +    media::EmeInitDataType init_data_type,
 +    const std::vector<uint8_t>& init_data) {
-+  BS_DEBUG("%s: this:%p\n", __PRETTY_FUNCTION__, this);
 +}
 +
 +void WebMediaPlayerBrightsign::OnProgress() {
-+  BS_DEBUG2("%s: this:%p\n", __PRETTY_FUNCTION__, this);
 +
 +  // This is called by the demuxer whenever there's some more data available
 +}
 +
 +void WebMediaPlayerBrightsign::ErrorCallback(enum VidPlayerErrorCode code, const char *message) {
-+  BS_DEBUG("%s: this:%p\n", __PRETTY_FUNCTION__, this);
-+  DVLOG(1) << __func__;
++  VLOG(1) << __func__;
 +  DCHECK(main_task_runner_->BelongsToCurrentThread());
 +  error_message_ = blink::WebString::FromUTF8(message);
 +
@@ -913,22 +849,18 @@ index 0000000000000..3acfc83207f10
 +}
 +
 +void WebMediaPlayerBrightsign::PlaybackStartedCallback() {
-+  BS_DEBUG("%s: this:%p\n", __PRETTY_FUNCTION__, this);
-+  DVLOG(1) << __func__;
++  VLOG(1) << __func__;
 +  DCHECK(main_task_runner_->BelongsToCurrentThread());
 +  ended_ = false;
 +}
 +
 +void WebMediaPlayerBrightsign::PlaybackCompletedCallback() {
-+  BS_DEBUG("%s: this:%p\n", __PRETTY_FUNCTION__, this);
-+  DVLOG(1) << __func__;
++  VLOG(1) << __func__;
 +  DCHECK(main_task_runner_->BelongsToCurrentThread());
 +
 +  // If this event arrives after Load has been called, then there's no further
 +  // action to take, as Load has already reset current_time_ and playing_
 +  if (ready_state_ == kReadyStateHaveNothing) {
-+    BS_DEBUG("Skip setting time to duration: %d %d\n", ready_state_,
-+             network_state_);
 +    return;
 +  }
 +
@@ -979,8 +911,7 @@ index 0000000000000..3acfc83207f10
 +int64_t duration, const StringMapVector& video_tracks,
 +                                          const StringMapVector& audio_tracks, const StringMapVector& text_tracks
 +) {
-+  BS_DEBUG("%s: this:%p\n", __PRETTY_FUNCTION__, this);
-+  DVLOG(1) << __func__;
++  VLOG(1) << __func__;
 +  DCHECK(main_task_runner_->BelongsToCurrentThread());
 +  DurationChangedCallback(duration);  // Before we declare HaveMetadata
 +
@@ -998,9 +929,7 @@ index 0000000000000..3acfc83207f10
 +
 +void WebMediaPlayerBrightsign::SeekCompletedCallback(
 +    int64_t current_time) {
-+  BS_DEBUG("%s: this:%p, time %f\n", __PRETTY_FUNCTION__, this,
-+           std::chrono::duration<float>(current_time).count());
-+  DVLOG(1) << __func__;
++  VLOG(1) << __func__;
 +  DCHECK(main_task_runner_->BelongsToCurrentThread());
 +  seeking_ = false;
 +  PlaybackPositionUpdatedCallback(current_time, decode_stats_);
@@ -1009,8 +938,7 @@ index 0000000000000..3acfc83207f10
 +void WebMediaPlayerBrightsign::VideoSizeChangedCallback(uint32_t width,
 +                                                  uint32_t height,
 +                                                  bool video_on_graphics) {
-+  BS_DEBUG("%s: this:%p\n", __PRETTY_FUNCTION__, this);
-+  DVLOG(1) << __func__;
++  VLOG(1) << __func__;
 +  DCHECK(main_task_runner_->BelongsToCurrentThread());
 +  natural_size_ = gfx::Size(width, height);
 +  // Lazily allocate compositing layer.
@@ -1039,9 +967,7 @@ index 0000000000000..3acfc83207f10
 +void WebMediaPlayerBrightsign::PlaybackPositionUpdatedCallback(
 +    int64_t current_time,
 +    const VidPlayerDecodeStatistics& decode_stats) {
-+  BS_DEBUG("%s: this:%p, time: %f\n", __PRETTY_FUNCTION__, this,
-+           std::chrono::duration<float>(current_time).count());
-+  DVLOG(1) << __func__;
++  VLOG(1) << __func__;
 +  DCHECK(main_task_runner_->BelongsToCurrentThread());
 +
 +  // Update our statistics
@@ -1049,8 +975,6 @@ index 0000000000000..3acfc83207f10
 +
 +  // If Load has been called, then there's no further action to take
 +  if (ready_state_ == kReadyStateHaveNothing) {
-+    BS_DEBUG("Skip updating current time: %d %d\n", ready_state_,
-+             network_state_);
 +    return;
 +  }
 +
@@ -1063,17 +987,14 @@ index 0000000000000..3acfc83207f10
 +
 +void WebMediaPlayerBrightsign::DurationChangedCallback(
 +    int64_t duration) {
-+  BS_DEBUG("%s: this:%p, duration: %f\n", __PRETTY_FUNCTION__, this,
-+           std::chrono::duration<float>(duration).count());
-+  DVLOG(1) << __func__;
++  VLOG(1) << __func__;
 +  DCHECK(main_task_runner_->BelongsToCurrentThread());
 +  duration_ = duration;
 +  client_->DurationChanged();
 +}
 +
 +void WebMediaPlayerBrightsign::ReleasedCallback() {
-+  BS_DEBUG("%s: this:%p\n", __PRETTY_FUNCTION__, this);
-+  DVLOG(1) << __func__;
++  VLOG(1) << __func__;
 +  DCHECK(main_task_runner_->BelongsToCurrentThread());
 +  playing_ = false;
 +  ended_ = false;
@@ -1088,19 +1009,16 @@ index 0000000000000..3acfc83207f10
 +}
 +
 +void WebMediaPlayerBrightsign::PausedCallback() {
-+  BS_DEBUG("%s: this:%p\n", __PRETTY_FUNCTION__, this);
-+  DVLOG(1) << __func__;
++  VLOG(1) << __func__;
 +  DCHECK(main_task_runner_->BelongsToCurrentThread());
 +}
 +
 +void WebMediaPlayerBrightsign::FrameReadyCallback() {
-+  BS_DEBUG("%s: this:%p\n", __PRETTY_FUNCTION__, this);
-+  DVLOG(1) << __func__;
++  VLOG(1) << __func__;
 +  DCHECK(main_task_runner_->BelongsToCurrentThread());
 +}
 +
 +void WebMediaPlayerBrightsign::StartFrameReadyTimerIfRequired() {
-+  BS_DEBUG("%s: this:%p\n", __PRETTY_FUNCTION__, this);
 +  // Start frame timer if it is not already running.
 +  // It will ask compositor to aim 60fps.
 +  // If brightsign compositor is not fast enough, it will
@@ -1117,7 +1035,6 @@ index 0000000000000..3acfc83207f10
 +  // It is set/changed on render thread and compositor thread(when
 +  // render thread is blocked). Avoid changing it when it is
 +  // being changed on other threads.
-+  BS_DEBUG2("%s: this:%p\n", __PRETTY_FUNCTION__, this);
 +  base::AutoLock auto_lock(video_frame_provider_client_lock_);
 +  if (video_frame_provider_client_)
 +    video_frame_provider_client_->DidReceiveFrame();
@@ -1125,8 +1042,7 @@ index 0000000000000..3acfc83207f10
 +
 +void WebMediaPlayerBrightsign::SetCurrentFrame(
 +    scoped_refptr<media::VideoFrame>& video_frame) {
-+  BS_DEBUG("%s: this:%p\n", __PRETTY_FUNCTION__, this);
-+  DVLOG(1) << __func__;
++  VLOG(1) << __func__;
 +  DCHECK(main_task_runner_->BelongsToCurrentThread());
 +  base::AutoLock auto_lock(current_frame_lock_);
 +  current_frame_ = video_frame;
@@ -1143,7 +1059,6 @@ index 0000000000000..3acfc83207f10
 +}
 +
 +void WebMediaPlayerBrightsign::SetVideoFrameProviderClient(Client* client) {
-+  BS_DEBUG("%s: this:%p\n", __PRETTY_FUNCTION__, this);
 +  // This is called from both the main renderer thread and the compositor
 +  // thread (when the main thread is blocked).
 +  if (video_frame_provider_client_ && video_frame_provider_client_ != client)
@@ -1155,18 +1070,15 @@ index 0000000000000..3acfc83207f10
 +bool WebMediaPlayerBrightsign::UpdateCurrentFrame(
 +    base::TimeTicks deadline_min,
 +    base::TimeTicks deadline_max) {
-+  BS_DEBUG("%s: this:%p\n", __PRETTY_FUNCTION__, this);
 +  return true;
 +}
 +
 +bool WebMediaPlayerBrightsign::HasCurrentFrame() {
 +  base::AutoLock auto_lock(current_frame_lock_);
-+  BS_DEBUG2("%s: this:%p\n", __PRETTY_FUNCTION__, this);
 +  return current_frame_.get();
 +}
 +
 +scoped_refptr<media::VideoFrame> WebMediaPlayerBrightsign::GetCurrentFrame() {
-+  BS_DEBUG2("%s: this:%p\n", __PRETTY_FUNCTION__, this);
 +  scoped_refptr<media::VideoFrame> video_frame;
 +  {
 +    base::AutoLock auto_lock(current_frame_lock_);
