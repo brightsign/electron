@@ -414,6 +414,7 @@ It creates a new `BrowserWindow` with native properties as set by the `options`.
       `WebContents` when the preferred size changes. Default is `false`.
     * `hideScrollBars` boolean (optional) - Sets the Chromium WebPreferences
        hide_scrollbars field. Default is `false`.
+    * `enablePinchZoom` boolean (optional) - Sets whether to enable pinch to zoom in Chromium. Default is `true`.
   * `titleBarOverlay` Object | Boolean (optional) -  When using a frameless window in conjunction with `win.setWindowButtonVisibility(true)` on macOS or using a `titleBarStyle` so that the standard window controls ("traffic lights" on macOS) are visible, this property enables the Window Controls Overlay [JavaScript APIs][overlay-javascript-apis] and [CSS Environment Variables][overlay-css-env-vars]. Specifying `true` will result in an overlay with default system colors. Default is `false`.
     * `color` String (optional) _Windows_ - The CSS color of the Window Controls Overlay when enabled. Default is the system color.
     * `symbolColor` String (optional) _Windows_ - The CSS color of the symbols on the Window Controls Overlay when enabled. Default is the system color.
