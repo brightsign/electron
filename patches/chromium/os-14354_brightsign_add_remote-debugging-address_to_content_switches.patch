@@ -4,8 +4,8 @@ Date: Wed, 28 Jun 2023 16:37:03 +0100
 Subject: OS-14354 BrightSign: add remote-debugging-address to content switches
 
 A change has been added to Electron TCPServerSocketFactory to allow a custom
-address to be used for remote debugging (i.e. use 0.0.0.0 instead of 127.0.0.1). 
-This change adds the remote-debugging-address switch to the content switches to 
+address to be used for remote debugging (i.e. use 0.0.0.0 instead of 127.0.0.1).
+This change adds the remote-debugging-address switch to the content switches to
 allow it to be used in Electron.
 
 diff --git a/content/public/common/content_switches.cc b/content/public/common/content_switches.cc
