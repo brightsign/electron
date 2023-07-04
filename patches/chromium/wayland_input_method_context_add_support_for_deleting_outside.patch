@@ -14,10 +14,10 @@ now it covers the cases where characters coming before and/or after
 the cursor gets deleted.
 
 diff --git a/ui/ozone/platform/wayland/host/wayland_input_method_context.cc b/ui/ozone/platform/wayland/host/wayland_input_method_context.cc
-index efd96048fc657dcc169755ba1c50643bfaa8abc1..0b9057b7b51a0ba55cfe0d4a8059515604d2f004 100644
+index 1a5dc893c3d89720072b3c8c59f6e4420bf8b146..380f3d1327f847c0a642110b1940cc1243b2bfe2 100644
 --- a/ui/ozone/platform/wayland/host/wayland_input_method_context.cc
 +++ b/ui/ozone/platform/wayland/host/wayland_input_method_context.cc
-@@ -694,7 +694,23 @@ void WaylandInputMethodContext::OnDeleteSurroundingText(int32_t index,
+@@ -740,7 +740,23 @@ void WaylandInputMethodContext::OnDeleteSurroundingText(int32_t index,
    base::UTF8ToUTF16AndAdjustOffsets(base::UTF16ToUTF8(surrounding_text),
                                      &offsets_for_adjustment);
    if (base::Contains(offsets_for_adjustment, std::u16string::npos)) {
