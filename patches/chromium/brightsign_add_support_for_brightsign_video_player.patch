@@ -17,6 +17,743 @@ index 0000000000000000000000000000000000000000..5a3085210677e9ed7c3c21f42901da1d
 +  is_brightsign = false
 +}
 +
+diff --git a/build/config/ui.gni b/build/config/ui.gni
+index b560f372c638e05efa5aeb602268b2639254e3fc..f7789634e06793e403a701ab2ac103b8424a58a8 100644
+--- a/build/config/ui.gni
++++ b/build/config/ui.gni
+@@ -17,6 +17,7 @@
+ # There is more advice on where to put build flags in the "Build flag" section
+ # of //build/config/BUILDCONFIG.gn.
+ 
++import("//build/config/brightsign_build.gni")
+ import("//build/config/chromecast_build.gni")
+ import("//build/config/chromeos/args.gni")
+ import("//build/config/chromeos/ui_mode.gni")
+diff --git a/components/viz/common/BUILD.gn b/components/viz/common/BUILD.gn
+index 61c72239260616252e73b0cfc045fe15a97463b2..df1892e765dc9a9deca5038de2836a9748bea103 100644
+--- a/components/viz/common/BUILD.gn
++++ b/components/viz/common/BUILD.gn
+@@ -33,6 +33,7 @@ buildflag_header("buildflags") {
+     "USE_VIZ_DEBUGGER=$use_viz_debugger",
+     "ENABLE_CAST_OVERLAY_STRATEGY=$enable_cast_overlay_strategy",
+     "ALWAYS_ENABLE_BLENDING_FOR_PRIMARY=$always_enable_blending_for_primary",
++    "ENABLE_BRIGHTSIGN_OVERLAY_STRATEGY=$enable_brightsign_overlay_strategy",
+   ]
+ }
+ 
+diff --git a/components/viz/common/display/overlay_strategy.cc b/components/viz/common/display/overlay_strategy.cc
+index 98f96302157018352ec02f30e2e4b9333a443bd9..edd83f5ceddc4df0453d28782b4433a23b29eb43 100644
+--- a/components/viz/common/display/overlay_strategy.cc
++++ b/components/viz/common/display/overlay_strategy.cc
+@@ -26,6 +26,10 @@ std::vector<OverlayStrategy> ParseOverlayStrategies(
+ #if BUILDFLAG(ENABLE_CAST_OVERLAY_STRATEGY)
+     } else if (strategy_name == "cast") {
+       strategies.push_back(OverlayStrategy::kUnderlayCast);
++#endif
++#if BUILDFLAG(ENABLE_BRIGHTSIGN_OVERLAY_STRATEGY)
++    } else if (strategy_name == "brightsign") {
++      strategies.push_back(OverlayStrategy::kUnderlayBrightsign);
+ #endif
+     } else {
+       LOG(ERROR) << "Unrecognized overlay strategy " << strategy_name;
+diff --git a/components/viz/common/display/overlay_strategy.h b/components/viz/common/display/overlay_strategy.h
+index 21a077054822dbb81073af3348bc65ad1084e063..870cc6d561359e89b8c099abe07719b6536643e0 100644
+--- a/components/viz/common/display/overlay_strategy.h
++++ b/components/viz/common/display/overlay_strategy.h
+@@ -24,8 +24,11 @@ enum class OverlayStrategy {
+ #if BUILDFLAG(ENABLE_CAST_OVERLAY_STRATEGY)
+   kUnderlayCast = 5,
+ #endif
+-  kNoStrategyAllFail = 6,
+-  kNoStrategyFailMin = 7,
++#if BUILDFLAG(ENABLE_BRIGHTSIGN_OVERLAY_STRATEGY)
++  kUnderlayBrightsign = 6,
++#endif
++  kNoStrategyAllFail = 7,
++  kNoStrategyFailMin = 8,
+   kMaxValue = kNoStrategyFailMin,
+ };
+ 
+diff --git a/components/viz/common/quads/render_pass_io.cc b/components/viz/common/quads/render_pass_io.cc
+index 654fbfbc5c8752ae98a7eeecaeb4402777521d87..3f4155374ca6c72560549f373b865d17c1770e4b 100644
+--- a/components/viz/common/quads/render_pass_io.cc
++++ b/components/viz/common/quads/render_pass_io.cc
+@@ -1338,6 +1338,8 @@ void VideoHoleDrawQuadToDict(const VideoHoleDrawQuad* draw_quad,
+     dict->SetKey("overlay_plane_id.unguessable_token",
+                  base::UnguessableTokenToValue(draw_quad->overlay_plane_id));
+   }
++  dict->SetStringKey("factory_name", draw_quad->factory_name);
++  dict->SetIntKey("z_index", draw_quad->z_index);
+ }
+ 
+ #define UNEXPECTED_DRAW_QUAD_TYPE(NAME)     \
+@@ -1677,8 +1679,14 @@ bool VideoHoleDrawQuadFromDict(const base::Value::Dict& dict,
+     }
+     overlay_plane_id = deserialized_overlay_plane_id.value();
+   }
++  const std::string* factory_name =
++      dict.FindString("factory_name");
++  DCHECK(factory_name);
++  absl::optional<int> z_index = dict.FindInt("z_index");
++  DCHECK(z_index);
+   draw_quad->SetAll(common.shared_quad_state, common.rect, common.visible_rect,
+-                    common.needs_blending, overlay_plane_id);
++                    common.needs_blending, overlay_plane_id, *factory_name,
++                    *z_index);
+   return true;
+ }
+ 
+diff --git a/components/viz/common/quads/video_hole_draw_quad.cc b/components/viz/common/quads/video_hole_draw_quad.cc
+index 6dcf0a06380ffd8daa82b462c10e7cf8b349eac5..101d08cc987b904f0ce994c496b44406d62f13f4 100644
+--- a/components/viz/common/quads/video_hole_draw_quad.cc
++++ b/components/viz/common/quads/video_hole_draw_quad.cc
+@@ -5,6 +5,7 @@
+ #include "components/viz/common/quads/video_hole_draw_quad.h"
+ 
+ #include <stddef.h>
++#include "base/strings/string_util.h"
+ #include "base/trace_event/traced_value.h"
+ #include "base/values.h"
+ 
+@@ -19,21 +20,29 @@ VideoHoleDrawQuad::~VideoHoleDrawQuad() = default;
+ void VideoHoleDrawQuad::SetNew(const SharedQuadState* shared_quad_state,
+                                const gfx::Rect& rect,
+                                const gfx::Rect& visible_rect,
+-                               const base::UnguessableToken& plane_id) {
++                               const base::UnguessableToken& plane_id,
++                               const std::string& factory_name_string,
++                               int32_t index) {
+   DrawQuad::SetAll(shared_quad_state, DrawQuad::Material::kVideoHole, rect,
+                    visible_rect,
+                    /*needs_blending=*/false);
+   overlay_plane_id = plane_id;
++  z_index = index;
++  base::strlcpy(this->factory_name, factory_name_string.c_str(), FACTORY_NAME_SIZE);
+ }
+ 
+ void VideoHoleDrawQuad::SetAll(const SharedQuadState* shared_quad_state,
+                                const gfx::Rect& rect,
+                                const gfx::Rect& visible_rect,
+                                bool needs_blending,
+-                               const base::UnguessableToken& plane_id) {
++                               const base::UnguessableToken& plane_id,
++                               const std::string& factory_name_string,
++                               int32_t index) {
+   DrawQuad::SetAll(shared_quad_state, DrawQuad::Material::kVideoHole, rect,
+                    visible_rect, needs_blending);
+   overlay_plane_id = plane_id;
++  z_index = index;
++  base::strlcpy(this->factory_name, factory_name_string.c_str(), FACTORY_NAME_SIZE);
+ }
+ 
+ const VideoHoleDrawQuad* VideoHoleDrawQuad::MaterialCast(const DrawQuad* quad) {
+@@ -44,6 +53,7 @@ const VideoHoleDrawQuad* VideoHoleDrawQuad::MaterialCast(const DrawQuad* quad) {
+ void VideoHoleDrawQuad::ExtendValue(
+     base::trace_event::TracedValue* value) const {
+   value->SetString("overlay_plane_id", overlay_plane_id.ToString());
++  value->SetInteger("z_index", z_index);
+ }
+ 
+ }  // namespace viz
+diff --git a/components/viz/common/quads/video_hole_draw_quad.h b/components/viz/common/quads/video_hole_draw_quad.h
+index 24ebc719d7a0a4ec8788f8953a0b190f593c34da..5b5e60a86a9b6e61c18fb1a1450ce4baadf764cd 100644
+--- a/components/viz/common/quads/video_hole_draw_quad.h
++++ b/components/viz/common/quads/video_hole_draw_quad.h
+@@ -20,6 +20,7 @@ namespace viz {
+ // overlay is to be activated. It carries |overlay_plane_id| which identifies
+ // the origin of the video overlay frame. |overlay_plane_id| will be used
+ // to find the right VideoDecoder to apply SetGeometry() on.
++#define FACTORY_NAME_SIZE 100
+ class VIZ_COMMON_EXPORT VideoHoleDrawQuad : public DrawQuad {
+  public:
+   VideoHoleDrawQuad();
+@@ -29,16 +30,22 @@ class VIZ_COMMON_EXPORT VideoHoleDrawQuad : public DrawQuad {
+   void SetNew(const SharedQuadState* shared_quad_state,
+               const gfx::Rect& rect,
+               const gfx::Rect& visible_rect,
+-              const base::UnguessableToken& plane_id);
++              const base::UnguessableToken& plane_id,
++              const std::string& factory_name_string,
++              int32_t index);
+ 
+   void SetAll(const SharedQuadState* shared_quad_state,
+               const gfx::Rect& rect,
+               const gfx::Rect& visible_rect,
+               bool needs_blending,
+-              const base::UnguessableToken& plane_id);
++              const base::UnguessableToken& plane_id,
++              const std::string& factory_name_string,
++              int32_t index);
+ 
+   static const VideoHoleDrawQuad* MaterialCast(const DrawQuad*);
+   base::UnguessableToken overlay_plane_id;
++  char factory_name[FACTORY_NAME_SIZE];
++  int32_t z_index;
+ 
+  private:
+   void ExtendValue(base::trace_event::TracedValue* value) const override;
+diff --git a/components/viz/service/BUILD.gn b/components/viz/service/BUILD.gn
+index be10275cdcd7bacae4ab24608ad840c5f238ecec..37d6fe3a3d0fa8c97adede181ab68ef940487f03 100644
+--- a/components/viz/service/BUILD.gn
++++ b/components/viz/service/BUILD.gn
+@@ -3,6 +3,7 @@
+ # found in the LICENSE file.
+ 
+ import("//build/config/chromeos/ui_mode.gni")
++import("//build/config/linux/pkg_config.gni")
+ import("//build/config/ozone.gni")
+ import("//build/config/ui.gni")
+ import("//components/viz/viz.gni")
+@@ -338,6 +339,14 @@ viz_component("service") {
+     deps += [ "//chromecast/media/service/mojom" ]
+   }
+ 
++  if (enable_brightsign_overlay_strategy) {
++    sources += [
++      "display/overlay_strategy_underlay_brightsign.cc",
++      "display/overlay_strategy_underlay_brightsign.h",
++    ]
++    configs = [ ":vid" ]
++  }
++
+   if (is_android) {
+     sources += [
+       "display/overlay_processor_android.cc",
+@@ -453,6 +462,12 @@ viz_component("service") {
+   }
+ }
+ 
++if (enable_brightsign_overlay_strategy) {
++    pkg_config("vid") {
++      packages = [ "vid_wrapper" ]
++    }
++}
++
+ viz_source_set("unit_tests") {
+   testonly = true
+   sources = [
+diff --git a/components/viz/service/display/overlay_processor_ozone.cc b/components/viz/service/display/overlay_processor_ozone.cc
+index ae69ffefaa9ebf51193f819e41e9f1425165eeb4..b73d77295f556dccaef7c5035729cd63afc1b436 100644
+--- a/components/viz/service/display/overlay_processor_ozone.cc
++++ b/components/viz/service/display/overlay_processor_ozone.cc
+@@ -30,6 +30,9 @@
+ #include "components/viz/service/display/overlay_strategy_underlay_cast.h"
+ #endif
+ 
++#if BUILDFLAG(ENABLE_BRIGHTSIGN_OVERLAY_STRATEGY)
++#include "components/viz/service/display/overlay_strategy_underlay_brightsign.h"
++#endif
+ namespace viz {
+ 
+ namespace {
+@@ -176,6 +179,12 @@ OverlayProcessorOzone::OverlayProcessorOzone(
+         strategies_.push_back(
+             std::make_unique<OverlayStrategyUnderlayCast>(this));
+         break;
++#endif
++#if BUILDFLAG(ENABLE_BRIGHTSIGN_OVERLAY_STRATEGY)
++      case OverlayStrategy::kUnderlayBrightsign:
++        strategies_.push_back(
++            std::make_unique<OverlayStrategyUnderlayBrightsign>(this));
++        break;
+ #endif
+       default:
+         NOTREACHED();
+diff --git a/components/viz/service/display/overlay_strategy_underlay_brightsign.cc b/components/viz/service/display/overlay_strategy_underlay_brightsign.cc
+new file mode 100644
+index 0000000000000000000000000000000000000000..eeebdd55296d5197f536136b992305ce46b6decd
+--- /dev/null
++++ b/components/viz/service/display/overlay_strategy_underlay_brightsign.cc
+@@ -0,0 +1,380 @@
++// Copyright 2017 The Chromium Authors. All rights reserved.
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#include "components/viz/service/display/overlay_strategy_underlay_brightsign.h"
++
++#include <libvid/vid_player_c_bindings.h>
++#include "base/containers/adapters.h"
++#include "base/lazy_instance.h"
++#include "base/logging.h"
++#include "base/threading/platform_thread.h"
++#include "base/unguessable_token.h"
++#include "build/chromecast_buildflags.h"
++#include "components/viz/common/quads/aggregated_render_pass_draw_quad.h"
++#include "components/viz/common/quads/draw_quad.h"
++#include "components/viz/common/quads/solid_color_draw_quad.h"
++#include "components/viz/common/quads/video_hole_draw_quad.h"
++#include "components/viz/service/display/overlay_candidate_factory.h"
++#include "ui/gfx/geometry/rect_conversions.h"
++
++namespace viz {
++
++OverlayStrategyUnderlayBrightsign::OverlayStrategyUnderlayBrightsign(
++    OverlayProcessorUsingStrategy* capability_checker)
++    : OverlayStrategyUnderlay(capability_checker) {}
++
++OverlayStrategyUnderlayBrightsign::~OverlayStrategyUnderlayBrightsign() {}
++
++void OverlayStrategyUnderlayBrightsign::VideoHoleDraw(
++    AggregatedRenderPassList* render_pass_list,
++    size_t index,
++    gfx::Transform transform,
++    double opacity,
++    std::vector<VideoHoleDrawQuad>* tokens,
++    std::vector<gfx::Rect>* content_bounds) {
++  // Go over render_pass_list and find VideoHoleQuad. Always reduce the index to
++  // avoid cyclic references.
++  if (index < 0) {
++    return;
++  }
++
++  bool is_top_layer = (index == render_pass_list->size() - 1);
++  auto render_pass = (*render_pass_list)[index].get();
++  QuadList& quad_list = render_pass->quad_list;
++
++  for (auto quad = quad_list.begin(); quad != quad_list.end(); ++quad) {
++    if (quad->material == DrawQuad::Material::kAggregatedRenderPass) {
++      auto agg_quad = AggregatedRenderPassDrawQuad::MaterialCast(*quad);
++      auto agg_transform =
++          transform * agg_quad->shared_quad_state->quad_to_target_transform;
++      auto agg_opacity = opacity * agg_quad->shared_quad_state->opacity;
++      while (index > 0) {
++        index--;
++        if ((*render_pass_list)[index]->id == agg_quad->render_pass_id) {
++          VideoHoleDraw(render_pass_list, index, agg_transform, agg_opacity,
++                        tokens, content_bounds);
++          if (is_top_layer) {
++            for (auto temp_quad : *tokens) {
++              quad =
++                  quad_list
++                      .InsertBeforeAndInvalidateAllPointers<VideoHoleDrawQuad>(
++                          quad, 1, temp_quad);
++              if (VideoHoleDrawQuad::MaterialCast(*quad)->z_index < 0) {
++                render_pass->ReplaceExistingQuadWithSolidColor(
++                    quad, SkColors::kTransparent, SkBlendMode::kSrcOver);
++              }
++            }
++          }
++        }
++      }
++      return;
++    }
++  }
++
++  gfx::Rect content_rect;
++  bool found_underlay = false;
++  for (const auto* quad : base::Reversed(quad_list)) {
++    if (OverlayCandidate::IsInvisibleQuad(quad)) {
++      continue;
++    }
++
++    const auto& ctransform =
++        quad->shared_quad_state->quad_to_target_transform * transform;
++    auto quad_rect = ctransform.MapRect(quad->rect);
++
++    bool is_underlay = false;
++    if (!found_underlay) {
++      OverlayCandidate candidate;
++      // Look for quads that are overlayable and require an overlay. Chromecast
++      // only supports a video underlay so this can't promote all quads that are
++      // overlayable, it needs to ensure that the quad requires overlays since
++      // that quad is side-channeled through a secure path into an overlay
++      // sitting underneath the primary plane. This is only looking at where the
++      // quad is supposed to be to replace it with a transparent quad to allow
++      // the underlay to be visible.
++      // VIDEO_HOLE implies it requires overlay.
++      is_underlay = quad->material == DrawQuad::Material::kVideoHole;
++      found_underlay = is_underlay;
++    }
++
++    if (!found_underlay && quad->material == DrawQuad::Material::kSolidColor) {
++      const SolidColorDrawQuad* solid = SolidColorDrawQuad::MaterialCast(quad);
++      if (solid->color == SkColors::kBlack) {
++        continue;
++      }
++    }
++
++    if (is_underlay) {
++      content_rect.Subtract(quad_rect);
++    } else {
++      content_rect.Union(quad_rect);
++    }
++  }
++
++  if (is_using_overlay_ != found_underlay) {
++    is_using_overlay_ = found_underlay;
++    LOG(INFO) << (found_underlay ? "Overlay activated" : "Overlay deactivated");
++  }
++
++  if (found_underlay) {
++    for (auto quad = quad_list.begin(); quad != quad_list.end(); ++quad) {
++      OverlayCandidate candidate;
++      if (quad->material != DrawQuad::Material::kVideoHole) {
++        continue;
++      }
++      gfx::Transform q_transform =
++          transform * quad->shared_quad_state->quad_to_target_transform;
++      auto q_rect = q_transform.MapRect(quad->rect);
++      VidPlayerRect b_display_rect = {q_rect.x(), q_rect.y(), q_rect.width(),
++                                      q_rect.height()};
++
++      VidPlayerRect b_clip_rect;
++      gfx::Rect c_rect;
++      if (quad->shared_quad_state->clip_rect) {
++        c_rect = transform.MapRect(*quad->shared_quad_state->clip_rect);
++        b_clip_rect.x = c_rect.x();
++        b_clip_rect.y = c_rect.y();
++        b_clip_rect.width = c_rect.width();
++        b_clip_rect.height = c_rect.height();
++      } else {
++        b_clip_rect = b_display_rect;
++      }
++
++      std::string overlay_plane_id =
++          VideoHoleDrawQuad::MaterialCast(*quad)->overlay_plane_id.ToString();
++      std::string factory_name =
++          VideoHoleDrawQuad::MaterialCast(*quad)->factory_name;
++
++      vid_player_set_geometry(factory_name.c_str(), overlay_plane_id.c_str(),
++                              b_display_rect, b_clip_rect);
++      vid_player_set_opacity(factory_name.c_str(), overlay_plane_id.c_str(),
++                             quad->shared_quad_state->opacity * opacity);
++
++      VideoHoleDrawQuad temp_quad = *VideoHoleDrawQuad::MaterialCast(*quad);
++      auto sqs = render_pass->CreateAndAppendSharedQuadState();
++      sqs->quad_to_target_transform = q_transform;
++      sqs->clip_rect = c_rect;
++      sqs->opacity = temp_quad.shared_quad_state->opacity * opacity;
++      temp_quad.shared_quad_state = sqs;
++      tokens->push_back(temp_quad);
++
++      if (VideoHoleDrawQuad::MaterialCast(*quad)->z_index < 0) {
++        render_pass->ReplaceExistingQuadWithSolidColor(quad, SkColors::kBlack,
++                                                       SkBlendMode::kDstOut);
++      }
++    }
++  }
++
++  DCHECK(content_bounds && content_bounds->empty());
++  if (found_underlay) {
++    content_bounds->push_back(content_rect);
++  }
++}
++
++bool OverlayStrategyUnderlayBrightsign::Attempt(
++    const SkM44& output_color_matrix,
++    const OverlayProcessorInterface::FilterOperationsMap&
++        render_pass_backdrop_filters,
++    DisplayResourceProvider* resource_provider,
++    AggregatedRenderPassList* render_pass_list,
++    SurfaceDamageRectList* surface_damage_rect_list,
++    const PrimaryPlane* primary_plane,
++    OverlayCandidateList* candidate_list,
++    std::vector<gfx::Rect>* content_bounds) {
++  // Before we attempt an overlay strategy, the candidate list should be empty.
++  DCHECK(candidate_list->empty());
++  std::vector<VideoHoleDrawQuad> tokens;
++  std::vector<std::string> token_string;
++  std::string factory_name;
++  VideoHoleDraw(render_pass_list, render_pass_list->size() - 1,
++                gfx::Transform(), 1.0, &tokens, content_bounds);
++  for (auto token : tokens) {
++    token_string.push_back(token.overlay_plane_id.ToString());
++    factory_name = token.factory_name;
++  }
++  std::sort(token_string.begin(), token_string.end());
++
++  // If list of video players on current and previous frame are same, do nothing
++  if (token_string != last_frame_player_list_) {
++    std::vector<std::string> difference;
++    // The newly added ones should be shown
++    std::set_difference(token_string.begin(), token_string.end(),
++                        last_frame_player_list_.begin(),
++                        last_frame_player_list_.end(),
++                        std::inserter(difference, difference.begin()));
++    for (const auto& item : difference) {
++      vid_player_set_visibility(factory_name.c_str(), item.c_str(),
++                                VID_PLAYER_VISIBLE);
++    }
++
++    difference.clear();
++
++    // The ones are removed from the list should be hidden
++    std::set_difference(last_frame_player_list_.begin(),
++                        last_frame_player_list_.end(), token_string.begin(),
++                        token_string.end(),
++                        std::inserter(difference, difference.begin()));
++    for (const auto& item : difference) {
++      vid_player_set_visibility(factory_name.c_str(), item.c_str(),
++                                VID_PLAYER_HIDDEN);
++    }
++
++    // Copy over the current frames' list over last_frame_player_list_
++    last_frame_player_list_ = token_string;
++  }
++
++  return !token_string.empty();
++}
++
++void OverlayStrategyUnderlayBrightsign::CommitCandidate(
++    const OverlayProposedCandidate& proposed_candidate,
++    AggregatedRenderPass* render_pass) {
++  if (proposed_candidate.candidate.has_mask_filter) {
++    render_pass->ReplaceExistingQuadWithSolidColor(
++        proposed_candidate.quad_iter, SkColors::kBlack, SkBlendMode::kDstOut);
++  } else {
++    render_pass->ReplaceExistingQuadWithSolidColor(proposed_candidate.quad_iter,
++                                                   SkColors::kTransparent,
++                                                   SkBlendMode::kSrcOver);
++  }
++}
++
++void OverlayStrategyUnderlayBrightsign::ProposePrioritized(
++    const SkM44& output_color_matrix,
++    const OverlayProcessorInterface::FilterOperationsMap&
++        render_pass_backdrop_filters,
++    DisplayResourceProvider* resource_provider,
++    AggregatedRenderPassList* render_pass_list,
++    SurfaceDamageRectList* surface_damage_rect_list,
++    const PrimaryPlane* primary_plane,
++    std::vector<OverlayProposedCandidate>* candidates,
++    std::vector<gfx::Rect>* content_bounds) {
++  auto* render_pass = render_pass_list->back().get();
++  QuadList& quad_list = render_pass->quad_list;
++  OverlayCandidate candidate;
++  auto overlay_iter = quad_list.end();
++  OverlayCandidateFactory candidate_factory = OverlayCandidateFactory(
++      render_pass, resource_provider, surface_damage_rect_list,
++      &output_color_matrix, GetPrimaryPlaneDisplayRect(primary_plane));
++
++  // Original code did reverse iteration.
++  // Here we do forward but find the last one. which should be the same thing.
++  for (auto it = quad_list.begin(); it != quad_list.end(); ++it) {
++    if (OverlayCandidate::IsInvisibleQuad(*it)) {
++      continue;
++    }
++
++    // Look for quads that are overlayable and require an overlay. Chromecast
++    // only supports a video underlay so this can't promote all quads that are
++    // overlayable, it needs to ensure that the quad requires overlays since
++    // that quad is side-channeled through a secure path into an overlay
++    // sitting underneath the primary plane. This is only looking at where the
++    // quad is supposed to be to replace it with a transparent quad to allow
++    // the underlay to be visible.
++    // VIDEO_HOLE implies it requires overlay.
++    if (it->material == DrawQuad::Material::kVideoHole &&
++        candidate_factory.FromDrawQuad(*it, candidate) ==
++            OverlayCandidate::CandidateStatus::kSuccess) {
++      overlay_iter = it;
++    }
++  }
++
++  if (overlay_iter != quad_list.end()) {
++    candidates->push_back({overlay_iter, candidate, this});
++  }
++}
++
++bool OverlayStrategyUnderlayBrightsign::AttemptPrioritized(
++    const SkM44& output_color_matrix,
++    const OverlayProcessorInterface::FilterOperationsMap&
++        render_pass_backdrop_filters,
++    DisplayResourceProvider* resource_provider,
++    AggregatedRenderPassList* render_pass_list,
++    SurfaceDamageRectList* surface_damage_rect_list,
++    const PrimaryPlane* primary_plane,
++    OverlayCandidateList* candidate_list,
++    std::vector<gfx::Rect>* content_bounds,
++    const OverlayProposedCandidate& proposed_candidate) {
++  // Before we attempt an overlay strategy, the candidate list should be empty.
++  DCHECK(candidate_list->empty());
++  auto* render_pass = render_pass_list->back().get();
++  QuadList& quad_list = render_pass->quad_list;
++  bool found_underlay = false;
++  gfx::Rect content_rect;
++  OverlayCandidateFactory candidate_factory = OverlayCandidateFactory(
++      render_pass, resource_provider, surface_damage_rect_list,
++      &output_color_matrix, GetPrimaryPlaneDisplayRect(primary_plane));
++
++  for (const auto* quad : base::Reversed(quad_list)) {
++    if (OverlayCandidate::IsInvisibleQuad(quad)) {
++      continue;
++    }
++
++    const auto& transform = quad->shared_quad_state->quad_to_target_transform;
++    gfx::Rect quad_rect = transform.MapRect(quad->rect);
++
++    bool is_underlay = false;
++    if (!found_underlay) {
++      OverlayCandidate candidate;
++      // Look for quads that are overlayable and require an overlay. Chromecast
++      // only supports a video underlay so this can't promote all quads that are
++      // overlayable, it needs to ensure that the quad requires overlays since
++      // that quad is side-channeled through a secure path into an overlay
++      // sitting underneath the primary plane. This is only looking at where the
++      // quad is supposed to be to replace it with a transparent quad to allow
++      // the underlay to be visible.
++      // VIDEO_HOLE implies it requires overlay.
++      is_underlay = quad->material == DrawQuad::Material::kVideoHole &&
++                    candidate_factory.FromDrawQuad(quad, candidate) ==
++                        OverlayCandidate::CandidateStatus::kSuccess;
++      found_underlay = is_underlay;
++    }
++
++    if (!found_underlay && quad->material == DrawQuad::Material::kSolidColor) {
++      const SolidColorDrawQuad* solid = SolidColorDrawQuad::MaterialCast(quad);
++      if (solid->color == SkColors::kBlack) {
++        continue;
++      }
++    }
++
++    if (is_underlay) {
++      content_rect.Subtract(quad_rect);
++    } else {
++      content_rect.Union(quad_rect);
++    }
++  }
++
++  if (is_using_overlay_ != found_underlay) {
++    is_using_overlay_ = found_underlay;
++    LOG(INFO) << (found_underlay ? "Overlay activated" : "Overlay deactivated");
++  }
++
++  if (found_underlay) {
++    for (auto it = quad_list.begin(); it != quad_list.end(); ++it) {
++      OverlayCandidate candidate;
++      if (it->material != DrawQuad::Material::kVideoHole ||
++          candidate_factory.FromDrawQuad(*it, candidate) !=
++              OverlayCandidate::CandidateStatus::kSuccess) {
++        continue;
++      }
++
++      OverlayProposedCandidate proposed_to_commit(it, candidate, this);
++      CommitCandidate(proposed_to_commit, render_pass);
++
++      break;
++    }
++  }
++
++  DCHECK(content_bounds && content_bounds->empty());
++  if (found_underlay) {
++    content_bounds->push_back(content_rect);
++  }
++  return found_underlay;
++}
++
++OverlayStrategy OverlayStrategyUnderlayBrightsign::GetUMAEnum() const {
++  return OverlayStrategy::kUnderlayBrightsign;
++}
++
++}  // namespace viz
+diff --git a/components/viz/service/display/overlay_strategy_underlay_brightsign.h b/components/viz/service/display/overlay_strategy_underlay_brightsign.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..8cdd4cc9ec6d2a3e23896916da81dfb496e8bd67
+--- /dev/null
++++ b/components/viz/service/display/overlay_strategy_underlay_brightsign.h
+@@ -0,0 +1,90 @@
++// Copyright 2017 The Chromium Authors. All rights reserved.
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#ifndef COMPONENTS_VIZ_SERVICE_DISPLAY_OVERLAY_STRATEGY_UNDERLAY_BRIGHTSIGN_H_
++#define COMPONENTS_VIZ_SERVICE_DISPLAY_OVERLAY_STRATEGY_UNDERLAY_BRIGHTSIGN_H_
++
++#include <memory>
++
++#include "base/callback.h"
++#include "build/chromecast_buildflags.h"
++#include "components/viz/service/display/overlay_strategy_underlay.h"
++#include "components/viz/service/viz_service_export.h"
++#include "ui/gfx/overlay_transform.h"
++
++namespace viz {
++class VideoHoleDrawQuad;
++// Similar to underlay strategy plus Brightsign-specific handling of content
++// bounds.
++class VIZ_SERVICE_EXPORT OverlayStrategyUnderlayBrightsign
++    : public OverlayStrategyUnderlay {
++ public:
++  explicit OverlayStrategyUnderlayBrightsign(
++      OverlayProcessorUsingStrategy* capability_checker);
++  OverlayStrategyUnderlayBrightsign(const OverlayStrategyUnderlayBrightsign&) =
++      delete;
++  OverlayStrategyUnderlayBrightsign& operator=(
++      const OverlayStrategyUnderlayBrightsign&) = delete;
++
++  ~OverlayStrategyUnderlayBrightsign() override;
++
++  bool Attempt(const SkM44& output_color_matrix,
++               const OverlayProcessorInterface::FilterOperationsMap&
++                   render_pass_backdrop_filters,
++               DisplayResourceProvider* resource_provider,
++               AggregatedRenderPassList* render_pass,
++               SurfaceDamageRectList* surface_damage_rect_list,
++               const PrimaryPlane* primary_plane,
++               OverlayCandidateList* candidate_list,
++               std::vector<gfx::Rect>* content_bounds) override;
++
++  void ProposePrioritized(const SkM44& output_color_matrix,
++                          const OverlayProcessorInterface::FilterOperationsMap&
++                              render_pass_backdrop_filters,
++                          DisplayResourceProvider* resource_provider,
++                          AggregatedRenderPassList* render_pass_list,
++                          SurfaceDamageRectList* surface_damage_rect_list,
++                          const PrimaryPlane* primary_plane,
++                          std::vector<OverlayProposedCandidate>* candidates,
++                          std::vector<gfx::Rect>* content_bounds) override;
++
++  bool AttemptPrioritized(
++      const SkM44& output_color_matrix,
++      const OverlayProcessorInterface::FilterOperationsMap&
++          render_pass_backdrop_filters,
++      DisplayResourceProvider* resource_provider,
++      AggregatedRenderPassList* render_pass_list,
++      SurfaceDamageRectList* surface_damage_rect_list,
++      const PrimaryPlane* primary_plane,
++      OverlayCandidateList* candidates,
++      std::vector<gfx::Rect>* content_bounds,
++      const OverlayProposedCandidate& proposed_candidate) override;
++
++  void CommitCandidate(const OverlayProposedCandidate& proposed_candidate,
++                       AggregatedRenderPass* render_pass) override;
++
++  // Callback that's made whenever an overlay quad is processed in the
++  // compositor. Used to allow hardware video plane to be positioned to match
++  // compositor hole.
++  using OverlayCompositedCallback =
++      base::RepeatingCallback<void(const gfx::RectF&, gfx::OverlayTransform)>;
++  static void SetOverlayCompositedCallback(const OverlayCompositedCallback& cb);
++
++  OverlayStrategy GetUMAEnum() const override;
++
++ private:
++  // Keep track if an overlay is being used on the previous frame.
++  bool is_using_overlay_ = false;
++  void VideoHoleDraw(AggregatedRenderPassList* render_pass_list,
++                     size_t index,
++                     gfx::Transform transform,
++                     double opacity,
++                     std::vector<VideoHoleDrawQuad>* tokens,
++                     std::vector<gfx::Rect>* content_bounds);
++  std::vector<std::string> last_frame_player_list_;
++};
++
++}  // namespace viz
++
++#endif  // COMPONENTS_VIZ_SERVICE_DISPLAY_OVERLAY_STRATEGY_UNDERLAY_BRIGHTSIGN_H_
+diff --git a/components/viz/viz.gni b/components/viz/viz.gni
+index c4b5a16a497bfb4d5d6da826d792e20a943ee2df..69cc4a6ceea61be1fbd3029dd2c147c72bf93ee8 100644
+--- a/components/viz/viz.gni
++++ b/components/viz/viz.gni
+@@ -22,6 +22,8 @@ enable_dawn_backend_tests = skia_use_dawn && enable_skia_dawn_gtests
+ # TODO(crbug.com/1336055): Determine whether is_cast_android needs this.
+ enable_cast_overlay_strategy = is_castos || is_cast_android
+ 
++enable_brightsign_overlay_strategy = is_brightsign
++
+ viz_remove_configs = []
+ viz_add_configs = [ "//build/config:precompiled_headers" ]
+ 
 diff --git a/content/browser/renderer_host/render_process_host_impl.cc b/content/browser/renderer_host/render_process_host_impl.cc
 index 7249e2ff8d4ab1a6aa3cfca227fd77e5201337c2..750f54fe0a58c966f7572bb0e5c4fc0fa6c5b076 100644
 --- a/content/browser/renderer_host/render_process_host_impl.cc
@@ -60,6 +797,113 @@ index 8af79cb1c152674f86e05361367de2e2ed4f9d68..e469a6217e144966564cb169761e30a2
  MEDIA_EXPORT extern const char kAudioBufferSize[];
  
  #if BUILDFLAG(ENABLE_PASSTHROUGH_AUDIO_CODECS)
+diff --git a/media/base/video_frame.cc b/media/base/video_frame.cc
+index 0b417c6ab855f0e86144b7c0213e862318f62898..23a26d75249c94f898bedd381a3819a659932eee 100644
+--- a/media/base/video_frame.cc
++++ b/media/base/video_frame.cc
+@@ -363,6 +363,21 @@ scoped_refptr<VideoFrame> VideoFrame::CreateVideoHoleFrame(
+   return frame;
+ }
+ 
++// static
++scoped_refptr<VideoFrame> VideoFrame::CreateBrightsignVideoHoleFrame(
++    const base::UnguessableToken& overlay_plane_id,
++    const gfx::Size& natural_size,
++    const std::string& factory_name,
++    int32_t z_index,
++    base::TimeDelta timestamp) {
++  scoped_refptr<VideoFrame> frame = CreateVideoHoleFrame(overlay_plane_id,
++                                                         natural_size, timestamp);
++  frame->metadata().factory_name = factory_name;
++  frame->metadata().z_index = z_index;
++  return frame;
++}
++
++
+ // static
+ scoped_refptr<VideoFrame> VideoFrame::CreateZeroInitializedFrame(
+     VideoPixelFormat format,
+diff --git a/media/base/video_frame.h b/media/base/video_frame.h
+index d54432cc00934bbe174f1922aeee11155204c0f3..e01f5debbac915695d9be3cebce7cc311d28bb96 100644
+--- a/media/base/video_frame.h
++++ b/media/base/video_frame.h
+@@ -160,6 +160,19 @@ class MEDIA_EXPORT VideoFrame : public base::RefCountedThreadSafe<VideoFrame> {
+       const gfx::Size& natural_size,
+       base::TimeDelta timestamp);
+ 
++
++  // Used by Brightsign only
++  // This is very similar to VideoHole frame by Chromecast. In addition to
++  // Unguessable id, Brightsign passes factory_name to identify which render
++  // process instance is making the request, z-index to determine if the
++  // video will be under or over the graphics plane.
++  static scoped_refptr<VideoFrame> CreateBrightsignVideoHoleFrame(
++      const base::UnguessableToken& overlay_plane_id,
++      const gfx::Size& natural_size,
++      const std::string& factory_name,
++      int32_t   z_index,
++      base::TimeDelta timestamp);
++
+   // Offers the same functionality as CreateFrame, and additionally zeroes out
+   // the initial allocated buffers.
+   static scoped_refptr<VideoFrame> CreateZeroInitializedFrame(
+diff --git a/media/base/video_frame_metadata.cc b/media/base/video_frame_metadata.cc
+index 2f6c08c4185f139a1fa22fcd4945e42fbcb7069d..d9f329509be8c498187c09bdce353eb1d012242c 100644
+--- a/media/base/video_frame_metadata.cc
++++ b/media/base/video_frame_metadata.cc
+@@ -10,17 +10,19 @@
+ 
+ #include "base/check_op.h"
+ #include "ui/gfx/geometry/rect.h"
++#include "third_party/blink/renderer/platform/wtf/std_lib_extras.h"
+ 
+ namespace media {
+ 
+ VideoFrameMetadata::VideoFrameMetadata() = default;
++VideoFrameMetadata::~VideoFrameMetadata() = default;
+ 
+ VideoFrameMetadata::VideoFrameMetadata(const VideoFrameMetadata& other) =
+     default;
+ 
+ void VideoFrameMetadata::MergeMetadataFrom(
+     const VideoFrameMetadata& metadata_source) {
+-  static const VideoFrameMetadata kDefaultMetadata;
++  DEFINE_STATIC_LOCAL(const VideoFrameMetadata, kDefaultMetadata, ());
+ 
+ #define MERGE_OPTIONAL_FIELD(a, source) \
+   if (source.a)                         \
+@@ -70,6 +72,8 @@ void VideoFrameMetadata::MergeMetadataFrom(
+   MERGE_OPTIONAL_FIELD(receive_time, metadata_source);
+   MERGE_OPTIONAL_FIELD(wallclock_frame_duration, metadata_source);
+   MERGE_OPTIONAL_FIELD(maximum_composition_delay_in_frames, metadata_source);
++  MERGE_OPTIONAL_FIELD(z_index, metadata_source);
++  MERGE_OPTIONAL_FIELD(factory_name, metadata_source);
+ 
+ #undef MERGE_VALUE_FIELD
+ #undef MERGE_OPTIONAL_FIELD
+diff --git a/media/base/video_frame_metadata.h b/media/base/video_frame_metadata.h
+index a67c069164e440c95c417daa5909c5ff825f0718..860daab35a99a19cdcaac334fb8028cfd571be1f 100644
+--- a/media/base/video_frame_metadata.h
++++ b/media/base/video_frame_metadata.h
+@@ -20,7 +20,7 @@ namespace media {
+ // MergeMetadataFrom() method.
+ struct MEDIA_EXPORT VideoFrameMetadata {
+   VideoFrameMetadata();
+-  ~VideoFrameMetadata() = default;
++  ~VideoFrameMetadata();
+ 
+   VideoFrameMetadata(const VideoFrameMetadata& other);
+ 
+@@ -217,6 +217,9 @@ struct MEDIA_EXPORT VideoFrameMetadata {
+   // This is an experimental feature, see crbug.com/1138888 for more
+   // information.
+   absl::optional<int> maximum_composition_delay_in_frames;
++
++  absl::optional<int> z_index;
++  absl::optional<std::string> factory_name;
+ };
+ 
+ }  // namespace media
 diff --git a/media/media_options.gni b/media/media_options.gni
 index f4696a202630616c07780be132a66625dab95c5c..92b91abe1d18ee270dc583becd1ed2a93caca32e 100644
 --- a/media/media_options.gni
@@ -82,6 +926,220 @@ index f4696a202630616c07780be132a66625dab95c5c..92b91abe1d18ee270dc583becd1ed2a9
  }
  
  # Use another declare_args() to allow dependence on args defined above.
+diff --git a/media/renderers/video_overlay_factory.cc b/media/renderers/video_overlay_factory.cc
+index 4bbb14b6c3029a7b365b39b05bbb9f429735e291..b25c5e53ac02fa2f0c8bf74635916298249845b3 100644
+--- a/media/renderers/video_overlay_factory.cc
++++ b/media/renderers/video_overlay_factory.cc
+@@ -35,4 +35,30 @@ scoped_refptr<VideoFrame> VideoOverlayFactory::CreateFrame(
+   return frame;
+ }
+ 
++scoped_refptr<VideoFrame> VideoOverlayFactory::CreateFrame(
++    const gfx::Size& size,
++    const std::string& factory_name,
++    int32_t z_index
++    ) {
++
++  // Frame size empty => video has one dimension = 0.
++  // Dimension 0 case triggers a DCHECK later on if we push through the overlay
++  // path.
++  if (size.IsEmpty()) {
++    DVLOG(1) << "Create black frame " << size.width() << "x" << size.height();
++    return VideoFrame::CreateBlackFrame(gfx::Size(1, 1));
++  }
++
++  DVLOG(2) << "Create video overlay frame: " << size.ToString();
++  scoped_refptr<VideoFrame> frame =
++      VideoFrame::CreateBrightsignVideoHoleFrame(overlay_plane_id_,
++                                       size,                // natural size
++                                       factory_name,
++                                       z_index,
++                                       base::TimeDelta());  // timestamp
++  DCHECK(frame);
++  return frame;
++}
++
++
+ }  // namespace media
+diff --git a/media/renderers/video_overlay_factory.h b/media/renderers/video_overlay_factory.h
+index 4cf02a77d08ca3426cc961d365f0396fd1fb0cdd..e89bba5d9880aa0aab9a82bf1655629f9a9cfe59 100644
+--- a/media/renderers/video_overlay_factory.h
++++ b/media/renderers/video_overlay_factory.h
+@@ -29,6 +29,8 @@ class MEDIA_EXPORT VideoOverlayFactory {
+   ~VideoOverlayFactory();
+ 
+   scoped_refptr<::media::VideoFrame> CreateFrame(const gfx::Size& size);
++  scoped_refptr<::media::VideoFrame> CreateFrame(const gfx::Size& size, const std::string& factory_name,
++          int32_t z_index);
+   const base::UnguessableToken& overlay_plane_id() const {
+     return overlay_plane_id_;
+   }
+@@ -40,4 +42,4 @@ class MEDIA_EXPORT VideoOverlayFactory {
+ 
+ }  // namespace media
+ 
+-#endif  // MEDIA_RENDERERS_VIDEO_OVERLAY_FACTORY_H_
+\ No newline at end of file
++#endif  // MEDIA_RENDERERS_VIDEO_OVERLAY_FACTORY_H_
+diff --git a/media/renderers/video_resource_updater.cc b/media/renderers/video_resource_updater.cc
+index 701fe27595cde671bdbd5fde9c1a9a037878c533..6a7f111ac9b5b12004af7d33fc9f1fd104d4a78d 100644
+--- a/media/renderers/video_resource_updater.cc
++++ b/media/renderers/video_resource_updater.cc
+@@ -595,6 +595,8 @@ void VideoResourceUpdater::ObtainFrameResources(
+     // This is a hole punching VideoFrame, there is nothing to display.
+     overlay_plane_id_ = *video_frame->metadata().overlay_plane_id;
+     frame_resource_type_ = VideoFrameResourceType::VIDEO_HOLE;
++    factory_name_ = *video_frame->metadata().factory_name;
++    z_index_ = *video_frame->metadata().z_index;
+     return;
+   }
+ 
+@@ -666,7 +668,7 @@ void VideoResourceUpdater::AppendQuads(
+       auto* video_hole_quad =
+           render_pass->CreateAndAppendDrawQuad<viz::VideoHoleDrawQuad>();
+       video_hole_quad->SetNew(shared_quad_state, quad_rect, visible_quad_rect,
+-                              overlay_plane_id_);
++                              overlay_plane_id_, factory_name_, z_index_);
+       break;
+     }
+     case VideoFrameResourceType::YUV: {
+diff --git a/media/renderers/video_resource_updater.h b/media/renderers/video_resource_updater.h
+index e15a0848ecb591d7ae583881eea8248eb97e125c..556c98a3db3d54d2112746c935966051cff39630 100644
+--- a/media/renderers/video_resource_updater.h
++++ b/media/renderers/video_resource_updater.h
+@@ -234,6 +234,11 @@ class MEDIA_EXPORT VideoResourceUpdater
+   // overlay, but there is no video content to display within VideoFrame.
+   base::UnguessableToken overlay_plane_id_;
+ 
++  // In addition to overlay_plane_id_, Brightsign requires factory_name_ and
++  // z_index_
++  std::string factory_name_;
++  int32_t z_index_;
++
+   // Resources allocated by VideoResourceUpdater. Used to recycle resources so
+   // we can reduce the number of allocations and data transfers.
+   std::vector<std::unique_ptr<PlaneResource>> all_resources_;
+diff --git a/services/viz/privileged/cpp/overlay_strategy_mojom_traits.h b/services/viz/privileged/cpp/overlay_strategy_mojom_traits.h
+index fcea817457ad610a30f54052e4fb378c9b604ef0..ce15511e8aeb3dbb156b5f38ee85a2fccd671017 100644
+--- a/services/viz/privileged/cpp/overlay_strategy_mojom_traits.h
++++ b/services/viz/privileged/cpp/overlay_strategy_mojom_traits.h
+@@ -25,6 +25,10 @@ struct EnumTraits<viz::mojom::OverlayStrategy, viz::OverlayStrategy> {
+ #if BUILDFLAG(ENABLE_CAST_OVERLAY_STRATEGY)
+       case viz::OverlayStrategy::kUnderlayCast:
+         return viz::mojom::OverlayStrategy::kUnderlayCast;
++#endif
++#if BUILDFLAG(ENABLE_BRIGHTSIGN_OVERLAY_STRATEGY)
++      case viz::OverlayStrategy::kUnderlayBrightsign:
++        return viz::mojom::OverlayStrategy::kUnderlayBrightsign;
+ #endif
+       default:
+         break;
+@@ -50,6 +54,12 @@ struct EnumTraits<viz::mojom::OverlayStrategy, viz::OverlayStrategy> {
+         *out = viz::OverlayStrategy::kUnderlayCast;
+         return true;
+ #endif
++
++#if BUILDFLAG(ENABLE_BRIGHTSIGN_OVERLAY_STRATEGY)
++      case viz::mojom::OverlayStrategy::kUnderlayBrightsign:
++        *out = viz::OverlayStrategy::kUnderlayBrightsign;
++        return true;
++#endif
+     }
+     return false;
+   }
+diff --git a/services/viz/privileged/mojom/compositing/BUILD.gn b/services/viz/privileged/mojom/compositing/BUILD.gn
+index 1da189d573ccec6a56b2d3d669daa2fa9cf79e30..25ef93d3bab74164a53b243cd65d806aaa26880c 100644
+--- a/services/viz/privileged/mojom/compositing/BUILD.gn
++++ b/services/viz/privileged/mojom/compositing/BUILD.gn
+@@ -44,6 +44,10 @@ mojom("compositing") {
+     enabled_features += [ "enable_cast_overlay_strategy" ]
+   }
+ 
++  if (enable_brightsign_overlay_strategy) {
++    enabled_features += [ "enable_brightsign_overlay_strategy" ]
++  }
++
+   cpp_typemaps = [
+     {
+       types = [
+diff --git a/services/viz/privileged/mojom/compositing/overlay_strategy.mojom b/services/viz/privileged/mojom/compositing/overlay_strategy.mojom
+index a4176d61db19de22add1f7bf10008afbe38b7b03..7bdaf8990d9f25ba45aa944b124eb35984274ef8 100644
+--- a/services/viz/privileged/mojom/compositing/overlay_strategy.mojom
++++ b/services/viz/privileged/mojom/compositing/overlay_strategy.mojom
+@@ -15,4 +15,8 @@ enum OverlayStrategy {
+ 
+   [EnableIf=enable_cast_overlay_strategy]
+   kUnderlayCast,
++
++  [EnableIf=enable_brightsign_overlay_strategy]
++  kUnderlayBrightsign,
++
+ };
+diff --git a/services/viz/public/cpp/compositing/quads_mojom_traits.cc b/services/viz/public/cpp/compositing/quads_mojom_traits.cc
+index e266779585e11f219adadf1b0ab0ea4315435b2b..e253784daef2a40917aeef0807848168e825be60 100644
+--- a/services/viz/public/cpp/compositing/quads_mojom_traits.cc
++++ b/services/viz/public/cpp/compositing/quads_mojom_traits.cc
+@@ -5,6 +5,7 @@
+ #include "services/viz/public/cpp/compositing/quads_mojom_traits.h"
+ 
+ #include "base/notreached.h"
++#include "base/strings/string_util.h"
+ #include "components/viz/common/quads/shared_element_draw_quad.h"
+ #include "components/viz/common/quads/texture_draw_quad.h"
+ #include "services/viz/public/cpp/compositing/compositor_render_pass_id_mojom_traits.h"
+@@ -206,7 +207,13 @@ bool StructTraits<viz::mojom::VideoHoleQuadStateDataView, viz::DrawQuad>::Read(
+     viz::DrawQuad* out) {
+   viz::VideoHoleDrawQuad* video_hole_quad =
+       static_cast<viz::VideoHoleDrawQuad*>(out);
+-  return data.ReadOverlayPlaneId(&video_hole_quad->overlay_plane_id);
++  std::string fn;
++  bool success = data.ReadFactoryName(&fn) && (fn.length() < FACTORY_NAME_SIZE);
++  if (success)
++    base::strlcpy(video_hole_quad->factory_name, fn.c_str(), FACTORY_NAME_SIZE);
++  video_hole_quad->z_index = data.z_index();
++  return data.ReadOverlayPlaneId(&video_hole_quad->overlay_plane_id)
++      && success;
+ }
+ 
+ // static
+diff --git a/services/viz/public/cpp/compositing/quads_mojom_traits.h b/services/viz/public/cpp/compositing/quads_mojom_traits.h
+index 39794cd40e3644d9aac4a8168503c04d931a2596..c2ea2ae756bd63d6ae23f19b4372a38f44f99565 100644
+--- a/services/viz/public/cpp/compositing/quads_mojom_traits.h
++++ b/services/viz/public/cpp/compositing/quads_mojom_traits.h
+@@ -237,6 +237,20 @@ struct StructTraits<viz::mojom::VideoHoleQuadStateDataView, viz::DrawQuad> {
+     return quad->overlay_plane_id;
+   }
+ 
++  static std::string factory_name(
++      const viz::DrawQuad& input) {
++    const viz::VideoHoleDrawQuad* quad =
++        viz::VideoHoleDrawQuad::MaterialCast(&input);
++    return quad->factory_name;
++  }
++
++  static int32_t z_index(
++    const viz::DrawQuad& input) {
++    const viz::VideoHoleDrawQuad* quad =
++        viz::VideoHoleDrawQuad::MaterialCast(&input);
++    return quad->z_index;
++  }
++
+   static bool Read(viz::mojom::VideoHoleQuadStateDataView data,
+                    viz::DrawQuad* out);
+ };
+diff --git a/services/viz/public/mojom/compositing/quads.mojom b/services/viz/public/mojom/compositing/quads.mojom
+index 8d4b4721981e9d3c07b131045c0755853d93c3dd..c40b9f3e4054666807806b814011d6f2cfc5c589 100644
+--- a/services/viz/public/mojom/compositing/quads.mojom
++++ b/services/viz/public/mojom/compositing/quads.mojom
+@@ -127,6 +127,8 @@ struct YUVVideoQuadState {
+ 
+ struct VideoHoleQuadState {
+   mojo_base.mojom.UnguessableToken overlay_plane_id;
++  string factory_name;
++  int32 z_index;
+ };
+ 
+ struct SharedElementQuadState {
 diff --git a/third_party/blink/renderer/platform/media/BUILD.gn b/third_party/blink/renderer/platform/media/BUILD.gn
 index 71f2cb5d8c38a8a9bdf79fb189e7f080510f1934..2b3096ed5ba41df870f54a3cb840aadb0eb31808 100644
 --- a/third_party/blink/renderer/platform/media/BUILD.gn
@@ -127,10 +1185,10 @@ index 71f2cb5d8c38a8a9bdf79fb189e7f080510f1934..2b3096ed5ba41df870f54a3cb840aadb
  source_set("unit_tests") {
 diff --git a/third_party/blink/renderer/platform/media/brightsign/video_player_proxy.cc b/third_party/blink/renderer/platform/media/brightsign/video_player_proxy.cc
 new file mode 100644
-index 0000000000000000000000000000000000000000..02ba79772dd11a2542ed9559498600137eb63979
+index 0000000000000000000000000000000000000000..5d5ed47845fc02e272bc6f9f128caad8f94244ee
 --- /dev/null
 +++ b/third_party/blink/renderer/platform/media/brightsign/video_player_proxy.cc
-@@ -0,0 +1,135 @@
+@@ -0,0 +1,115 @@
 +#include "third_party/blink/renderer/platform/media/brightsign/video_player_proxy.h"
 +
 +#include "base/bind.h"
@@ -139,12 +1197,6 @@ index 0000000000000000000000000000000000000000..02ba79772dd11a2542ed955949860013
 +#include "third_party/blink/renderer/platform/media/brightsign/web_media_player_brightsign.h"
 +
 +using namespace brightsign;
-+
-+#define BS_DEBUG(...)                 \
-+  do {                                \
-+    if (0)                            \
-+      fprintf(stderr, ##__VA_ARGS__); \
-+  } while (0)
 +
 +namespace blink {
 +
@@ -161,21 +1213,18 @@ index 0000000000000000000000000000000000000000..02ba79772dd11a2542ed955949860013
 +
 +void VidPlayerListenerProxy::ErrorCallback(enum VidPlayerErrorCode error_code,
 +                                     const char* message) {
-+  BS_DEBUG("%s:%d\n", __PRETTY_FUNCTION__, __LINE__);
 +  main_task_runner_->PostTask(
 +      FROM_HERE, base::BindOnce(&WebMediaPlayerBrightsign::ErrorCallback,
 +                                web_media_player_, error_code, message));
 +}
 +
 +void VidPlayerListenerProxy::PlaybackStartedCallback() {
-+  BS_DEBUG("%s:%d\n", __PRETTY_FUNCTION__, __LINE__);
 +  main_task_runner_->PostTask(
 +      FROM_HERE, base::BindOnce(&WebMediaPlayerBrightsign::PlaybackStartedCallback,
 +                                web_media_player_));
 +}
 +
 +void VidPlayerListenerProxy::PlaybackCompletedCallback() {
-+  BS_DEBUG("%s:%d\n", __PRETTY_FUNCTION__, __LINE__);
 +  main_task_runner_->PostTask(
 +      FROM_HERE, base::BindOnce(&WebMediaPlayerBrightsign::PlaybackCompletedCallback,
 +                                web_media_player_));
@@ -183,8 +1232,6 @@ index 0000000000000000000000000000000000000000..02ba79772dd11a2542ed955949860013
 +
 +void VidPlayerListenerProxy::LoadCallback(
 +    int64_t current_time, const StringMapVector& video_tracks,const StringMapVector& audio_tracks, const StringMapVector& text_tracks){
-+
-+  BS_DEBUG("%s:%d\n", __PRETTY_FUNCTION__, __LINE__);
 +  main_task_runner_->PostTask(
 +      FROM_HERE,
 +      base::BindOnce(&WebMediaPlayerBrightsign::LoadCallback, web_media_player_,
@@ -193,7 +1240,6 @@ index 0000000000000000000000000000000000000000..02ba79772dd11a2542ed955949860013
 +
 +void VidPlayerListenerProxy::SeekCompletedCallback(
 +    int64_t current_time) {
-+  BS_DEBUG("%s:%d\n", __PRETTY_FUNCTION__, __LINE__);
 +  main_task_runner_->PostTask(
 +      FROM_HERE, base::BindOnce(&WebMediaPlayerBrightsign::SeekCompletedCallback,
 +                                web_media_player_, current_time));
@@ -201,18 +1247,16 @@ index 0000000000000000000000000000000000000000..02ba79772dd11a2542ed955949860013
 +
 +void VidPlayerListenerProxy::VideoSizeChangedCallback(uint32_t width,
 +                                                uint32_t height,
-+                                                bool video_on_graphics) {
-+  BS_DEBUG("%s:%d\n", __PRETTY_FUNCTION__, __LINE__);
++                                                int32_t z_index) {
 +  main_task_runner_->PostTask(
 +      FROM_HERE,
 +      base::BindOnce(&WebMediaPlayerBrightsign::VideoSizeChangedCallback,
-+                     web_media_player_, width, height, video_on_graphics));
++                     web_media_player_, width, height, z_index));
 +}
 +
 +void VidPlayerListenerProxy::PlaybackPositionUpdatedCallback(
 +    int64_t  current_time,
 +    const VidPlayerDecodeStatistics &decode_stats) {
-+  BS_DEBUG("%s:%d\n", __PRETTY_FUNCTION__, __LINE__);
 +  main_task_runner_->PostTask(
 +      FROM_HERE,
 +      base::BindOnce(&WebMediaPlayerBrightsign::PlaybackPositionUpdatedCallback,
@@ -221,28 +1265,24 @@ index 0000000000000000000000000000000000000000..02ba79772dd11a2542ed955949860013
 +
 +void VidPlayerListenerProxy::DurationChangedCallback(
 +    int64_t duration) {
-+  BS_DEBUG("%s:%d\n", __PRETTY_FUNCTION__, __LINE__);
 +  main_task_runner_->PostTask(
 +      FROM_HERE, base::BindOnce(&WebMediaPlayerBrightsign::DurationChangedCallback,
 +                                web_media_player_, duration));
 +}
 +
 +void VidPlayerListenerProxy::ReleasedCallback() {
-+  BS_DEBUG("%s:%d\n", __PRETTY_FUNCTION__, __LINE__);
 +  main_task_runner_->PostTask(
 +      FROM_HERE,
 +      base::BindOnce(&WebMediaPlayerBrightsign::ReleasedCallback, web_media_player_));
 +}
 +
 +void VidPlayerListenerProxy::PausedCallback() {
-+  BS_DEBUG("%s:%d\n", __PRETTY_FUNCTION__, __LINE__);
 +  main_task_runner_->PostTask(
 +      FROM_HERE,
 +      base::BindOnce(&WebMediaPlayerBrightsign::PausedCallback, web_media_player_));
 +}
 +
 +void VidPlayerListenerProxy::FrameReadyCallback() {
-+  BS_DEBUG("%s:%d\n", __PRETTY_FUNCTION__, __LINE__);
 +  main_task_runner_->PostTask(
 +      FROM_HERE, base::BindOnce(&WebMediaPlayerBrightsign::FrameReadyCallback,
 +                                web_media_player_));
@@ -250,7 +1290,6 @@ index 0000000000000000000000000000000000000000..02ba79772dd11a2542ed955949860013
 +
 +void VidPlayerListenerProxy::SubtitleUpdatedCallback(
 +    const StringMapVector& text_tracks) {
-+  BS_DEBUG("%s:%d\n", __PRETTY_FUNCTION__, __LINE__);
 +  main_task_runner_->PostTask(
 +      FROM_HERE, base::BindOnce(&WebMediaPlayerBrightsign::SubtitleUpdatedCallback,
 +                                web_media_player_, text_tracks));
@@ -258,7 +1297,6 @@ index 0000000000000000000000000000000000000000..02ba79772dd11a2542ed955949860013
 +
 +void VidPlayerListenerProxy::TextureMailboxReadyCallback(
 +    const VidPlayerMailboxData& mbox) {
-+  BS_DEBUG("%s:%d\n", __PRETTY_FUNCTION__, __LINE__);
 +  main_task_runner_->PostTask(
 +      FROM_HERE,
 +      base::BindOnce(&WebMediaPlayerBrightsign::TextureMailboxReadyCallback,
@@ -268,7 +1306,7 @@ index 0000000000000000000000000000000000000000..02ba79772dd11a2542ed955949860013
 +}  // namespace blink
 diff --git a/third_party/blink/renderer/platform/media/brightsign/video_player_proxy.h b/third_party/blink/renderer/platform/media/brightsign/video_player_proxy.h
 new file mode 100644
-index 0000000000000000000000000000000000000000..ec11c71e812011794588d6ce04ad1db8c6ffb25b
+index 0000000000000000000000000000000000000000..a01e4753227d19b6b2b3dfcb880d7f50e013bfde
 --- /dev/null
 +++ b/third_party/blink/renderer/platform/media/brightsign/video_player_proxy.h
 @@ -0,0 +1,50 @@
@@ -304,7 +1342,7 @@ index 0000000000000000000000000000000000000000..ec11c71e812011794588d6ce04ad1db8
 +  void PlaybackCompletedCallback();
 +  void LoadCallback(int64_t duration, const StringMapVector& video_tracks,const StringMapVector& audio_tracks, const StringMapVector& text_tracks);
 +  void VideoSizeChangedCallback(uint32_t width, uint32_t height,
-+                                                      bool video_on_graphics);
++                                                      int32_t z_index);
 +  void PlaybackPositionUpdatedCallback(int64_t current_time,
 +                                                             const VidPlayerDecodeStatistics& stats);
 +  void DurationChangedCallback(int64_t current_time);
@@ -324,10 +1362,10 @@ index 0000000000000000000000000000000000000000..ec11c71e812011794588d6ce04ad1db8
 +#endif
 diff --git a/third_party/blink/renderer/platform/media/brightsign/web_media_player_brightsign.cc b/third_party/blink/renderer/platform/media/brightsign/web_media_player_brightsign.cc
 new file mode 100644
-index 0000000000000000000000000000000000000000..f00a8437762f1eb6495c16dbcb1943343e2a5980
+index 0000000000000000000000000000000000000000..ffca436d25943741e03ba10210dad3442c796bcb
 --- /dev/null
 +++ b/third_party/blink/renderer/platform/media/brightsign/web_media_player_brightsign.cc
-@@ -0,0 +1,782 @@
+@@ -0,0 +1,791 @@
 +// Copyright 2017 The Chromium Authors
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
@@ -355,85 +1393,101 @@ index 0000000000000000000000000000000000000000..f00a8437762f1eb6495c16dbcb194334
 +using media::BindToCurrentLoop;
 +namespace blink {
 +
-+static void VidPlayerErrorCallback(void *context, enum VidPlayerErrorCode code, const char *message)
-+{
-+    VidPlayerListenerProxy* vid_player_listener = static_cast<VidPlayerListenerProxy*>(context);
-+    vid_player_listener->ErrorCallback(code, message);
++static void VidPlayerErrorCallback(void* context,
++                                   enum VidPlayerErrorCode code,
++                                   const char* message) {
++  VidPlayerListenerProxy* vid_player_listener =
++      static_cast<VidPlayerListenerProxy*>(context);
++  vid_player_listener->ErrorCallback(code, message);
 +}
 +
-+static void VidPlayerPlaybackStartedCallback(void *context)
-+{
-+    VidPlayerListenerProxy* vid_player_listener = static_cast<VidPlayerListenerProxy*>(context);
-+    vid_player_listener->PlaybackStartedCallback();
++static void VidPlayerPlaybackStartedCallback(void* context) {
++  VidPlayerListenerProxy* vid_player_listener =
++      static_cast<VidPlayerListenerProxy*>(context);
++  vid_player_listener->PlaybackStartedCallback();
 +}
 +
-+static void VidPlayerPlaybackCompletedCallback(void *context)
-+{
-+    VidPlayerListenerProxy* vid_player_listener = static_cast<VidPlayerListenerProxy*>(context);
-+    vid_player_listener->PlaybackCompletedCallback();
++static void VidPlayerPlaybackCompletedCallback(void* context) {
++  VidPlayerListenerProxy* vid_player_listener =
++      static_cast<VidPlayerListenerProxy*>(context);
++  vid_player_listener->PlaybackCompletedCallback();
 +}
 +
-+static void VidPlayerLoadCallback(void *context, int64_t duration, const StringMapVector& video_tracks,
-+                                          const StringMapVector& audio_tracks, const StringMapVector& text_tracks)
-+{
-+    VidPlayerListenerProxy* vid_player_listener = static_cast<VidPlayerListenerProxy*>(context);
-+    vid_player_listener->LoadCallback(duration, video_tracks, audio_tracks, text_tracks);
++static void VidPlayerLoadCallback(void* context,
++                                  int64_t duration,
++                                  const StringMapVector& video_tracks,
++                                  const StringMapVector& audio_tracks,
++                                  const StringMapVector& text_tracks) {
++  VidPlayerListenerProxy* vid_player_listener =
++      static_cast<VidPlayerListenerProxy*>(context);
++  vid_player_listener->LoadCallback(duration, video_tracks, audio_tracks,
++                                    text_tracks);
 +}
 +
-+static void VidPlayerVideoSizeChangedCallback(void *context, uint32_t width, uint32_t height,
-+                                                      int video_on_graphics)
-+{
-+    VidPlayerListenerProxy* vid_player_listener = static_cast<VidPlayerListenerProxy*>(context);
-+    vid_player_listener->VideoSizeChangedCallback(width, height, video_on_graphics);
++static void VidPlayerVideoSizeChangedCallback(void* context,
++                                              uint32_t width,
++                                              uint32_t height,
++                                              int z_index) {
++  VidPlayerListenerProxy* vid_player_listener =
++      static_cast<VidPlayerListenerProxy*>(context);
++  vid_player_listener->VideoSizeChangedCallback(width, height, z_index);
 +}
 +
-+static void VidPlayerPlaybackPositionUpdatedCallback(void *context, int64_t current_time,
-+                                                             const VidPlayerDecodeStatistics& stats)
-+{
-+    VidPlayerListenerProxy* vid_player_listener = static_cast<VidPlayerListenerProxy*>(context);
-+    vid_player_listener->PlaybackPositionUpdatedCallback(current_time, stats);
++static void VidPlayerPlaybackPositionUpdatedCallback(
++    void* context,
++    int64_t current_time,
++    const VidPlayerDecodeStatistics& stats) {
++  VidPlayerListenerProxy* vid_player_listener =
++      static_cast<VidPlayerListenerProxy*>(context);
++  vid_player_listener->PlaybackPositionUpdatedCallback(current_time, stats);
 +}
 +
-+static void VidPlayerDurationChangedCallback(void *context, int64_t current_time)
-+{
-+    VidPlayerListenerProxy* vid_player_listener = static_cast<VidPlayerListenerProxy*>(context);
-+    vid_player_listener->DurationChangedCallback(current_time);
++static void VidPlayerDurationChangedCallback(void* context,
++                                             int64_t current_time) {
++  VidPlayerListenerProxy* vid_player_listener =
++      static_cast<VidPlayerListenerProxy*>(context);
++  vid_player_listener->DurationChangedCallback(current_time);
 +}
 +
-+static void VidPlayerPausedCallback(void *context)
-+{
-+    VidPlayerListenerProxy* vid_player_listener = static_cast<VidPlayerListenerProxy*>(context);
-+    vid_player_listener->PausedCallback();
++static void VidPlayerPausedCallback(void* context) {
++  VidPlayerListenerProxy* vid_player_listener =
++      static_cast<VidPlayerListenerProxy*>(context);
++  vid_player_listener->PausedCallback();
 +}
 +
-+static void VidPlayerSeekCompletedCallback(void *context, int64_t current_time)
-+{
-+    VidPlayerListenerProxy* vid_player_listener = static_cast<VidPlayerListenerProxy*>(context);
-+    vid_player_listener->SeekCompletedCallback(current_time);
++static void VidPlayerSeekCompletedCallback(void* context,
++                                           int64_t current_time) {
++  VidPlayerListenerProxy* vid_player_listener =
++      static_cast<VidPlayerListenerProxy*>(context);
++  vid_player_listener->SeekCompletedCallback(current_time);
 +}
 +
-+static void VidPlayerReleasedCallback(void *context)
-+{
-+    VidPlayerListenerProxy* vid_player_listener = static_cast<VidPlayerListenerProxy*>(context);
-+    vid_player_listener->ReleasedCallback();
++static void VidPlayerReleasedCallback(void* context) {
++  VidPlayerListenerProxy* vid_player_listener =
++      static_cast<VidPlayerListenerProxy*>(context);
++  vid_player_listener->ReleasedCallback();
 +}
 +
-+static void VidPlayerFrameReadyCallback(void *context)
-+{
-+    VidPlayerListenerProxy* vid_player_listener = static_cast<VidPlayerListenerProxy*>(context);
-+    vid_player_listener->FrameReadyCallback();
++static void VidPlayerFrameReadyCallback(void* context) {
++  VidPlayerListenerProxy* vid_player_listener =
++      static_cast<VidPlayerListenerProxy*>(context);
++  vid_player_listener->FrameReadyCallback();
 +}
 +
-+static void VidPlayerSubtitleUpdatedCallback(void *context, const StringMapVector& text_tracks)
-+{
-+    VidPlayerListenerProxy* vid_player_listener = static_cast<VidPlayerListenerProxy*>(context);
-+    vid_player_listener->SubtitleUpdatedCallback(text_tracks);
++static void VidPlayerSubtitleUpdatedCallback(
++    void* context,
++    const StringMapVector& text_tracks) {
++  VidPlayerListenerProxy* vid_player_listener =
++      static_cast<VidPlayerListenerProxy*>(context);
++  vid_player_listener->SubtitleUpdatedCallback(text_tracks);
 +}
 +
-+static void VidPlayerTextureMailboxReadyCallback(void *context, const VidPlayerMailboxData& mbox)
-+{
-+    VidPlayerListenerProxy* vid_player_listener = static_cast<VidPlayerListenerProxy*>(context);
-+    vid_player_listener->TextureMailboxReadyCallback(mbox);
++static void VidPlayerTextureMailboxReadyCallback(
++    void* context,
++    const VidPlayerMailboxData& mbox) {
++  VidPlayerListenerProxy* vid_player_listener =
++      static_cast<VidPlayerListenerProxy*>(context);
++  vid_player_listener->TextureMailboxReadyCallback(mbox);
 +}
 +
 +WebMediaPlayerBrightsign::WebMediaPlayerBrightsign(
@@ -468,26 +1522,21 @@ index 0000000000000000000000000000000000000000..f00a8437762f1eb6495c16dbcb194334
 +      vid_player_listener_proxy_(
 +          new VidPlayerListenerProxy(weak_factory_.GetWeakPtr(), frame_)),
 +      video_overlay_factory_(std::make_unique<media::VideoOverlayFactory>()),
-+      video_frame_provider_client_(nullptr)
-+{
++      video_frame_provider_client_(nullptr) {
 +  vid_player_ = vid_player_create(
-+          base::CommandLine::ForCurrentProcess()->GetSwitchValueASCII(switches::kVideoServerFactoryName).c_str(),
-+          &VidPlayerErrorCallback,
-+          &VidPlayerPlaybackStartedCallback,
-+          &VidPlayerPlaybackCompletedCallback,
-+          &VidPlayerLoadCallback,
-+          &VidPlayerVideoSizeChangedCallback,
-+          &VidPlayerPlaybackPositionUpdatedCallback,
-+          &VidPlayerDurationChangedCallback,
-+          &VidPlayerPausedCallback,
-+          &VidPlayerSeekCompletedCallback,
-+          &VidPlayerReleasedCallback,
-+          &VidPlayerFrameReadyCallback,
-+          &VidPlayerSubtitleUpdatedCallback,
-+          &VidPlayerTextureMailboxReadyCallback,
-+          static_cast<void*>(vid_player_listener_proxy_.get()),
-+          video_overlay_factory_->overlay_plane_id().ToString().c_str());
-+
++      base::CommandLine::ForCurrentProcess()
++          ->GetSwitchValueASCII(switches::kVideoServerFactoryName)
++          .c_str(),
++      &VidPlayerErrorCallback, &VidPlayerPlaybackStartedCallback,
++      &VidPlayerPlaybackCompletedCallback, &VidPlayerLoadCallback,
++      &VidPlayerVideoSizeChangedCallback,
++      &VidPlayerPlaybackPositionUpdatedCallback,
++      &VidPlayerDurationChangedCallback, &VidPlayerPausedCallback,
++      &VidPlayerSeekCompletedCallback, &VidPlayerReleasedCallback,
++      &VidPlayerFrameReadyCallback, &VidPlayerSubtitleUpdatedCallback,
++      &VidPlayerTextureMailboxReadyCallback,
++      static_cast<void*>(vid_player_listener_proxy_.get()),
++      video_overlay_factory_->overlay_plane_id().ToString().c_str());
 +
 +  weak_this_ = weak_factory_.GetWeakPtr();
 +
@@ -548,11 +1597,13 @@ index 0000000000000000000000000000000000000000..f00a8437762f1eb6495c16dbcb194334
 +  SetReadyState(WebMediaPlayer::kReadyStateHaveNothing);
 +  blink::WebURL url = source.GetAsURL();
 +  GURL representative_url =
-+frame_->GetDocument().SiteForCookies().RepresentativeUrl(); std::string
-+top_frame_origin = frame_->GetDocument().TopFrameOrigin().ToString().Utf8();
++      frame_->GetDocument().SiteForCookies().RepresentativeUrl();
++  std::string top_frame_origin =
++      frame_->GetDocument().TopFrameOrigin().ToString().Utf8();
 +  StringMap map = {nullptr, 0};
-+  vid_player_load(vid_player_, url.GetString().Utf8().c_str(), representative_url.spec().c_str(),
-+top_frame_origin.c_str(), map);
++  vid_player_load(vid_player_, url.GetString().Utf8().c_str(),
++                  representative_url.spec().c_str(), top_frame_origin.c_str(),
++                  map);
 +
 +  return LoadTiming::kImmediate;
 +}
@@ -767,8 +1818,7 @@ index 0000000000000000000000000000000000000000..f00a8437762f1eb6495c16dbcb194334
 +  return current_frame_.get();
 +}
 +
-+void OnReleaseTexture(gpu::Mailbox mbox) {
-+}
++void OnReleaseTexture(gpu::Mailbox mbox) {}
 +
 +/*
 +void WebMediaPlayerBrightsign::SetAttribute(const std::string& name,
@@ -799,8 +1849,9 @@ index 0000000000000000000000000000000000000000..f00a8437762f1eb6495c16dbcb194334
 +  DCHECK(main_task_runner_->BelongsToCurrentThread());
 +
 +  if (state == WebMediaPlayer::kReadyStateHaveEnoughData &&
-+      network_state_ == WebMediaPlayer::kNetworkStateLoading)
++      network_state_ == WebMediaPlayer::kNetworkStateLoading) {
 +    SetNetworkState(WebMediaPlayer::kNetworkStateLoaded);
++  }
 +
 +  ready_state_ = state;
 +  highest_ready_state_ = std::max(highest_ready_state_, ready_state_);
@@ -811,15 +1862,14 @@ index 0000000000000000000000000000000000000000..f00a8437762f1eb6495c16dbcb194334
 +
 +void WebMediaPlayerBrightsign::OnEncryptedMediaInitData(
 +    media::EmeInitDataType init_data_type,
-+    const std::vector<uint8_t>& init_data) {
-+}
++    const std::vector<uint8_t>& init_data) {}
 +
 +void WebMediaPlayerBrightsign::OnProgress() {
-+
 +  // This is called by the demuxer whenever there's some more data available
 +}
 +
-+void WebMediaPlayerBrightsign::ErrorCallback(enum VidPlayerErrorCode code, const char *message) {
++void WebMediaPlayerBrightsign::ErrorCallback(enum VidPlayerErrorCode code,
++                                             const char* message) {
 +  VLOG(1) << __func__;
 +  DCHECK(main_task_runner_->BelongsToCurrentThread());
 +  error_message_ = blink::WebString::FromUTF8(message);
@@ -868,50 +1918,53 @@ index 0000000000000000000000000000000000000000..f00a8437762f1eb6495c16dbcb194334
 +  }
 +}
 +
-+void WebMediaPlayerBrightsign::SubtitleUpdatedCallback(const StringMapVector& text_tracks) {
-+    /*
-+  for (auto t : text_tracks) {
-+    // We have ownership of the text track objects, so keep them in a map and
-+    // just pass pointer in to AddTextTrack
-+    std::string id = t["pid"];
-+    WebInbandTextTrackImpl::Kind kind = WebInbandTextTrackImpl::kKindSubtitles;
-+    if (id == "0") {
-+      id = t["label"] + t["service_number"];
-+      kind = WebInbandTextTrackImpl::kKindCaptions;
-+    }
-+
-+    std::unordered_map<std::string,
-+                       std::unique_ptr<WebInbandTextTrackImpl>>::iterator it;
-+
-+    it = textTrackMap.find(id);
-+    if (it != textTrackMap.end()) {
-+      // Nothing to do, as it's already in the map (we should perhaps update it
-+      // if the details change)
-+      continue;
-+    }
-+    // New text track
-+    std::unique_ptr<WebInbandTextTrackImpl> web_inband_text_track(
-+        new WebInbandTextTrackImpl(kind, blink::WebString::FromUTF8(t["label"]),
-+                                   blink::WebString::FromUTF8(t["lang"]),
-+                                   blink::WebString::FromUTF8(id)));
-+    textTrackMap[id] = std::move(web_inband_text_track);
-+    client_->AddTextTrack(textTrackMap[id].get());
++void WebMediaPlayerBrightsign::SubtitleUpdatedCallback(
++    const StringMapVector& text_tracks) {
++  /*
++for (auto t : text_tracks) {
++  // We have ownership of the text track objects, so keep them in a map and
++  // just pass pointer in to AddTextTrack
++  std::string id = t["pid"];
++  WebInbandTextTrackImpl::Kind kind = WebInbandTextTrackImpl::kKindSubtitles;
++  if (id == "0") {
++    id = t["label"] + t["service_number"];
++    kind = WebInbandTextTrackImpl::kKindCaptions;
 +  }
-+  */
++
++  std::unordered_map<std::string,
++                     std::unique_ptr<WebInbandTextTrackImpl>>::iterator it;
++
++  it = textTrackMap.find(id);
++  if (it != textTrackMap.end()) {
++    // Nothing to do, as it's already in the map (we should perhaps update it
++    // if the details change)
++    continue;
++  }
++  // New text track
++  std::unique_ptr<WebInbandTextTrackImpl> web_inband_text_track(
++      new WebInbandTextTrackImpl(kind, blink::WebString::FromUTF8(t["label"]),
++                                 blink::WebString::FromUTF8(t["lang"]),
++                                 blink::WebString::FromUTF8(id)));
++  textTrackMap[id] = std::move(web_inband_text_track);
++  client_->AddTextTrack(textTrackMap[id].get());
++}
++*/
 +}
 +
 +void WebMediaPlayerBrightsign::LoadCallback(
-+int64_t duration, const StringMapVector& video_tracks,
-+                                          const StringMapVector& audio_tracks, const StringMapVector& text_tracks
-+) {
++    int64_t duration,
++    const StringMapVector& video_tracks,
++    const StringMapVector& audio_tracks,
++    const StringMapVector& text_tracks) {
 +  VLOG(1) << __func__;
 +  DCHECK(main_task_runner_->BelongsToCurrentThread());
 +  DurationChangedCallback(duration);  // Before we declare HaveMetadata
 +
 +  // If we don't know the natural size yet, we need to use the default value of
 +  // 640x360 until we do
-+  if ((natural_size_.height() == 0) && (natural_size_.width() == 0))
++  if ((natural_size_.height() == 0) && (natural_size_.width() == 0)) {
 +    natural_size_ = gfx::Size(640, 360);
++  }
 +  SetReadyState(WebMediaPlayer::kReadyStateHaveMetadata);
 +  SetReadyState(WebMediaPlayer::kReadyStateHaveEnoughData);
 +  SetNetworkState(WebMediaPlayer::kNetworkStateIdle);
@@ -920,8 +1973,7 @@ index 0000000000000000000000000000000000000000..f00a8437762f1eb6495c16dbcb194334
 +void WebMediaPlayerBrightsign::TextureMailboxReadyCallback(
 +    const VidPlayerMailboxData& mbox) {}
 +
-+void WebMediaPlayerBrightsign::SeekCompletedCallback(
-+    int64_t current_time) {
++void WebMediaPlayerBrightsign::SeekCompletedCallback(int64_t current_time) {
 +  VLOG(1) << __func__;
 +  DCHECK(main_task_runner_->BelongsToCurrentThread());
 +  seeking_ = false;
@@ -929,8 +1981,8 @@ index 0000000000000000000000000000000000000000..f00a8437762f1eb6495c16dbcb194334
 +}
 +
 +void WebMediaPlayerBrightsign::VideoSizeChangedCallback(uint32_t width,
-+                                                  uint32_t height,
-+                                                  bool video_on_graphics) {
++                                                        uint32_t height,
++                                                        int32_t z_index) {
 +  VLOG(1) << __func__;
 +  DCHECK(main_task_runner_->BelongsToCurrentThread());
 +  natural_size_ = gfx::Size(width, height);
@@ -941,20 +1993,14 @@ index 0000000000000000000000000000000000000000..f00a8437762f1eb6495c16dbcb194334
 +  }
 +
 +  // Set current frame
-+  if (!video_on_graphics) {
-+    /*
-+  scoped_refptr<media::VideoFrame> frame =
-+      video_overlay_factory_->CreateFrame(
-+          gfx::Size(width, height),
-+          base::CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
-+              switches::kVideoServerFactoryName));
-+              */
-+    scoped_refptr<media::VideoFrame> frame =
-+        video_overlay_factory_->CreateFrame(gfx::Size(width, height));
-+    SetCurrentFrame(frame);
-+    DidReceiveFrame();
-+    StartFrameReadyTimerIfRequired();
-+  }
++  scoped_refptr<media::VideoFrame> frame = video_overlay_factory_->CreateFrame(
++      gfx::Size(width, height),
++      base::CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
++          switches::kVideoServerFactoryName),
++      z_index);
++  SetCurrentFrame(frame);
++  DidReceiveFrame();
++  StartFrameReadyTimerIfRequired();
 +}
 +
 +void WebMediaPlayerBrightsign::PlaybackPositionUpdatedCallback(
@@ -978,8 +2024,7 @@ index 0000000000000000000000000000000000000000..f00a8437762f1eb6495c16dbcb194334
 +  }
 +}
 +
-+void WebMediaPlayerBrightsign::DurationChangedCallback(
-+    int64_t duration) {
++void WebMediaPlayerBrightsign::DurationChangedCallback(int64_t duration) {
 +  VLOG(1) << __func__;
 +  DCHECK(main_task_runner_->BelongsToCurrentThread());
 +  duration_ = duration;
@@ -1012,7 +2057,7 @@ index 0000000000000000000000000000000000000000..f00a8437762f1eb6495c16dbcb194334
 +}
 +
 +int WebMediaPlayerBrightsign::GetDelegateId() {
-+    return delegate_id_;
++  return delegate_id_;
 +}
 +
 +void WebMediaPlayerBrightsign::OnFrameHidden() {
@@ -1045,8 +2090,9 @@ index 0000000000000000000000000000000000000000..f00a8437762f1eb6495c16dbcb194334
 +  // render thread is blocked). Avoid changing it when it is
 +  // being changed on other threads.
 +  base::AutoLock auto_lock(video_frame_provider_client_lock_);
-+  if (video_frame_provider_client_)
++  if (video_frame_provider_client_) {
 +    video_frame_provider_client_->DidReceiveFrame();
++  }
 +}
 +
 +void WebMediaPlayerBrightsign::SetCurrentFrame(
@@ -1070,8 +2116,9 @@ index 0000000000000000000000000000000000000000..f00a8437762f1eb6495c16dbcb194334
 +void WebMediaPlayerBrightsign::SetVideoFrameProviderClient(Client* client) {
 +  // This is called from both the main renderer thread and the compositor
 +  // thread (when the main thread is blocked).
-+  if (video_frame_provider_client_ && video_frame_provider_client_ != client)
++  if (video_frame_provider_client_ && video_frame_provider_client_ != client) {
 +    video_frame_provider_client_->StopUsingProvider();
++  }
 +  base::AutoLock auto_lock(video_frame_provider_client_lock_);
 +  video_frame_provider_client_ = client;
 +}
@@ -1112,10 +2159,10 @@ index 0000000000000000000000000000000000000000..f00a8437762f1eb6495c16dbcb194334
 +}  // namespace blink
 diff --git a/third_party/blink/renderer/platform/media/brightsign/web_media_player_brightsign.h b/third_party/blink/renderer/platform/media/brightsign/web_media_player_brightsign.h
 new file mode 100644
-index 0000000000000000000000000000000000000000..8f6946770eaeacbdd9254f616c06867fab70ab13
+index 0000000000000000000000000000000000000000..6a53b4cf4edd5449b9781e510adc27feffcd631c
 --- /dev/null
 +++ b/third_party/blink/renderer/platform/media/brightsign/web_media_player_brightsign.h
-@@ -0,0 +1,259 @@
+@@ -0,0 +1,261 @@
 +// Copyright 2017 The Chromium Authors
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
@@ -1132,9 +2179,9 @@ index 0000000000000000000000000000000000000000..8f6946770eaeacbdd9254f616c06867f
 +#include "components/viz/common/gpu/raster_context_provider.h"
 +#include "media/renderers/video_overlay_factory.h"
 +#include "third_party/blink/public/platform/media/video_frame_compositor.h"
++#include "third_party/blink/public/platform/media/webmediaplayer_delegate.h"
 +#include "third_party/blink/public/platform/web_media_player.h"
 +#include "third_party/blink/renderer/platform/media/web_inband_text_track_impl.h"
-+#include "third_party/blink/public/platform/media/webmediaplayer_delegate.h"
 +
 +namespace cc {
 +class PaintCanvas;
@@ -1258,15 +2305,18 @@ index 0000000000000000000000000000000000000000..8f6946770eaeacbdd9254f616c06867f
 +  absl::optional<media::VideoFrame::ID> CurrentFrameId() const override;
 +
 +  //
-+  void ErrorCallback(enum VidPlayerErrorCode code, const char *message);
++  void ErrorCallback(enum VidPlayerErrorCode code, const char* message);
 +  void PlaybackStartedCallback();
 +  void PlaybackCompletedCallback();
-+  void LoadCallback(int64_t duration, const StringMapVector& video_tracks,
-+                                          const StringMapVector& audio_tracks, const StringMapVector& text_tracks);
-+  void VideoSizeChangedCallback(uint32_t width, uint32_t height,
-+                                                      bool video_on_graphics);
++  void LoadCallback(int64_t duration,
++                    const StringMapVector& video_tracks,
++                    const StringMapVector& audio_tracks,
++                    const StringMapVector& text_tracks);
++  void VideoSizeChangedCallback(uint32_t width,
++                                uint32_t height,
++                                int32_t z_index);
 +  void PlaybackPositionUpdatedCallback(int64_t current_time,
-+                                                             const VidPlayerDecodeStatistics& stats);
++                                       const VidPlayerDecodeStatistics& stats);
 +  void DurationChangedCallback(int64_t current_time);
 +  void PausedCallback();
 +  void SeekCompletedCallback(int64_t current_time);
@@ -1365,8 +2415,7 @@ index 0000000000000000000000000000000000000000..8f6946770eaeacbdd9254f616c06867f
 +
 +  base::WeakPtr<WebMediaPlayerBrightsign> weak_this_;
 +  base::WeakPtrFactory<WebMediaPlayerBrightsign> weak_factory_{this};
-+  std::unique_ptr<VidPlayerListenerProxy>
-+      vid_player_listener_proxy_;
++  std::unique_ptr<VidPlayerListenerProxy> vid_player_listener_proxy_;
 +  std::unique_ptr<media::VideoOverlayFactory> video_overlay_factory_;
 +  VidPlayerWrapper* vid_player_;
 +  cc::VideoFrameProvider::Client* video_frame_provider_client_;
