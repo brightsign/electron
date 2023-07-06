@@ -2400,7 +2400,7 @@ describe('webContents module', () => {
         expect(dialogType).to.equal('confirm');
         expect(message).to.equal('message');
         expect(defaultPrompt).to.equal('');
-        expect(originUrl).to.equal(`${fixturesPath}/pages/blank.html`);
+        expect(originUrl).to.equal(`file://${fixturesPath}/pages/blank.html`);
         e.preventDefault();
         callback(true, '');
       });
@@ -2412,7 +2412,7 @@ describe('webContents module', () => {
         expect(dialogType).to.equal('confirm');
         expect(message).to.equal('message');
         expect(defaultPrompt).to.equal('');
-        expect(originUrl).to.equal(`${fixturesPath}/pages/blank.html`);
+        expect(originUrl).to.equal(`file://${fixturesPath}/pages/blank.html`);
         e.preventDefault();
         callback(false, '');
       });
@@ -2428,7 +2428,7 @@ describe('webContents module', () => {
         expect(dialogType).to.equal('alert');
         expect(message).to.equal('message');
         expect(defaultPrompt).to.equal('');
-        expect(originUrl).to.equal(`${fixturesPath}/pages/blank.html`);
+        expect(originUrl).to.equal(`file://${fixturesPath}/pages/blank.html`);
         e.preventDefault();
         callback(true, '');
       });
@@ -2443,7 +2443,7 @@ describe('webContents module', () => {
         expect(dialogType).to.equal('alert');
         expect(message).to.equal('message');
         expect(defaultPrompt).to.equal('');
-        expect(originUrl).to.equal(`${fixturesPath}/pages/blank.html`);
+        expect(originUrl).to.equal(`file://${fixturesPath}/pages/blank.html`);
         callback(true, '');
       });
       await bw.webContents.executeJavaScript('alert("message");');

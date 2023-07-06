@@ -101,7 +101,7 @@ void ElectronJavaScriptDialogManager::RunJavaScriptDialog(
   if (api_web_contents) {
     bool default_prevented = api_web_contents->Emit(
         "will-open-dialog", dialog_type, message_text, default_prompt_text,
-        origin,
+        origin_url.spec(),
         base::BindOnce(
             &ElectronJavaScriptDialogManager::OnEmittedWillOpenDialogCallback,
             base::Unretained(this)));
