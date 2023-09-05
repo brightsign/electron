@@ -1603,7 +1603,7 @@ index 0000000000000000000000000000000000000000..ffca436d25943741e03ba10210dad344
 +  StringMap map = {nullptr, 0};
 +  vid_player_load(vid_player_, url.GetString().Utf8().c_str(),
 +                  representative_url.spec().c_str(), top_frame_origin.c_str(),
-+                  map);
++                  map, !client_->IsAudioElement());
 +
 +  return LoadTiming::kImmediate;
 +}
