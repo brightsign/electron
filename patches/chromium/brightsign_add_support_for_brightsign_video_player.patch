@@ -29,6 +29,23 @@ index b560f372c638e05efa5aeb602268b2639254e3fc..f7789634e06793e403a701ab2ac103b8
  import("//build/config/chromecast_build.gni")
  import("//build/config/chromeos/args.gni")
  import("//build/config/chromeos/ui_mode.gni")
+diff --git a/cc/base/list_container.h b/cc/base/list_container.h
+index 57526706d405dddc6c59a7eefe3f1e437867b0be..e7280448514ef4b93906d89216ed1794d26fae1d 100644
+--- a/cc/base/list_container.h
++++ b/cc/base/list_container.h
+@@ -156,9 +156,10 @@ class ListContainer {
+   // outstanding pointers and iterators. Return a valid iterator for the
+   // beginning of the newly inserted segment.
+   template <typename DerivedElementType>
+-  Iterator InsertAfterAndInvalidateAllPointers(Iterator at, size_t count) {
++  Iterator InsertAfterAndInvalidateAllPointers(Iterator at, size_t count,
++          const absl::optional<DerivedElementType> source = absl::nullopt) {
+     return InsertBeforeAndInvalidateAllPointers<DerivedElementType>(
+-        at != end() ? ++at : at, count);
++        at != end() ? ++at : at, count, source);
+   }
+ 
+   ListContainer& operator=(ListContainer&& other) {
 diff --git a/components/viz/common/BUILD.gn b/components/viz/common/BUILD.gn
 index 61c72239260616252e73b0cfc045fe15a97463b2..df1892e765dc9a9deca5038de2836a9748bea103 100644
 --- a/components/viz/common/BUILD.gn
@@ -261,10 +278,10 @@ index ae69ffefaa9ebf51193f819e41e9f1425165eeb4..b73d77295f556dccaef7c5035729cd63
          NOTREACHED();
 diff --git a/components/viz/service/display/overlay_strategy_underlay_brightsign.cc b/components/viz/service/display/overlay_strategy_underlay_brightsign.cc
 new file mode 100644
-index 0000000000000000000000000000000000000000..eeebdd55296d5197f536136b992305ce46b6decd
+index 0000000000000000000000000000000000000000..1d99764a756965f032658bc7db6dd89b4cf9ab08
 --- /dev/null
 +++ b/components/viz/service/display/overlay_strategy_underlay_brightsign.cc
-@@ -0,0 +1,380 @@
+@@ -0,0 +1,348 @@
 +// Copyright 2017 The Chromium Authors. All rights reserved.
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
@@ -285,6 +302,9 @@ index 0000000000000000000000000000000000000000..eeebdd55296d5197f536136b992305ce
 +#include "components/viz/service/display/overlay_candidate_factory.h"
 +#include "ui/gfx/geometry/rect_conversions.h"
 +
++#define BS_DEBUG(...) \
++            do { if (0) fprintf(stderr, ##__VA_ARGS__); } while (0)
++
 +namespace viz {
 +
 +OverlayStrategyUnderlayBrightsign::OverlayStrategyUnderlayBrightsign(
@@ -293,108 +313,68 @@ index 0000000000000000000000000000000000000000..eeebdd55296d5197f536136b992305ce
 +
 +OverlayStrategyUnderlayBrightsign::~OverlayStrategyUnderlayBrightsign() {}
 +
-+void OverlayStrategyUnderlayBrightsign::VideoHoleDraw(
++bool OverlayStrategyUnderlayBrightsign::VideoHoleDraw(
 +    AggregatedRenderPassList* render_pass_list,
 +    size_t index,
 +    gfx::Transform transform,
 +    double opacity,
 +    std::vector<VideoHoleDrawQuad>* tokens,
 +    std::vector<gfx::Rect>* content_bounds) {
++  BS_DEBUG("index:%zu\n",index);
 +  // Go over render_pass_list and find VideoHoleQuad. Always reduce the index to
 +  // avoid cyclic references.
-+  if (index < 0) {
-+    return;
-+  }
++  if (index < 0)
++    return false;
 +
-+  bool is_top_layer = (index == render_pass_list->size() - 1);
 +  auto render_pass = (*render_pass_list)[index].get();
 +  QuadList& quad_list = render_pass->quad_list;
++  bool found_underlay = false;
 +
 +  for (auto quad = quad_list.begin(); quad != quad_list.end(); ++quad) {
-+    if (quad->material == DrawQuad::Material::kAggregatedRenderPass) {
++    BS_DEBUG("OVERLAY: QUAD MATERIAL:%2d, OPACITY:%f, Location:%s\n",
++             quad->material,
++             quad->shared_quad_state->opacity,
++             quad->visible_rect.ToString().c_str());
++    if (quad->material == DrawQuad::Material::kAggregatedRenderPass)
++    {
 +      auto agg_quad = AggregatedRenderPassDrawQuad::MaterialCast(*quad);
-+      auto agg_transform =
-+          transform * agg_quad->shared_quad_state->quad_to_target_transform;
-+      auto agg_opacity = opacity * agg_quad->shared_quad_state->opacity;
++      BS_DEBUG("AGGREGATEDRENDERPASSQUAD resource id:%lu, location:(%s)",
++               agg_quad->render_pass_id.GetUnsafeValue(),
++               agg_quad->visible_rect.ToString().c_str());
++      BS_DEBUG("AGGREGATEDRENDERPASSQUAD transform:\n%s\n",
++               agg_quad->shared_quad_state->quad_to_target_transform.ToString().c_str());
++
++      auto agg_transform = transform * agg_quad->shared_quad_state->quad_to_target_transform;
++      auto agg_opacity = agg_quad->shared_quad_state->opacity;
 +      while (index > 0) {
 +        index--;
 +        if ((*render_pass_list)[index]->id == agg_quad->render_pass_id) {
-+          VideoHoleDraw(render_pass_list, index, agg_transform, agg_opacity,
-+                        tokens, content_bounds);
-+          if (is_top_layer) {
++          if (VideoHoleDraw(render_pass_list, index, agg_transform, agg_opacity, tokens, content_bounds)) {
 +            for (auto temp_quad : *tokens) {
-+              quad =
-+                  quad_list
-+                      .InsertBeforeAndInvalidateAllPointers<VideoHoleDrawQuad>(
-+                          quad, 1, temp_quad);
++              quad = quad_list.InsertAfterAndInvalidateAllPointers<VideoHoleDrawQuad>(quad, 1, temp_quad);
++
 +              if (VideoHoleDrawQuad::MaterialCast(*quad)->z_index < 0) {
-+                render_pass->ReplaceExistingQuadWithSolidColor(
-+                    quad, SkColors::kTransparent, SkBlendMode::kSrcOver);
++                render_pass->ReplaceExistingQuadWithSolidColor(quad,  SkColors::kBlack,
++                                                               SkBlendMode::kDstOut);
 +              }
 +            }
++            return !tokens->empty();
 +          }
 +        }
 +      }
-+      return;
 +    }
-+  }
-+
-+  gfx::Rect content_rect;
-+  bool found_underlay = false;
-+  for (const auto* quad : base::Reversed(quad_list)) {
-+    if (OverlayCandidate::IsInvisibleQuad(quad)) {
-+      continue;
-+    }
-+
-+    const auto& ctransform =
-+        quad->shared_quad_state->quad_to_target_transform * transform;
-+    auto quad_rect = ctransform.MapRect(quad->rect);
-+
-+    bool is_underlay = false;
-+    if (!found_underlay) {
-+      OverlayCandidate candidate;
-+      // Look for quads that are overlayable and require an overlay. Chromecast
-+      // only supports a video underlay so this can't promote all quads that are
-+      // overlayable, it needs to ensure that the quad requires overlays since
-+      // that quad is side-channeled through a secure path into an overlay
-+      // sitting underneath the primary plane. This is only looking at where the
-+      // quad is supposed to be to replace it with a transparent quad to allow
-+      // the underlay to be visible.
-+      // VIDEO_HOLE implies it requires overlay.
-+      is_underlay = quad->material == DrawQuad::Material::kVideoHole;
-+      found_underlay = is_underlay;
-+    }
-+
-+    if (!found_underlay && quad->material == DrawQuad::Material::kSolidColor) {
-+      const SolidColorDrawQuad* solid = SolidColorDrawQuad::MaterialCast(quad);
-+      if (solid->color == SkColors::kBlack) {
-+        continue;
-+      }
-+    }
-+
-+    if (is_underlay) {
-+      content_rect.Subtract(quad_rect);
-+    } else {
-+      content_rect.Union(quad_rect);
-+    }
-+  }
-+
-+  if (is_using_overlay_ != found_underlay) {
-+    is_using_overlay_ = found_underlay;
-+    LOG(INFO) << (found_underlay ? "Overlay activated" : "Overlay deactivated");
-+  }
-+
-+  if (found_underlay) {
-+    for (auto quad = quad_list.begin(); quad != quad_list.end(); ++quad) {
-+      OverlayCandidate candidate;
-+      if (quad->material != DrawQuad::Material::kVideoHole) {
-+        continue;
-+      }
-+      gfx::Transform q_transform =
-+          transform * quad->shared_quad_state->quad_to_target_transform;
++    else if (quad->material == DrawQuad::Material::kVideoHole)
++    {
++      gfx::Rect content_rect;
++      BS_DEBUG("OVERLAY: APPLYING UNDERLAY:%d, opacity:%f\n", quad->material, quad->shared_quad_state->opacity * opacity);
++      BS_DEBUG("OVERLAY transform: \n %s\n", transform.ToString().c_str());
++      gfx::Transform q_transform = transform * quad->shared_quad_state->quad_to_target_transform;
++      BS_DEBUG("OVERLAY q_transform: \n %s\n", q_transform.ToString().c_str());
 +      auto q_rect = q_transform.MapRect(quad->rect);
 +      VidPlayerRect b_display_rect = {q_rect.x(), q_rect.y(), q_rect.width(),
 +                                      q_rect.height()};
++      BS_DEBUG("OVERLAY (transformed) location:(%s)\n", q_rect.ToString().c_str());
++      BS_DEBUG("OVERLAY q_transform: \n %s\n", q_transform.ToString().c_str());
 +
 +      VidPlayerRect b_clip_rect;
 +      gfx::Rect c_rect;
@@ -408,10 +388,15 @@ index 0000000000000000000000000000000000000000..eeebdd55296d5197f536136b992305ce
 +        b_clip_rect = b_display_rect;
 +      }
 +
-+      std::string overlay_plane_id =
-+          VideoHoleDrawQuad::MaterialCast(*quad)->overlay_plane_id.ToString();
-+      std::string factory_name =
-+          VideoHoleDrawQuad::MaterialCast(*quad)->factory_name;
++      BS_DEBUG("OVERLAY clip coordinates:(%d,%d)  - (%d,%d)\n",
++               b_clip_rect.x,
++               b_clip_rect.y,
++               b_clip_rect.width,
++               b_clip_rect.height);
++
++      std::string overlay_plane_id = VideoHoleDrawQuad::MaterialCast(*quad)->overlay_plane_id.ToString();
++      std::string factory_name = VideoHoleDrawQuad::MaterialCast(*quad)->factory_name;
++
 +
 +      vid_player_set_geometry(factory_name.c_str(), overlay_plane_id.c_str(),
 +                              b_display_rect, b_clip_rect);
@@ -425,18 +410,17 @@ index 0000000000000000000000000000000000000000..eeebdd55296d5197f536136b992305ce
 +      sqs->opacity = temp_quad.shared_quad_state->opacity * opacity;
 +      temp_quad.shared_quad_state = sqs;
 +      tokens->push_back(temp_quad);
++      content_rect.Union(q_rect);
++      content_bounds->push_back(content_rect);
++      found_underlay = true;
 +
 +      if (VideoHoleDrawQuad::MaterialCast(*quad)->z_index < 0) {
-+        render_pass->ReplaceExistingQuadWithSolidColor(quad, SkColors::kBlack,
++        render_pass->ReplaceExistingQuadWithSolidColor(quad,  SkColors::kBlack,
 +                                                       SkBlendMode::kDstOut);
 +      }
 +    }
 +  }
-+
-+  DCHECK(content_bounds && content_bounds->empty());
-+  if (found_underlay) {
-+    content_bounds->push_back(content_rect);
-+  }
++  return found_underlay;
 +}
 +
 +bool OverlayStrategyUnderlayBrightsign::Attempt(
@@ -563,6 +547,7 @@ index 0000000000000000000000000000000000000000..eeebdd55296d5197f536136b992305ce
 +    OverlayCandidateList* candidate_list,
 +    std::vector<gfx::Rect>* content_bounds,
 +    const OverlayProposedCandidate& proposed_candidate) {
++  BS_DEBUG("%s\n", __PRETTY_FUNCTION__);
 +  // Before we attempt an overlay strategy, the candidate list should be empty.
 +  DCHECK(candidate_list->empty());
 +  auto* render_pass = render_pass_list->back().get();
@@ -647,7 +632,7 @@ index 0000000000000000000000000000000000000000..eeebdd55296d5197f536136b992305ce
 +}  // namespace viz
 diff --git a/components/viz/service/display/overlay_strategy_underlay_brightsign.h b/components/viz/service/display/overlay_strategy_underlay_brightsign.h
 new file mode 100644
-index 0000000000000000000000000000000000000000..8cdd4cc9ec6d2a3e23896916da81dfb496e8bd67
+index 0000000000000000000000000000000000000000..d5a0d3281c8a88fa8ab840ab83ad3f61c19ca5c9
 --- /dev/null
 +++ b/components/viz/service/display/overlay_strategy_underlay_brightsign.h
 @@ -0,0 +1,90 @@
@@ -729,7 +714,7 @@ index 0000000000000000000000000000000000000000..8cdd4cc9ec6d2a3e23896916da81dfb4
 + private:
 +  // Keep track if an overlay is being used on the previous frame.
 +  bool is_using_overlay_ = false;
-+  void VideoHoleDraw(AggregatedRenderPassList* render_pass_list,
++  bool VideoHoleDraw(AggregatedRenderPassList* render_pass_list,
 +                     size_t index,
 +                     gfx::Transform transform,
 +                     double opacity,
@@ -1362,7 +1347,7 @@ index 0000000000000000000000000000000000000000..a01e4753227d19b6b2b3dfcb880d7f50
 +#endif
 diff --git a/third_party/blink/renderer/platform/media/brightsign/web_media_player_brightsign.cc b/third_party/blink/renderer/platform/media/brightsign/web_media_player_brightsign.cc
 new file mode 100644
-index 0000000000000000000000000000000000000000..ffca436d25943741e03ba10210dad3442c796bcb
+index 0000000000000000000000000000000000000000..d41f3e7cb2906e577352ec8a6c1248cf0694683a
 --- /dev/null
 +++ b/third_party/blink/renderer/platform/media/brightsign/web_media_player_brightsign.cc
 @@ -0,0 +1,791 @@
