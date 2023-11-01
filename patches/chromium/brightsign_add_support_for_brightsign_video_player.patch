@@ -1125,6 +1125,54 @@ index 8d4b4721981e9d3c07b131045c0755853d93c3dd..c40b9f3e4054666807806b814011d6f2
  };
  
  struct SharedElementQuadState {
+diff --git a/third_party/blink/public/platform/web_media_player.h b/third_party/blink/public/platform/web_media_player.h
+index eb92552cb34336d8c08b135ab4653adc277efe79..0d1ef281349b1c727491c031554872770d803159 100644
+--- a/third_party/blink/public/platform/web_media_player.h
++++ b/third_party/blink/public/platform/web_media_player.h
+@@ -31,6 +31,8 @@
+ #ifndef THIRD_PARTY_BLINK_PUBLIC_PLATFORM_WEB_MEDIA_PLAYER_H_
+ #define THIRD_PARTY_BLINK_PUBLIC_PLATFORM_WEB_MEDIA_PLAYER_H_
+ 
++#include <map>
++
+ #include "base/memory/scoped_refptr.h"
+ #include "base/memory/weak_ptr.h"
+ #include "base/time/time.h"
+@@ -383,6 +385,15 @@ class WebMediaPlayer {
+   // Adjusts the frame sink hierarchy for the media frame sink.
+   virtual void RegisterFrameSinkHierarchy() {}
+   virtual void UnregisterFrameSinkHierarchy() {}
++
++  // BRIGHTSIGN EXTENSION
++  virtual LoadTiming Load(LoadType type,
++                          const WebMediaPlayerSource& source,
++                          CorsMode mode,
++                          bool is_cache_disabled,
++                          std::map<std::string, std::string>& ) {
++    return Load(type, source, mode, is_cache_disabled);
++  }
+ };
+ 
+ }  // namespace blink
+diff --git a/third_party/blink/renderer/core/html/media/html_media_element.cc b/third_party/blink/renderer/core/html/media/html_media_element.cc
+index c94e295778c519f95fd8bbb741740761782aa776..d7c8c81d4313ac1100e2a526c0fee08e1d4d8460 100644
+--- a/third_party/blink/renderer/core/html/media/html_media_element.cc
++++ b/third_party/blink/renderer/core/html/media/html_media_element.cc
+@@ -1543,8 +1543,13 @@ void HTMLMediaElement::StartPlayerLoad() {
+   bool is_cache_disabled = false;
+   probe::IsCacheDisabled(GetDocument().GetExecutionContext(),
+                          &is_cache_disabled);
++  AttributeCollection attribute_collection = Attributes();
++  std::map<std::string, std::string> attribute_map;
++  for (const auto &attr : attribute_collection) {
++    attribute_map[attr.GetName().ToString().Utf8().data()] = attr.Value().GetString().Utf8().data();
++  }
+   auto load_timing = web_media_player_->Load(GetLoadType(), source, CorsMode(),
+-                                             is_cache_disabled);
++                                             is_cache_disabled, attribute_map);
+   if (load_timing == WebMediaPlayer::LoadTiming::kDeferred) {
+     // Deferred media loading is not part of the spec, but intuition is that
+     // this should not hold up the Window's "load" event (similar to user
 diff --git a/third_party/blink/renderer/platform/media/BUILD.gn b/third_party/blink/renderer/platform/media/BUILD.gn
 index 71f2cb5d8c38a8a9bdf79fb189e7f080510f1934..2b3096ed5ba41df870f54a3cb840aadb0eb31808 100644
 --- a/third_party/blink/renderer/platform/media/BUILD.gn
@@ -1170,7 +1218,7 @@ index 71f2cb5d8c38a8a9bdf79fb189e7f080510f1934..2b3096ed5ba41df870f54a3cb840aadb
  source_set("unit_tests") {
 diff --git a/third_party/blink/renderer/platform/media/brightsign/video_player_proxy.cc b/third_party/blink/renderer/platform/media/brightsign/video_player_proxy.cc
 new file mode 100644
-index 0000000000000000000000000000000000000000..5d5ed47845fc02e272bc6f9f128caad8f94244ee
+index 0000000000000000000000000000000000000000..71481b01133dca06c1fbe8b6405df3ef86afe9c0
 --- /dev/null
 +++ b/third_party/blink/renderer/platform/media/brightsign/video_player_proxy.cc
 @@ -0,0 +1,115 @@
@@ -1216,7 +1264,7 @@ index 0000000000000000000000000000000000000000..5d5ed47845fc02e272bc6f9f128caad8
 +}
 +
 +void VidPlayerListenerProxy::LoadCallback(
-+    int64_t current_time, const StringMapVector& video_tracks,const StringMapVector& audio_tracks, const StringMapVector& text_tracks){
++    std::chrono::microseconds current_time, const StringMapVector& video_tracks,const StringMapVector& audio_tracks, const StringMapVector& text_tracks){
 +  main_task_runner_->PostTask(
 +      FROM_HERE,
 +      base::BindOnce(&WebMediaPlayerBrightsign::LoadCallback, web_media_player_,
@@ -1224,7 +1272,7 @@ index 0000000000000000000000000000000000000000..5d5ed47845fc02e272bc6f9f128caad8
 +}
 +
 +void VidPlayerListenerProxy::SeekCompletedCallback(
-+    int64_t current_time) {
++    std::chrono::microseconds current_time) {
 +  main_task_runner_->PostTask(
 +      FROM_HERE, base::BindOnce(&WebMediaPlayerBrightsign::SeekCompletedCallback,
 +                                web_media_player_, current_time));
@@ -1240,7 +1288,7 @@ index 0000000000000000000000000000000000000000..5d5ed47845fc02e272bc6f9f128caad8
 +}
 +
 +void VidPlayerListenerProxy::PlaybackPositionUpdatedCallback(
-+    int64_t  current_time,
++    std::chrono::microseconds current_time,
 +    const VidPlayerDecodeStatistics &decode_stats) {
 +  main_task_runner_->PostTask(
 +      FROM_HERE,
@@ -1249,7 +1297,7 @@ index 0000000000000000000000000000000000000000..5d5ed47845fc02e272bc6f9f128caad8
 +}
 +
 +void VidPlayerListenerProxy::DurationChangedCallback(
-+    int64_t duration) {
++    std::chrono::microseconds duration) {
 +  main_task_runner_->PostTask(
 +      FROM_HERE, base::BindOnce(&WebMediaPlayerBrightsign::DurationChangedCallback,
 +                                web_media_player_, duration));
@@ -1291,10 +1339,10 @@ index 0000000000000000000000000000000000000000..5d5ed47845fc02e272bc6f9f128caad8
 +}  // namespace blink
 diff --git a/third_party/blink/renderer/platform/media/brightsign/video_player_proxy.h b/third_party/blink/renderer/platform/media/brightsign/video_player_proxy.h
 new file mode 100644
-index 0000000000000000000000000000000000000000..a01e4753227d19b6b2b3dfcb880d7f50e013bfde
+index 0000000000000000000000000000000000000000..c34d368be76dcbe5ae2c366e29d7449209bee5ab
 --- /dev/null
 +++ b/third_party/blink/renderer/platform/media/brightsign/video_player_proxy.h
-@@ -0,0 +1,50 @@
+@@ -0,0 +1,49 @@
 +#ifndef MEDIA_BLINK_VID_PLAYER_PROXY_H
 +#define MEDIA_BLINK_VID_PLAYER_PROXY_H
 +
@@ -1325,14 +1373,13 @@ index 0000000000000000000000000000000000000000..a01e4753227d19b6b2b3dfcb880d7f50
 +  void ErrorCallback(enum VidPlayerErrorCode code, const char *message);
 +  void PlaybackStartedCallback();
 +  void PlaybackCompletedCallback();
-+  void LoadCallback(int64_t duration, const StringMapVector& video_tracks,const StringMapVector& audio_tracks, const StringMapVector& text_tracks);
-+  void VideoSizeChangedCallback(uint32_t width, uint32_t height,
-+                                                      int32_t z_index);
-+  void PlaybackPositionUpdatedCallback(int64_t current_time,
-+                                                             const VidPlayerDecodeStatistics& stats);
-+  void DurationChangedCallback(int64_t current_time);
++  void LoadCallback(std::chrono::microseconds duration, const StringMapVector& video_tracks,const StringMapVector& audio_tracks, const StringMapVector& text_tracks);
++  void VideoSizeChangedCallback(uint32_t width, uint32_t height, int32_t z_index);
++  void PlaybackPositionUpdatedCallback(std::chrono::microseconds current_time,
++                                       const VidPlayerDecodeStatistics& stats);
++  void DurationChangedCallback(std::chrono::microseconds duration);
 +  void PausedCallback();
-+  void SeekCompletedCallback(int64_t current_time);
++  void SeekCompletedCallback(std::chrono::microseconds current_time);
 +  void ReleasedCallback();
 +  void FrameReadyCallback();
 +  void SubtitleUpdatedCallback(const StringMapVector& text_tracks);
@@ -1347,10 +1394,10 @@ index 0000000000000000000000000000000000000000..a01e4753227d19b6b2b3dfcb880d7f50
 +#endif
 diff --git a/third_party/blink/renderer/platform/media/brightsign/web_media_player_brightsign.cc b/third_party/blink/renderer/platform/media/brightsign/web_media_player_brightsign.cc
 new file mode 100644
-index 0000000000000000000000000000000000000000..d41f3e7cb2906e577352ec8a6c1248cf0694683a
+index 0000000000000000000000000000000000000000..c5eddecf2b0202cb0b8e9c706b577f7f9d4b51ce
 --- /dev/null
 +++ b/third_party/blink/renderer/platform/media/brightsign/web_media_player_brightsign.cc
-@@ -0,0 +1,791 @@
+@@ -0,0 +1,819 @@
 +// Copyright 2017 The Chromium Authors
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
@@ -1405,7 +1452,7 @@ index 0000000000000000000000000000000000000000..d41f3e7cb2906e577352ec8a6c1248cf
 +                                  const StringMapVector& text_tracks) {
 +  VidPlayerListenerProxy* vid_player_listener =
 +      static_cast<VidPlayerListenerProxy*>(context);
-+  vid_player_listener->LoadCallback(duration, video_tracks, audio_tracks,
++  vid_player_listener->LoadCallback(std::chrono::microseconds(duration), video_tracks, audio_tracks,
 +                                    text_tracks);
 +}
 +
@@ -1424,14 +1471,14 @@ index 0000000000000000000000000000000000000000..d41f3e7cb2906e577352ec8a6c1248cf
 +    const VidPlayerDecodeStatistics& stats) {
 +  VidPlayerListenerProxy* vid_player_listener =
 +      static_cast<VidPlayerListenerProxy*>(context);
-+  vid_player_listener->PlaybackPositionUpdatedCallback(current_time, stats);
++  vid_player_listener->PlaybackPositionUpdatedCallback(std::chrono::microseconds(current_time), stats);
 +}
 +
 +static void VidPlayerDurationChangedCallback(void* context,
-+                                             int64_t current_time) {
++                                             int64_t duration) {
 +  VidPlayerListenerProxy* vid_player_listener =
 +      static_cast<VidPlayerListenerProxy*>(context);
-+  vid_player_listener->DurationChangedCallback(current_time);
++  vid_player_listener->DurationChangedCallback(std::chrono::microseconds(duration));
 +}
 +
 +static void VidPlayerPausedCallback(void* context) {
@@ -1444,7 +1491,7 @@ index 0000000000000000000000000000000000000000..d41f3e7cb2906e577352ec8a6c1248cf
 +                                           int64_t current_time) {
 +  VidPlayerListenerProxy* vid_player_listener =
 +      static_cast<VidPlayerListenerProxy*>(context);
-+  vid_player_listener->SeekCompletedCallback(current_time);
++  vid_player_listener->SeekCompletedCallback(std::chrono::microseconds(current_time));
 +}
 +
 +static void VidPlayerReleasedCallback(void* context) {
@@ -1561,13 +1608,14 @@ index 0000000000000000000000000000000000000000..d41f3e7cb2906e577352ec8a6c1248cf
 +  VLOG(1) << __func__;
 +  DCHECK(main_task_runner_->BelongsToCurrentThread());
 +  std::map<std::string, std::string> attributes;
-+  return Load(type, source, cors, attributes);
++  return Load(type, source, cors, is_cache_disabled, attributes);
 +}
 +
 +WebMediaPlayer::LoadTiming WebMediaPlayerBrightsign::Load(
 +    LoadType type,
 +    const WebMediaPlayerSource& source,
 +    CorsMode cors,
++    bool is_cache_disabled,
 +    std::map<std::string, std::string>& attributes) {
 +  VLOG(1) << __func__;
 +  DCHECK(main_task_runner_->BelongsToCurrentThread());
@@ -1585,10 +1633,32 @@ index 0000000000000000000000000000000000000000..d41f3e7cb2906e577352ec8a6c1248cf
 +      frame_->GetDocument().SiteForCookies().RepresentativeUrl();
 +  std::string top_frame_origin =
 +      frame_->GetDocument().TopFrameOrigin().ToString().Utf8();
-+  StringMap map = {nullptr, 0};
++
++  StringPair *items = static_cast<StringPair *>(std::malloc(attributes.size() * sizeof(StringPair)));
++  StringMap map = {items, 0};
++
++  for (const auto& attribute : attributes)
++  {
++    // Allocate memory for key and value strings
++    items[map.length].key = static_cast<char *>(std::malloc((attribute.first.size() + 1) * sizeof(char)));
++    items[map.length].value = static_cast<char *>(std::malloc((attribute.second.size() + 1) * sizeof(char)));
++
++    // Copy key and value strings
++    std::strcpy(items[map.length].key, attribute.first.c_str());
++    std::strcpy(items[map.length].value, attribute.second.c_str());
++    map.length++;
++  }
++
 +  vid_player_load(vid_player_, url.GetString().Utf8().c_str(),
 +                  representative_url.spec().c_str(), top_frame_origin.c_str(),
 +                  map, !client_->IsAudioElement());
++
++  for (size_t i = 0; i < map.length; i++)
++  {
++    std::free(items[i].key);
++    std::free(items[i].value);
++  }
++  std::free(items);
 +
 +  return LoadTiming::kImmediate;
 +}
@@ -1937,7 +2007,7 @@ index 0000000000000000000000000000000000000000..d41f3e7cb2906e577352ec8a6c1248cf
 +}
 +
 +void WebMediaPlayerBrightsign::LoadCallback(
-+    int64_t duration,
++    std::chrono::microseconds duration,
 +    const StringMapVector& video_tracks,
 +    const StringMapVector& audio_tracks,
 +    const StringMapVector& text_tracks) {
@@ -1958,7 +2028,7 @@ index 0000000000000000000000000000000000000000..d41f3e7cb2906e577352ec8a6c1248cf
 +void WebMediaPlayerBrightsign::TextureMailboxReadyCallback(
 +    const VidPlayerMailboxData& mbox) {}
 +
-+void WebMediaPlayerBrightsign::SeekCompletedCallback(int64_t current_time) {
++void WebMediaPlayerBrightsign::SeekCompletedCallback(std::chrono::microseconds current_time) {
 +  VLOG(1) << __func__;
 +  DCHECK(main_task_runner_->BelongsToCurrentThread());
 +  seeking_ = false;
@@ -1989,7 +2059,7 @@ index 0000000000000000000000000000000000000000..d41f3e7cb2906e577352ec8a6c1248cf
 +}
 +
 +void WebMediaPlayerBrightsign::PlaybackPositionUpdatedCallback(
-+    int64_t current_time,
++    std::chrono::microseconds current_time,
 +    const VidPlayerDecodeStatistics& decode_stats) {
 +  VLOG(1) << __func__;
 +  DCHECK(main_task_runner_->BelongsToCurrentThread());
@@ -2002,17 +2072,22 @@ index 0000000000000000000000000000000000000000..d41f3e7cb2906e577352ec8a6c1248cf
 +    return;
 +  }
 +
-+  double current_time_d = current_time;
++  double current_time_d = std::chrono::duration<double>(current_time).count();
 +  if (current_time_ != current_time_d) {
 +    current_time_ = current_time_d;
 +    client_->TimeChanged();
 +  }
 +}
 +
-+void WebMediaPlayerBrightsign::DurationChangedCallback(int64_t duration) {
++void WebMediaPlayerBrightsign::DurationChangedCallback(std::chrono::microseconds duration) {
 +  VLOG(1) << __func__;
 +  DCHECK(main_task_runner_->BelongsToCurrentThread());
-+  duration_ = duration;
++  if (duration == std::chrono::milliseconds::max())
++    duration_ = std::numeric_limits<double>::infinity();
++  else if (duration == std::chrono::milliseconds::zero())
++    duration_ = std::numeric_limits<double>::infinity();
++  else
++    duration_ = std::chrono::duration<double>(duration).count();
 +  client_->DurationChanged();
 +}
 +
@@ -2144,10 +2219,10 @@ index 0000000000000000000000000000000000000000..d41f3e7cb2906e577352ec8a6c1248cf
 +}  // namespace blink
 diff --git a/third_party/blink/renderer/platform/media/brightsign/web_media_player_brightsign.h b/third_party/blink/renderer/platform/media/brightsign/web_media_player_brightsign.h
 new file mode 100644
-index 0000000000000000000000000000000000000000..6a53b4cf4edd5449b9781e510adc27feffcd631c
+index 0000000000000000000000000000000000000000..a9819121de41cc832a832d6a6b94848123bc0678
 --- /dev/null
 +++ b/third_party/blink/renderer/platform/media/brightsign/web_media_player_brightsign.h
-@@ -0,0 +1,261 @@
+@@ -0,0 +1,263 @@
 +// Copyright 2017 The Chromium Authors
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
@@ -2155,6 +2230,7 @@ index 0000000000000000000000000000000000000000..6a53b4cf4edd5449b9781e510adc27fe
 +#ifndef THIRD_PARTY_BLINK_RENDERER_PLATFORM_MEDIA_BRIGHTSIGN_WEB_MEDIA_PLAYER_BRIGHTSIGN_H_
 +#define THIRD_PARTY_BLINK_RENDERER_PLATFORM_MEDIA_BRIGHTSIGN_WEB_MEDIA_PLAYER_BRIGHTSIGN_H_
 +
++#include <chrono>
 +#include <libbvp/api.h>
 +#include <libvid/vid_player_c_bindings.h>
 +#include "base/callback.h"
@@ -2214,7 +2290,8 @@ index 0000000000000000000000000000000000000000..6a53b4cf4edd5449b9781e510adc27fe
 +  LoadTiming Load(LoadType,
 +                  const blink::WebMediaPlayerSource&,
 +                  CorsMode cors_mode,
-+                  std::map<std::string, std::string>&);
++                  bool is_cache_disabled,
++                  std::map<std::string, std::string>&) override;
 +
 +  // Playback controls.
 +  void Play() override;
@@ -2293,18 +2370,18 @@ index 0000000000000000000000000000000000000000..6a53b4cf4edd5449b9781e510adc27fe
 +  void ErrorCallback(enum VidPlayerErrorCode code, const char* message);
 +  void PlaybackStartedCallback();
 +  void PlaybackCompletedCallback();
-+  void LoadCallback(int64_t duration,
++  void LoadCallback(std::chrono::microseconds duration,
 +                    const StringMapVector& video_tracks,
 +                    const StringMapVector& audio_tracks,
 +                    const StringMapVector& text_tracks);
 +  void VideoSizeChangedCallback(uint32_t width,
 +                                uint32_t height,
 +                                int32_t z_index);
-+  void PlaybackPositionUpdatedCallback(int64_t current_time,
++  void PlaybackPositionUpdatedCallback(std::chrono::microseconds current_time,
 +                                       const VidPlayerDecodeStatistics& stats);
-+  void DurationChangedCallback(int64_t current_time);
++  void DurationChangedCallback(std::chrono::microseconds duration);
 +  void PausedCallback();
-+  void SeekCompletedCallback(int64_t current_time);
++  void SeekCompletedCallback(std::chrono::microseconds current_time);
 +  void ReleasedCallback();
 +  void FrameReadyCallback();
 +  void SubtitleUpdatedCallback(const StringMapVector& text_tracks);
