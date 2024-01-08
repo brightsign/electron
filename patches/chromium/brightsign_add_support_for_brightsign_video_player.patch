@@ -278,10 +278,10 @@ index ae69ffefaa9ebf51193f819e41e9f1425165eeb4..b73d77295f556dccaef7c5035729cd63
          NOTREACHED();
 diff --git a/components/viz/service/display/overlay_strategy_underlay_brightsign.cc b/components/viz/service/display/overlay_strategy_underlay_brightsign.cc
 new file mode 100644
-index 0000000000000000000000000000000000000000..1d99764a756965f032658bc7db6dd89b4cf9ab08
+index 0000000000000000000000000000000000000000..01f445f4d1e0ddea2ba3e015c7200ce33ff8c317
 --- /dev/null
 +++ b/components/viz/service/display/overlay_strategy_underlay_brightsign.cc
-@@ -0,0 +1,348 @@
+@@ -0,0 +1,361 @@
 +// Copyright 2017 The Chromium Authors. All rights reserved.
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
@@ -444,6 +444,19 @@ index 0000000000000000000000000000000000000000..1d99764a756965f032658bc7db6dd89b
 +    token_string.push_back(token.overlay_plane_id.ToString());
 +    factory_name = token.factory_name;
 +  }
++
++  // When videos are hidden we don't get any tokens for them and we don't know what the factory name associated with
++  // this OverlayStrategy is. Therefore, we need to save off the last factory and use it if we don't get any tokens,
++  // to ensure that we hide videos that are not visible in css.
++  // Since videos start off hidden, we don't have to worry about a hidden video that is never shown, as we will never
++  // know what the factory name is (to beable to hide it).
++  if (factory_name.empty()) {
++    factory_name = last_factory_name_;
++  }
++  else {
++    last_factory_name_ = factory_name;
++  }
++
 +  std::sort(token_string.begin(), token_string.end());
 +
 +  // If list of video players on current and previous frame are same, do nothing
@@ -632,10 +645,10 @@ index 0000000000000000000000000000000000000000..1d99764a756965f032658bc7db6dd89b
 +}  // namespace viz
 diff --git a/components/viz/service/display/overlay_strategy_underlay_brightsign.h b/components/viz/service/display/overlay_strategy_underlay_brightsign.h
 new file mode 100644
-index 0000000000000000000000000000000000000000..d5a0d3281c8a88fa8ab840ab83ad3f61c19ca5c9
+index 0000000000000000000000000000000000000000..f9edc840c9e94613631e51d7034153089e2eb7c4
 --- /dev/null
 +++ b/components/viz/service/display/overlay_strategy_underlay_brightsign.h
-@@ -0,0 +1,90 @@
+@@ -0,0 +1,91 @@
 +// Copyright 2017 The Chromium Authors. All rights reserved.
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
@@ -721,6 +734,7 @@ index 0000000000000000000000000000000000000000..d5a0d3281c8a88fa8ab840ab83ad3f61
 +                     std::vector<VideoHoleDrawQuad>* tokens,
 +                     std::vector<gfx::Rect>* content_bounds);
 +  std::vector<std::string> last_frame_player_list_;
++  std::string last_factory_name_;
 +};
 +
 +}  // namespace viz
