@@ -10,8 +10,10 @@ I11c9915a4c23155fc8b8b4e405b69ed48821db5a
 I7ee3558529c24a08b22b1ad3a4a9d6df73174cdd
 I6d9a40bb65b8ff4d44e4e5b6d850f1a728768feb
 
+Includes an additional change missing from QtWebEngine version to stop the binary sniffer changing the mime type of text/xml files to text/plain.
+
 diff --git a/net/base/mime_sniffer.cc b/net/base/mime_sniffer.cc
-index 826622c7378890d80e338f61601128fa5b7b9f12..a13ba2681e94a68785990fc2b2acbd4a16ba6b01 100644
+index 826622c7378890d80e338f61601128fa5b7b9f12..5382d058d13f194ae29abc299d152b455d27d2e1 100644
 --- a/net/base/mime_sniffer.cc
 +++ b/net/base/mime_sniffer.cc
 @@ -371,8 +371,17 @@ static bool SniffForHTML(base::StringPiece content,
@@ -93,6 +95,15 @@ index 826622c7378890d80e338f61601128fa5b7b9f12..a13ba2681e94a68785990fc2b2acbd4a
    }
  
    // We're only willing to sniff for binary in 3 cases:
+@@ -748,7 +778,7 @@ bool SniffMimeType(base::StringPiece content,
+   // 3. The type is "text/plain" which is the default on some web servers and
+   //    could be indicative of a mis-configuration that we shield the user from.
+   const bool hint_is_text_plain = (type_hint == "text/plain");
+-  if (hint_is_unknown_mime_type || hint_is_text_plain) {
++  if ((hint_is_unknown_mime_type || hint_is_text_plain) && !sniffed_xml) {
+     if (!SniffBinary(content, &have_enough_content, result)) {
+       // If the server said the content was text/plain and it doesn't appear
+       // to be binary, then we trust it.
 @@ -759,12 +789,14 @@ bool SniffMimeType(base::StringPiece content,
    }
  
