@@ -243,6 +243,26 @@ void ProxyingURLLoaderFactory::InProgressRequest::OnReceiveResponse(
     network::mojom::URLResponseHeadPtr head,
     mojo::ScopedDataPipeConsumerHandle body,
     absl::optional<mojo_base::BigBuffer> cached_metadata) {
+  // Chromium sets the kContentType and kLastModified fields in the header
+  // always.
+  if (request_.url.SchemeIs(url::kFileScheme) &&
+      !request_.url.ExtractFileName().empty() && head->headers) {
+    if (request_.url.ExtractFileName().find(".") == std::string::npos &&
+        head->headers->HasHeaderValue(net::HttpRequestHeaders::kContentType,
+                                      "text/plain")) {
+      // Having content-type set causes an issue for css style sheets with no
+      // file extension (asset pool files). In this case the content type is set
+      // to text/plain as the mime sniffer doesn't support detecting a css file,
+      // which causes the style sheet to be ignored. To fix this remove the
+      // content type.
+      head->headers->RemoveHeader(net::HttpRequestHeaders::kContentType);
+    }
+    if (head->headers->HasHeader(net::HttpResponseHeaders::kLastModified)) {
+      // We don't want to cache files so remove the last modified header.
+      head->headers->RemoveHeader(net::HttpResponseHeaders::kLastModified);
+    }
+  }
+
   current_body_ = std::move(body);
   current_cached_metadata_ = std::move(cached_metadata);
   if (current_request_uses_header_client_) {
