@@ -243,6 +243,21 @@ void ProxyingURLLoaderFactory::InProgressRequest::OnReceiveResponse(
     network::mojom::URLResponseHeadPtr head,
     mojo::ScopedDataPipeConsumerHandle body,
     absl::optional<mojo_base::BigBuffer> cached_metadata) {
+  // Chromium sets the kContentType field in the header always. This causes an
+  // issue for css style sheets with no file extension. In this case the content
+  // type is set to text/plain as the mime sniffer doesn't support detecting a
+  // css file, which causes the style sheet to be ignored. To fix this we remove
+  // the content type if the url is a file schema, has no extension and the
+  // content type has been set to text/plain.
+  if (request_.url.SchemeIs(url::kFileScheme) &&
+      !request_.url.ExtractFileName().empty() &&
+      request_.url.ExtractFileName().find(".") == std::string::npos &&
+      head->headers &&
+      head->headers->HasHeaderValue(net::HttpRequestHeaders::kContentType,
+                                    "text/plain")) {
+    head->headers->RemoveHeader(net::HttpRequestHeaders::kContentType);
+  }
+
   current_body_ = std::move(body);
   current_cached_metadata_ = std::move(cached_metadata);
   if (current_request_uses_header_client_) {
