@@ -1,0 +1,409 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Tariq Bashir <120014322+t-bashir-bs@users.noreply.github.com>
+Date: Thu, 18 Jan 2024 13:27:03 +0000
+Subject: OS-16623 add setopacity and  downgrade to zwp_alpha_compositing_v1
+
+This patch downgrades the alpha_compositing protocol from zcr_alpha_compositing_v1
+to zwp_alpha_compositing_v1 to match the protocol version used by the BS
+wayland/weston compositor. This patch also adds a setopacity method to the
+wayland_toplevel_window class to allow the opacity of the window to be set.
+
+diff --git a/third_party/wayland-protocols/unstable/alpha-compositing/alpha-compositing-unstable-v1.xml b/third_party/wayland-protocols/unstable/alpha-compositing/alpha-compositing-unstable-v1.xml
+index 00a1341e29c7c26780b5fb29863c32116f63c186..aae1d6e7c86f1fba869f9663aece99fa824185dd 100644
+--- a/third_party/wayland-protocols/unstable/alpha-compositing/alpha-compositing-unstable-v1.xml
++++ b/third_party/wayland-protocols/unstable/alpha-compositing/alpha-compositing-unstable-v1.xml
+@@ -2,7 +2,9 @@
+ <protocol name="alpha_compositing_unstable_v1">
+ 
+   <copyright>
+-    Copyright 2016 The Chromium Authors
++    Copyright 2016      The Chromium Authors.
++    Copyright 2017-2018 Collabora Ltd
++    Copyright 2018      NXP
+ 
+     Permission is hereby granted, free of charge, to any person obtaining a
+     copy of this software and associated documentation files (the "Software"),
+@@ -26,7 +28,7 @@
+ 
+   <description summary="Protocol for more advanced compositing and blending">
+     This protocol specifies a set of interfaces used to control the alpha
+-    compositing and blending of contents.
++    compositing and blending of surface contents.
+ 
+     Warning! The protocol described in this file is experimental and backward
+     incompatible changes may be made. Backward compatible changes may be added
+@@ -38,7 +40,7 @@
+     reset.
+   </description>
+ 
+-  <interface name="zcr_alpha_compositing_v1" version="1">
++  <interface name="zwp_alpha_compositing_v1" version="1">
+     <description summary="alpha_compositing">
+       The global interface exposing compositing and blending capabilities is
+       used to instantiate an interface extension for a wl_surface object.
+@@ -46,41 +48,65 @@
+       blending equation and alpha value used for compositing the wl_surface.
+     </description>
+ 
++    <enum name="error">
++      <entry name="blending_exists" value="0"
++             summary="the surface already has a blending object associated"/>
++    </enum>
++
+     <request name="destroy" type="destructor">
+       <description summary="unbind from the blending interface">
+-	Informs the server that the client will not be using this
+-	protocol object anymore. This does not affect any other objects,
+-	blending objects included.
++        Informs the server that the client will not be using this
++        protocol object anymore. This does not affect any other objects,
++        blending objects included.
+       </description>
+     </request>
+ 
+-    <enum name="error">
+-      <entry name="blending_exists" value="0"
+-	     summary="the surface already has a blending object associated"/>
+-    </enum>
+-
+     <request name="get_blending">
+       <description summary="extend surface interface for blending">
+-	Instantiate an interface extension for the given wl_surface to
+-	provide surface blending. If the given wl_surface already has
+-	a blending object associated, the blending_exists protocol error
+-	is raised.
++        Instantiate an interface extension for the given wl_surface to
++        provide surface blending. If the given wl_surface already has
++        a blending object associated, the BLENDING_EXISTS protocol error
++        is raised.
+       </description>
+ 
+-      <arg name="id" type="new_id" interface="zcr_blending_v1"
+-	   summary="the new blending interface id"/>
++      <arg name="id" type="new_id" interface="zwp_blending_v1"
++           summary="the new blending interface id"/>
+       <arg name="surface" type="object" interface="wl_surface"
+-	   summary="the surface"/>
++           summary="the surface"/>
+     </request>
++
++    <event name="blending">
++      <description summary="supported blending equations">
++        This event advertistes the blending equations that the server
++        supports. All the supported blending equations are advertised once
++        when the client binds to this interface. A roundtrip after binding
++        gurantees that the client has received all supported blending
++        equations.
++
++        For the definition of the blending equations, see the
++        zwp_blending_v1.blending_equation enum.
++
++        The server must always advertise the 'none' blending equation.
++      </description>
++      <arg name="equation" type="uint" summary="the blending equation"/>
++    </event>
+   </interface>
+ 
+-  <interface name="zcr_blending_v1" version="1">
++  <interface name="zwp_blending_v1" version="1">
+     <description summary="blending interface to a wl_surface">
+       An additional interface to a wl_surface object, which allows the
+       client to specify the blending equation used for compositing and
+       an alpha value applied to the whole surface.
+ 
+-      If the wl_surface associated with the bledning object is destroyed,
++      When the blending object is created its blending equation is
++      'none' and its alpha is 1.0, i.e., it's inactive by default. Clients
++      can activate it by setting the blending equation and alpha value.
++
++      Use of this interface has no effect on the surface's opaque region
++      as set by wl_surface.set_opaque_region. Clients must make sure to set
++      their opaque region correctly to prevent repaint artifacts.
++
++      If the wl_surface associated with the blending object is destroyed,
+       the blending object becomes inert.
+ 
+       If the blending object is destroyed, the blending state is removed
+@@ -88,40 +114,56 @@
+       wl_surface.commit.
+     </description>
+ 
+-    <request name="destroy" type="destructor">
+-      <description summary="remove blending from the surface">
+-	The associated wl_surface's blending state is removed.
+-	The change is applied on the next wl_surface.commit.
+-      </description>
+-    </request>
+-
+     <enum name="blending_equation">
+       <description summary="different blending equations for compositing">
+-	Blending equations that can be used when compositing a surface.
++        Blending equations that can be used when compositing a surface.
+       </description>
+-      <entry name="none" value="0" summary="no blending"/>
+-      <entry name="premult" value="1" summary="one / one_minus_src_alpha"/>
+-      <entry name="coverage" value="2" summary="src_alpha / one_minus_src_alpha" />
++      <entry name="none" value="0" summary="blending object is inactive"/>
++      <entry name="opaque" value="1" summary="(one, zero)"/>
++      <entry name="premultiplied" value="2" summary="(one, one_minus_src_alpha)"/>
++      <entry name="straight" value="3" summary="(src_alpha, one_minus_src_alpha)"/>
++      <entry name="fromsource" value="4" summary="(src_alpha, src_alpha)"/>
++    </enum>
++
++    <enum name="error">
++      <entry name="invalid_equation" value="0"
++             summary="the blending equation is not supported"/>
++      <entry name="invalid_alpha" value="1"
++             summary="the requested alpha value is outside the interval [0, 1]"/>
+     </enum>
+ 
++    <request name="destroy" type="destructor">
++      <description summary="remove blending from the surface">
++        The associated wl_surface's blending state is removed.
++        The change is applied on the next wl_surface.commit.
++      </description>
++    </request>
++
+     <request name="set_blending">
+       <description summary="set the blending equation">
+-	Set the blending equation for compositing the wl_surface.
+-	See wp_alpha_compositing for the description.
++        Set the blending equation for compositing the wl_surface.
++
++        If the requested format was not advertised by the
++        zwp_alpha_compositing_v1.blending event, the INVALID_EQUATION protocol
++        error is raised.
+ 
+-	The blending equation state is double-buffered state,
+-	and will be applied on the next wl_surface.commit.
++        The blending equation state is double-buffered state,
++        and will be applied on the next wl_surface.commit.
+       </description>
+       <arg name="equation" type="uint" summary="the new blending equation"/>
+     </request>
+ 
+     <request name="set_alpha">
+       <description summary="set the alpha value">
+-	Set the alpha value applied to the whole surface for compositing.
+-	See wp_alpha_compositing for the description.
++        Set the alpha value applied to the whole surface for compositing. This
++        alpha value is applied as an additional step after the processing of
++        per-pixel alpha values for the wl_surface.
++
++        If the requested alpha is outside the interval [0, 1], the
++        INVALID_ALPHA protocol error is raised.
+ 
+-	The alpha value state is double-buffered state,
+-	and will be applied on the next wl_surface.commit.
++        The alpha value state is double-buffered state,
++        and will be applied on the next wl_surface.commit.
+       </description>
+       <arg name="value" type="fixed" summary="the new alpha value"/>
+     </request>
+diff --git a/ui/ozone/platform/wayland/common/wayland_object.cc b/ui/ozone/platform/wayland/common/wayland_object.cc
+index 4d08be815afcd4372ef7e7768af8b47f8ca1dad1..02acd8c5a5df0cfe5b391ad4e0bf06cd7a95196c 100644
+--- a/ui/ozone/platform/wayland/common/wayland_object.cc
++++ b/ui/ozone/platform/wayland/common/wayland_object.cc
+@@ -253,8 +253,8 @@ IMPLEMENT_WAYLAND_OBJECT_TRAITS(zcr_touch_stylus_v2)
+ IMPLEMENT_WAYLAND_OBJECT_TRAITS(zcr_stylus_v2)
+ IMPLEMENT_WAYLAND_OBJECT_TRAITS(zcr_text_input_extension_v1)
+ IMPLEMENT_WAYLAND_OBJECT_TRAITS(zcr_touchpad_haptics_v1)
+-IMPLEMENT_WAYLAND_OBJECT_TRAITS(zcr_blending_v1)
+-IMPLEMENT_WAYLAND_OBJECT_TRAITS(zcr_alpha_compositing_v1)
++IMPLEMENT_WAYLAND_OBJECT_TRAITS(zwp_blending_v1)
++IMPLEMENT_WAYLAND_OBJECT_TRAITS(zwp_alpha_compositing_v1)
+ IMPLEMENT_WAYLAND_OBJECT_TRAITS(zwp_idle_inhibit_manager_v1)
+ IMPLEMENT_WAYLAND_OBJECT_TRAITS(zwp_idle_inhibitor_v1)
+ IMPLEMENT_WAYLAND_OBJECT_TRAITS(zwp_keyboard_shortcuts_inhibit_manager_v1)
+diff --git a/ui/ozone/platform/wayland/common/wayland_object.h b/ui/ozone/platform/wayland/common/wayland_object.h
+index 15793309681ae76535d02e1ad3f8fd93a1c1f4b7..d7ddd1d653567cbe563410aab6929c764bd383a2 100644
+--- a/ui/ozone/platform/wayland/common/wayland_object.h
++++ b/ui/ozone/platform/wayland/common/wayland_object.h
+@@ -165,8 +165,8 @@ DECLARE_WAYLAND_OBJECT_TRAITS(zcr_color_management_output_v1)
+ DECLARE_WAYLAND_OBJECT_TRAITS(zcr_color_management_surface_v1)
+ DECLARE_WAYLAND_OBJECT_TRAITS(zcr_color_space_creator_v1)
+ DECLARE_WAYLAND_OBJECT_TRAITS(zcr_color_space_v1)
+-DECLARE_WAYLAND_OBJECT_TRAITS(zcr_blending_v1)
+-DECLARE_WAYLAND_OBJECT_TRAITS(zcr_alpha_compositing_v1)
++DECLARE_WAYLAND_OBJECT_TRAITS(zwp_blending_v1)
++DECLARE_WAYLAND_OBJECT_TRAITS(zwp_alpha_compositing_v1)
+ DECLARE_WAYLAND_OBJECT_TRAITS(zcr_keyboard_extension_v1)
+ DECLARE_WAYLAND_OBJECT_TRAITS(zcr_extended_keyboard_v1)
+ DECLARE_WAYLAND_OBJECT_TRAITS(zcr_extended_drag_v1)
+diff --git a/ui/ozone/platform/wayland/host/wayland_connection.cc b/ui/ozone/platform/wayland/host/wayland_connection.cc
+index 22b69582604f6bb6ea6acbc402c661d424c4d561..de0768f131e335b51a058fd6adab89aef197ab8a 100644
+--- a/ui/ozone/platform/wayland/host/wayland_connection.cc
++++ b/ui/ozone/platform/wayland/host/wayland_connection.cc
+@@ -445,11 +445,11 @@ void WaylandConnection::Global(void* data,
+                              connection);
+     ReportShellUMA(UMALinuxWaylandShell::kXdgWmBase);
+   } else if (!connection->alpha_compositing_ &&
+-             (strcmp(interface, "zcr_alpha_compositing_v1") == 0)) {
+-    connection->alpha_compositing_ = wl::Bind<zcr_alpha_compositing_v1>(
++             (strcmp(interface, "zwp_alpha_compositing_v1") == 0)) {
++    connection->alpha_compositing_ = wl::Bind<zwp_alpha_compositing_v1>(
+         registry, name, std::min(version, kMaxAlphaCompositingVersion));
+     if (!connection->alpha_compositing_) {
+-      LOG(ERROR) << "Failed to bind zcr_alpha_compositing_v1";
++      LOG(ERROR) << "Failed to bind zwp_alpha_compositing_v1";
+       return;
+     }
+   } else if (!connection->linux_explicit_synchronization_ &&
+diff --git a/ui/ozone/platform/wayland/host/wayland_connection.h b/ui/ozone/platform/wayland/host/wayland_connection.h
+index 07ea6ba8ec3a02b4d0b183dc5e8cc21c66b55fa4..0614769271c87409d73824fbf6ff981ddaab716f 100644
+--- a/ui/ozone/platform/wayland/host/wayland_connection.h
++++ b/ui/ozone/platform/wayland/host/wayland_connection.h
+@@ -126,7 +126,7 @@ class WaylandConnection {
+     return content_type_manager_v1_.get();
+   }
+   wp_viewporter* viewporter() const { return viewporter_.get(); }
+-  zcr_alpha_compositing_v1* alpha_compositing() const {
++  zwp_alpha_compositing_v1* alpha_compositing() const {
+     return alpha_compositing_.get();
+   }
+   xdg_wm_base* shell() const { return shell_.get(); }
+@@ -377,7 +377,7 @@ class WaylandConnection {
+   wl::Object<wp_content_type_manager_v1> content_type_manager_v1_;
+   wl::Object<wp_presentation> presentation_;
+   wl::Object<wp_viewporter> viewporter_;
+-  wl::Object<zcr_alpha_compositing_v1> alpha_compositing_;
++  wl::Object<zwp_alpha_compositing_v1> alpha_compositing_;
+   wl::Object<zcr_keyboard_extension_v1> keyboard_extension_v1_;
+   wl::Object<zwp_keyboard_shortcuts_inhibit_manager_v1>
+       keyboard_shortcuts_inhibit_manager_v1_;
+diff --git a/ui/ozone/platform/wayland/host/wayland_surface.cc b/ui/ozone/platform/wayland/host/wayland_surface.cc
+index 588d6210ccd9dd9701f57aab5139ec7300980d35..1098fe08c43e3ae15b53d1e7ea282e21672ea71e 100644
+--- a/ui/ozone/platform/wayland/host/wayland_surface.cc
++++ b/ui/ozone/platform/wayland/host/wayland_surface.cc
+@@ -138,17 +138,17 @@ bool WaylandSurface::Initialize() {
+   }
+ 
+   if (connection_->alpha_compositing()) {
+-    blending_.reset(zcr_alpha_compositing_v1_get_blending(
++    blending_.reset(zwp_alpha_compositing_v1_get_blending(
+         connection_->alpha_compositing(), surface()));
+     if (!blending_) {
+-      LOG(ERROR) << "Failed to create zcr_blending_v1";
++      LOG(ERROR) << "Failed to create zwp_blending_v1";
+       return false;
+     }
+   } else {
+     static bool log_once = false;
+     if (!log_once) {
+       log_once = true;
+-      LOG(WARNING) << "Server doesn't support zcr_alpha_compositing_v1.";
++      LOG(WARNING) << "Server doesn't support zwp_alpha_compositing_v1.";
+     }
+   }
+ 
+@@ -446,15 +446,15 @@ void WaylandSurface::ApplyPendingState() {
+ 
+   if (pending_state_.opacity != state_.opacity) {
+     DCHECK(blending());
+-    zcr_blending_v1_set_alpha(blending(),
++    zwp_blending_v1_set_alpha(blending(),
+                               wl_fixed_from_double(pending_state_.opacity));
+   }
+   if (pending_state_.use_blending != state_.use_blending) {
+     DCHECK(blending());
+-    zcr_blending_v1_set_blending(blending(),
++    zwp_blending_v1_set_blending(blending(),
+                                  pending_state_.use_blending
+-                                     ? ZCR_BLENDING_V1_BLENDING_EQUATION_PREMULT
+-                                     : ZCR_BLENDING_V1_BLENDING_EQUATION_NONE);
++                                     ? ZWP_BLENDING_V1_BLENDING_EQUATION_PREMULT
++                                     : ZWP_BLENDING_V1_BLENDING_EQUATION_NONE);
+   }
+ 
+   if (pending_state_.priority_hint != state_.priority_hint) {
+diff --git a/ui/ozone/platform/wayland/host/wayland_surface.h b/ui/ozone/platform/wayland/host/wayland_surface.h
+index 8452570dc3ad9dca81aac34fceaa2dcc742285c2..5aac01062b0de4471b04ad360fe54c8f5b6becbf 100644
+--- a/ui/ozone/platform/wayland/host/wayland_surface.h
++++ b/ui/ozone/platform/wayland/host/wayland_surface.h
+@@ -29,7 +29,7 @@
+ struct wp_content_type_v1;
+ struct zwp_keyboard_shortcuts_inhibitor_v1;
+ struct zwp_linux_buffer_release_v1;
+-struct zcr_blending_v1;
++struct zwp_blending_v1;
+ 
+ namespace ui {
+ 
+@@ -56,7 +56,7 @@ class WaylandSurface {
+   }
+   wl_surface* surface() const { return surface_.get(); }
+   wp_viewport* viewport() const { return viewport_.get(); }
+-  zcr_blending_v1* blending() const { return blending_.get(); }
++  zwp_blending_v1* blending() const { return blending_.get(); }
+ 
+   uint32_t buffer_id() const { return state_.buffer_id; }
+   float opacity() const { return state_.opacity; }
+@@ -141,7 +141,7 @@ class WaylandSurface {
+     pending_state_.crop = crop == gfx::RectF{1.f, 1.f} ? gfx::RectF() : crop;
+   }
+ 
+-  // Sets the opacity of the wl_surface using zcr_blending_v1_set_alpha.
++  // Sets the opacity of the wl_surface using zwp_blending_v1_set_alpha.
+   // See: alpha-compositing-unstable-v1.xml
+   void set_opacity(const float opacity) {
+     DCHECK(!apply_state_immediately_);
+@@ -150,7 +150,7 @@ class WaylandSurface {
+   }
+ 
+   // Sets the blending equation of the wl_surface using
+-  // zcr_blending_v1_set_blending. See: alpha-compositing-unstable-v1.xml
++  // zwp_blending_v1_set_blending. See: alpha-compositing-unstable-v1.xml
+   void set_blending(const bool use_blending) {
+     DCHECK(!apply_state_immediately_);
+     if (blending())
+@@ -288,11 +288,11 @@ class WaylandSurface {
+     // If empty, no scaling is applied.
+     gfx::SizeF viewport_px = {0, 0};
+ 
+-    // The opacity of the wl_surface used to call zcr_blending_v1_set_alpha.
++    // The opacity of the wl_surface used to call zwp_blending_v1_set_alpha.
+     float opacity = 1.f;
+ 
+     // The blending equation of the wl_surface used to call
+-    // zcr_blending_v1_set_blending.
++    // zwp_blending_v1_set_blending.
+     bool use_blending = true;
+ 
+     gfx::RRectF rounded_clip_bounds;
+@@ -347,7 +347,7 @@ class WaylandSurface {
+   bool apply_state_immediately_ = false;
+   wl::Object<wl_surface> surface_;
+   wl::Object<wp_viewport> viewport_;
+-  wl::Object<zcr_blending_v1> blending_;
++  wl::Object<zwp_blending_v1> blending_;
+   wl::Object<zwp_keyboard_shortcuts_inhibitor_v1> keyboard_shortcuts_inhibitor_;
+   wl::Object<zwp_linux_surface_synchronization_v1> surface_sync_;
+   wl::Object<overlay_prioritized_surface> overlay_priority_surface_;
+diff --git a/ui/ozone/platform/wayland/host/wayland_toplevel_window.cc b/ui/ozone/platform/wayland/host/wayland_toplevel_window.cc
+index 4a7e082f5390efad0432d4d56b0116a9fd7a6ee7..6c60ea766f6826f7e5af30f4bdd468b7db959c58 100644
+--- a/ui/ozone/platform/wayland/host/wayland_toplevel_window.cc
++++ b/ui/ozone/platform/wayland/host/wayland_toplevel_window.cc
+@@ -311,6 +311,11 @@ void WaylandToplevelWindow::SizeConstraintsChanged() {
+   SetSizeConstraints();
+ }
+ 
++void WaylandToplevelWindow::SetOpacity(float opacity) {
++  root_surface()->set_opacity(opacity);
++  root_surface()->set_blending(true);
++}
++
+ void WaylandToplevelWindow::SetZOrderLevel(ZOrderLevel order) {
+   if (shell_toplevel_)
+     shell_toplevel_->SetZOrder(order);
+diff --git a/ui/ozone/platform/wayland/host/wayland_toplevel_window.h b/ui/ozone/platform/wayland/host/wayland_toplevel_window.h
+index 79d881ddd12e5abb092ac2db88b02190ded67a3c..64f963086b45219960895c2023ac8d79ea50f4f7 100644
+--- a/ui/ozone/platform/wayland/host/wayland_toplevel_window.h
++++ b/ui/ozone/platform/wayland/host/wayland_toplevel_window.h
+@@ -117,6 +117,7 @@ class WaylandToplevelWindow : public WaylandWindow,
+   void SizeConstraintsChanged() override;
+   // `SetZOrderLevel()` must be called on `z_order_` in
+   // `SetUpShellIntegration()`.
++  void SetOpacity(float opacity) override;
+   void SetZOrderLevel(ZOrderLevel order) override;
+   ZOrderLevel GetZOrderLevel() const override;
+   std::string GetWindowUniqueId() const override;

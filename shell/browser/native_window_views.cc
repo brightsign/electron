@@ -1112,6 +1112,10 @@ void NativeWindowViews::SetOpacity(const double opacity) {
   }
   ::SetLayeredWindowAttributes(hwnd, 0, boundedOpacity * 255, LWA_ALPHA);
   opacity_ = boundedOpacity;
+#elif defined(USE_OZONE_PLATFORM_WAYLAND)
+  const double boundedOpacity = base::clamp(opacity, 0.0, 1.0);
+  widget()->SetOpacity(boundedOpacity);
+  opacity_ = boundedOpacity;
 #else
   opacity_ = 1.0;  // setOpacity unsupported on Linux
 #endif
