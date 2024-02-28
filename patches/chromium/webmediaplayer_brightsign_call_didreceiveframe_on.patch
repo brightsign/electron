@@ -1,0 +1,27 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Caner Altinbasak <cal@brightsign.biz>
+Date: Wed, 28 Feb 2024 12:12:26 +0000
+Subject: webmediaplayer_brightsign: Call DidReceiveFrame on
+ compositor_task_runner_
+
+Calls to VideoFrameProviderClient has to be made from compositor thread.
+We startup a timer and call DidReceiveFrame regularly from
+compositor_task_runner_ after startup, but the first call was being made
+from the main_task_runner_, which is wrong.
+
+This change replaces direct message call with a PostTask to compositor_task_runner_
+
+diff --git a/third_party/blink/renderer/platform/media/brightsign/web_media_player_brightsign.cc b/third_party/blink/renderer/platform/media/brightsign/web_media_player_brightsign.cc
+index c5eddecf2b0202cb0b8e9c706b577f7f9d4b51ce..8b62a40a4f372cd3a1e3886b81f994a0805d3063 100644
+--- a/third_party/blink/renderer/platform/media/brightsign/web_media_player_brightsign.cc
++++ b/third_party/blink/renderer/platform/media/brightsign/web_media_player_brightsign.cc
+@@ -654,7 +654,8 @@ void WebMediaPlayerBrightsign::VideoSizeChangedCallback(uint32_t width,
+           switches::kVideoServerFactoryName),
+       z_index);
+   SetCurrentFrame(frame);
+-  DidReceiveFrame();
++  compositor_task_runner_->PostTask(
++    FROM_HERE, base::BindOnce(&WebMediaPlayerBrightsign::DidReceiveFrame, weak_this_));
+   StartFrameReadyTimerIfRequired();
+ }
+ 
