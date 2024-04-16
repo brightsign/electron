@@ -139,3 +139,4 @@ os-16546_enable_file_cookies.patch
 os-16547_patch_mime_sniffer_for_html_utf8_bom_svg_xml_comments.patch
 os-16623_add_setopacity_and_downgrade_to_zwp_alpha_compositing_v1.patch
 webmediaplayer_brightsign_call_didreceiveframe_on.patch
+video_player_reuse_os-14887.patch
