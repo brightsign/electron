@@ -1,0 +1,142 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Tariq Bashir <tbashir@brightsign.biz>
+Date: Mon, 30 Mar 2026 13:32:58 +0100
+Subject: Video player reuse OS-14887
+
+This change cherry picks the QtWebEngine changes in
+I4093433d2153925338b12fd6ef5ed2f1a309eb73. Its purpose is to reuse the
+video player.
+
+diff --git a/third_party/blink/renderer/core/html/media/html_media_element.cc b/third_party/blink/renderer/core/html/media/html_media_element.cc
+index b0c3d1c50fb04aac67a3068ec43ffe7211484075..045359b459c3191d36ad19e8140e7b2c0a384069 100644
+--- a/third_party/blink/renderer/core/html/media/html_media_element.cc
++++ b/third_party/blink/renderer/core/html/media/html_media_element.cc
+@@ -802,6 +802,13 @@ void HTMLMediaElement::ParseAttribute(
+     // requires a style recalc.
+     SetNeedsStyleRecalc(kLocalStyleChange,
+                         StyleChangeReasonForTracing::FromAttribute(name));
++    // BRIGHTSIGN: Release video player if src is newly ""
++    if (RuntimeEnabledFeatures::MediaPlayerReuseEnabled() &&
++        !(params.old_value.IsNull() || params.old_value.empty()) &&
++        params.new_value.empty()
++        ) {
++      ClearMediaPlayer();
++    }
+     // Trigger a reload, as long as the 'src' attribute is present.
+     if (!params.new_value.IsNull()) {
+       if (auto* video_element = DynamicTo<HTMLVideoElement>(this)) {
+@@ -1412,6 +1419,8 @@ void HTMLMediaElement::LoadNextSourceChild() {
+   String content_type;
+   KURL media_url = SelectNextSourceChild(&content_type, kComplain);
+   if (!media_url.IsValid()) {
++    if (RuntimeEnabledFeatures::MediaPlayerReuseEnabled() && media_url.IsEmpty())
++      ClearMediaPlayer();
+     WaitForSourceChange();
+     return;
+   }
+@@ -1688,8 +1697,15 @@ void HTMLMediaElement::StartPlayerLoad() {
+     source = WebMediaPlayerSource(WebURL(kurl));
+   }
+ 
+-  web_media_player_ =
+-      frame->Client()->CreateWebMediaPlayer(*this, source, this);
++  bool player_created = false;
++  if (!RuntimeEnabledFeatures::MediaPlayerReuseEnabled())
++    web_media_player_.reset();
++
++  if (!web_media_player_) {
++    web_media_player_ =
++        frame->Client()->CreateWebMediaPlayer(*this, source, this);
++    player_created = true;
++  }
+ 
+   if (!web_media_player_) {
+     MediaLoadingFailed(WebMediaPlayer::kNetworkStateFormatError,
+@@ -1700,17 +1716,19 @@ void HTMLMediaElement::StartPlayerLoad() {
+ 
+   OnWebMediaPlayerCreated();
+ 
+-  // Setup the communication channels between the renderer and browser processes
+-  // via the MediaPlayer and MediaPlayerObserver mojo interfaces.
+-  DCHECK(media_player_receiver_set_->Value().empty());
+-  mojo::PendingAssociatedRemote<media::mojom::blink::MediaPlayer>
+-      media_player_remote;
+-  BindMediaPlayerReceiver(
+-      media_player_remote.InitWithNewEndpointAndPassReceiver());
++  if (player_created) {
++    // Setup the communication channels between the renderer and browser processes
++    // via the MediaPlayer and MediaPlayerObserver mojo interfaces.
++    DCHECK(media_player_receiver_set_->Value().empty());
++    mojo::PendingAssociatedRemote<media::mojom::blink::MediaPlayer>
++        media_player_remote;
++    BindMediaPlayerReceiver(
++        media_player_remote.InitWithNewEndpointAndPassReceiver());
+ 
+-  GetMediaPlayerHostRemote().OnMediaPlayerAdded(
+-      std::move(media_player_remote), AddMediaPlayerObserverAndPassReceiver(),
+-      web_media_player_->GetPlayerId());
++    GetMediaPlayerHostRemote().OnMediaPlayerAdded(
++        std::move(media_player_remote), AddMediaPlayerObserverAndPassReceiver(),
++        web_media_player_->GetPlayerId());
++  }
+ 
+   if (GetLayoutObject())
+     GetLayoutObject()->SetShouldDoFullPaintInvalidation();
+@@ -4092,6 +4110,9 @@ TimeRanges* HTMLMediaElement::seekable() const {
+ }
+ 
+ bool HTMLMediaElement::PotentiallyPlaying() const {
++  // Brightsign is ready to change states even before metadata arrives.
++  if (RuntimeEnabledFeatures::MediaPlayerReuseEnabled())
++    return CouldPlayIfEnoughData();
+   // Once we've reached the metadata state the WebMediaPlayer is ready to accept
+   // play state changes.
+   return ready_state_ >= kHaveMetadata && CouldPlayIfEnoughData();
+@@ -4221,6 +4242,8 @@ void HTMLMediaElement::StopPeriodicTimers() {
+ 
+ void HTMLMediaElement::
+     ClearMediaPlayerAndAudioSourceProviderClientWithoutLocking() {
++  if (RuntimeEnabledFeatures::MediaPlayerReuseEnabled())
++    SetShouldDelayLoadEvent(false);
+   GetAudioSourceProvider().SetClient(nullptr);
+   if (web_media_player_) {
+     audio_source_provider_.Wrap(nullptr);
+@@ -4262,6 +4285,14 @@ void HTMLMediaElement::ClearMediaPlayer() {
+ 
+   pending_action_flags_ = 0;
+   load_state_ = kWaitingForSource;
++  if (RuntimeEnabledFeatures::MediaPlayerReuseEnabled()) {
++    ready_state_ = kHaveNothing;
++    ready_state_maximum_ = kHaveNothing;
++    SetNetworkState(kNetworkEmpty);
++    playing_ = false;
++    paused_ = true;
++    seeking_ = false;
++  }
+ 
+   if (GetLayoutObject())
+     GetLayoutObject()->SetShouldDoFullPaintInvalidation();
+@@ -4633,6 +4664,10 @@ void HTMLMediaElement::ConfigureTextTrackDisplay() {
+ void HTMLMediaElement::ResetMediaPlayerAndMediaSource() {
+   CloseMediaSource();
+ 
++  // BRIGHTSIGN: ResetMediaPlayerAndMediaSource is called for a load request,
++  // or if next src is going to be loaded from src attribute list. We want to
++  // reuse the existing player. Commented out following 2 lines.
++  if (!RuntimeEnabledFeatures::MediaPlayerReuseEnabled())
+   {
+     AudioSourceProviderClientLockScope scope(*this);
+     ClearMediaPlayerAndAudioSourceProviderClientWithoutLocking();
+diff --git a/third_party/blink/renderer/platform/runtime_enabled_features.json5 b/third_party/blink/renderer/platform/runtime_enabled_features.json5
+index 287aa88900e8e9054685b2339894ba40389d4eae..a89b74485410d39e2c784fb6ef861c78da5def15 100644
+--- a/third_party/blink/renderer/platform/runtime_enabled_features.json5
++++ b/third_party/blink/renderer/platform/runtime_enabled_features.json5
+@@ -6795,5 +6795,8 @@
+       // crbug.com/435623334.
+       name: "XSLTSpecialTrial",
+     },
++    {
++      name: "MediaPlayerReuse",
++    }
+   ],
+ }
