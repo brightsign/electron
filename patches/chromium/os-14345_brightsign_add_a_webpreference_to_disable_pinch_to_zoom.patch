@@ -1,0 +1,81 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Tariq Bashir <tbashir@brightsign.biz>
+Date: Thu, 22 Jun 2023 14:23:48 +0100
+Subject: OS-14345: BrightSign Add a webpreference to disable pinch to zoom
+
+In chromium pinch to zoom can be disabled globally using the command line switch
+disable-pinch. BrightSign has a requirement to beable to disable pinch to zoom
+at a browser window level. This patch adds enable_pinch_zoom as a webpreference
+and sets its value in RenderWidgetHostViewEventHandler. The webpreference will
+present on all platforms, but the change to set it is only present in aura (linux).
+The webpreference will only be used if disable-pinch has not been set on the
+command line.
+
+diff --git a/content/browser/renderer_host/render_widget_host_view_aura.cc b/content/browser/renderer_host/render_widget_host_view_aura.cc
+index 6315906ba311111ac4bed3fdff545c84c8b4b409..051963dd80b198bb4b22045d3760db4bebede637 100644
+--- a/content/browser/renderer_host/render_widget_host_view_aura.cc
++++ b/content/browser/renderer_host/render_widget_host_view_aura.cc
+@@ -306,6 +306,8 @@ RenderWidgetHostViewAura::RenderWidgetHostViewAura(
+     double_tap_to_zoom_enabled_ =
+         owner_delegate->GetWebkitPreferencesForWidget()
+             .double_tap_to_zoom_enabled;
++
++    event_handler_->SetPinchZoomEnabled(owner_delegate->GetWebkitPreferencesForWidget().enable_pinch_zoom);
+   }
+ 
+   host()->render_frame_metadata_provider()->AddObserver(this);
+diff --git a/content/browser/renderer_host/render_widget_host_view_event_handler.cc b/content/browser/renderer_host/render_widget_host_view_event_handler.cc
+index 41b34a27176a3d83ab3e83120b470695f80a3345..f2a540f6b961027f2e01be2f8fe19eb77ccf2205 100644
+--- a/content/browser/renderer_host/render_widget_host_view_event_handler.cc
++++ b/content/browser/renderer_host/render_widget_host_view_event_handler.cc
+@@ -124,6 +124,16 @@ RenderWidgetHostViewEventHandler::~RenderWidgetHostViewEventHandler() {
+   DCHECK(!mouse_locked_);
+ }
+ 
++void RenderWidgetHostViewEventHandler::SetPinchZoomEnabled(bool pinch_zoom_enabled) {
++    // Pinch to zoom is controlled globally by a command line switch and (as a BrightSign
++    // feature) also by a webpreference. If the command line switch has been used, this will
++    // disable pinch to zoom and override the web preference. Otherwise we use the web
++    // preference value that is passed.
++    if (input::switches::IsPinchToZoomEnabled()) {
++      pinch_zoom_enabled_ = pinch_zoom_enabled;
++    }
++}
++
+ void RenderWidgetHostViewEventHandler::SetPopupChild(
+     RenderWidgetHostViewBase* popup_child_host_view,
+     ui::EventHandler* popup_child_event_handler) {
+diff --git a/content/browser/renderer_host/render_widget_host_view_event_handler.h b/content/browser/renderer_host/render_widget_host_view_event_handler.h
+index a28538785ff3eb9984dc133f6edf1ca2a0354aa1..6486e8af5d6ab5964967c4afc35010732a45471a 100644
+--- a/content/browser/renderer_host/render_widget_host_view_event_handler.h
++++ b/content/browser/renderer_host/render_widget_host_view_event_handler.h
+@@ -180,6 +180,8 @@ class CONTENT_EXPORT RenderWidgetHostViewEventHandler
+         .set_max_time_between_phase_ended_and_momentum_phase_began(timeout);
+   }
+ 
++  void SetPinchZoomEnabled(bool pinch_zoom_enabled);
++
+  private:
+   FRIEND_TEST_ALL_PREFIXES(InputMethodResultAuraTest,
+                            FinishImeCompositionSession);
+@@ -281,7 +283,7 @@ class CONTENT_EXPORT RenderWidgetHostViewEventHandler
+ 
+   // Whether pinch-to-zoom should be enabled and pinch events forwarded to the
+   // renderer.
+-  const bool pinch_zoom_enabled_;
++  bool pinch_zoom_enabled_;
+ 
+   // This flag when set ensures that we send over a notification to blink that
+   // the current view has focus.
+diff --git a/third_party/blink/public/common/web_preferences/web_preferences.h b/third_party/blink/public/common/web_preferences/web_preferences.h
+index ce0a19a2a848ac7c3543651a2b4de99dcfc66475..335244727d3c75bbaa6b8b80d326ac9b4b488cd1 100644
+--- a/third_party/blink/public/common/web_preferences/web_preferences.h
++++ b/third_party/blink/public/common/web_preferences/web_preferences.h
+@@ -87,6 +87,7 @@ struct BLINK_COMMON_EXPORT WebPreferences {
+   bool privileged_webgl_extensions_enabled = false;
+   bool webgl_errors_to_console_enabled = true;
+   bool hide_scrollbars = false;
++  bool enable_pinch_zoom = false;
+   // If true, ignore ::-webkit-scrollbar-* CSS pseudo-elements in stylesheets
+   // and use default values for `ScrollbarWidth` and `ScrollbarColor`
+   // CSS properties.

@@ -152,6 +152,7 @@
 * `enableCornerSmoothingCSS` boolean (optional) _Experimental_ - Whether the [`-electron-corner-smoothing` CSS rule](../corner-smoothing-css.md) is enabled. Default is `true`.
 * `hideScrollBars` boolean (optional) - Sets the Chromium WebPreferences
    hide_scrollbars field. Default is `false`.
+* `enablePinchZoom` boolean (optional) - Sets whether to enable pinch to zoom in Chromium. Default is `true`.
 
 [chrome-content-scripts]: https://developer.chrome.com/extensions/content_scripts#execution-environment
 [runtime-enabled-features]: https://source.chromium.org/chromium/chromium/src/+/main:third_party/blink/renderer/platform/runtime_enabled_features.json5
