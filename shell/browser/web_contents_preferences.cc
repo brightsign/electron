@@ -123,6 +123,7 @@ void WebContentsPreferences::Clear() {
   text_areas_are_resizable_ = true;
   webgl_ = true;
   enable_preferred_size_mode_ = false;
+  enable_pinch_zoom_ = true;
   hide_scroll_bars_ = false;
   web_security_ = true;
   allow_running_insecure_content_ = false;
@@ -184,6 +185,7 @@ void WebContentsPreferences::SetFromDictionary(
   web_preferences.Get(options::kWebGL, &webgl_);
   web_preferences.Get(options::kEnablePreferredSizeMode,
                       &enable_preferred_size_mode_);
+  web_preferences.Get(options::kEnablePinchZoom, &enable_pinch_zoom_);
   web_preferences.Get(options::kHideScrollBars, &hide_scroll_bars_);
   web_preferences.Get(options::kWebSecurity, &web_security_);
   if (!web_preferences.Get(options::kAllowRunningInsecureContent,
@@ -474,6 +476,7 @@ void WebContentsPreferences::OverrideWebkitPrefs(
 
   prefs->dom_paste_enabled = deprecated_paste_enabled_;
   prefs->hide_scrollbars = hide_scroll_bars_;
+  prefs->enable_pinch_zoom = enable_pinch_zoom_;
 }
 
 WEB_CONTENTS_USER_DATA_KEY_IMPL(WebContentsPreferences);
