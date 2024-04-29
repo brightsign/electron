@@ -1315,7 +1315,7 @@ void NativeWindowViews::SetOpacity(const double opacity) {
   SetLayered();
   ::SetLayeredWindowAttributes(hwnd, 0, boundedOpacity * 255, LWA_ALPHA);
   opacity_ = boundedOpacity;
-#elif BUILDFLAG(IS_OZONE_WAYLAND)
+#elif BUILDFLAG(SUPPORTS_OZONE_WAYLAND)
   const double boundedOpacity = std::ranges::clamp(opacity, 0.0, 1.0);
   widget()->SetOpacity(boundedOpacity);
   opacity_ = boundedOpacity;
@@ -1329,6 +1329,24 @@ double NativeWindowViews::GetOpacity() const {
 }
 
 void NativeWindowViews::SetIgnoreMouseEvents(bool ignore, bool forward) {
+#if BUILDFLAG(SUPPORTS_OZONE_WAYLAND)
+  // Custom BrightSign implementation for Wayland.
+  // This uses the Chromium mouse lock functionality together with a change
+  // in the Electron App to reapply the lock when the focus event is received.
+  // This works fine for our use case.
+  const gfx::AcceleratedWidget accelerated_widget = GetAcceleratedWidget();
+  aura::WindowTreeHost* const host =
+      aura::WindowTreeHost::GetForAcceleratedWidget(accelerated_widget);
+
+  aura::Window* const aura_window = host ? host->window() : nullptr;
+  if (aura_window) {
+    if (ignore) {
+      host->LockMouse(aura_window);
+    } else {
+      host->UnlockMouse(aura_window);
+    }
+  }
+#endif
 #if BUILDFLAG(IS_WIN)
   LONG ex_style = ::GetWindowLong(GetAcceleratedWidget(), GWL_EXSTYLE);
   if (ignore)
