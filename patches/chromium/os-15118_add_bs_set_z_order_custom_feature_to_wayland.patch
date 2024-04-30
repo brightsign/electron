@@ -1,6 +1,6 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
-From: Tariq Bashir <120014322+t-bashir-bs@users.noreply.github.com>
-Date: Fri, 19 Apr 2024 19:01:06 +0100
+From: Caner Altinbasak <cal@brightsign.biz>
+Date: Tue, 30 Apr 2024 16:53:34 +0100
 Subject: OS-15118: add bs set z order custom feature to wayland
 
 A custom feature has been added to BrightSign Weston server to enable
@@ -9,7 +9,7 @@ This patch adds the functionality into third_party/wayland-protocols and
 chromium ui/ozone/platform/wayland.
 
 diff --git a/third_party/wayland-protocols/BUILD.gn b/third_party/wayland-protocols/BUILD.gn
-index b0c0082769055..c59c5a182c8de 100644
+index b0c0082769055bfaefa067c06b3432b1d6349fcf..c59c5a182c8de0c3d070761a4bb2cae2fa109d31 100644
 --- a/third_party/wayland-protocols/BUILD.gn
 +++ b/third_party/wayland-protocols/BUILD.gn
 @@ -11,6 +11,10 @@ wayland_protocol("alpha_compositing_protocol") {
@@ -25,7 +25,7 @@ index b0c0082769055..c59c5a182c8de 100644
  }
 diff --git a/third_party/wayland-protocols/unstable/bs-z-order/bs-z-order-unstable-v1.xml b/third_party/wayland-protocols/unstable/bs-z-order/bs-z-order-unstable-v1.xml
 new file mode 100644
-index 0000000000000..da7ae7a6e2024
+index 0000000000000000000000000000000000000000..da7ae7a6e20242d1593d5cfcc4bb41ba16f2e775
 --- /dev/null
 +++ b/third_party/wayland-protocols/unstable/bs-z-order/bs-z-order-unstable-v1.xml
 @@ -0,0 +1,14 @@
@@ -44,7 +44,7 @@ index 0000000000000..da7ae7a6e2024
 +
 +</protocol>
 diff --git a/ui/ozone/platform/wayland/BUILD.gn b/ui/ozone/platform/wayland/BUILD.gn
-index 1ec252c342cb6..ee2574fa24219 100644
+index 1ec252c342cb6be9adebb9d7cc1bc6b1f9684ebf..ee2574fa24219cef94fbdb16fa4d1441a663334d 100644
 --- a/ui/ozone/platform/wayland/BUILD.gn
 +++ b/ui/ozone/platform/wayland/BUILD.gn
 @@ -255,6 +255,7 @@ source_set("wayland") {
@@ -56,7 +56,7 @@ index 1ec252c342cb6..ee2574fa24219 100644
      "//third_party/wayland-protocols:cursor_shapes_protocol",
      "//third_party/wayland-protocols:extended_drag",
 diff --git a/ui/ozone/platform/wayland/common/wayland_object.cc b/ui/ozone/platform/wayland/common/wayland_object.cc
-index bcc48aaeb186e..cf291424ff56d 100644
+index bcc48aaeb186ec5da9e1f6658ec9fabd46b8c324..cf291424ff56d2c734bd571c9c095b21d8159800 100644
 --- a/ui/ozone/platform/wayland/common/wayland_object.cc
 +++ b/ui/ozone/platform/wayland/common/wayland_object.cc
 @@ -190,6 +190,7 @@ void (*ObjectTraits<wl_proxy>::deleter)(void*) = &wl_proxy_wrapper_destroy;
@@ -68,7 +68,7 @@ index bcc48aaeb186e..cf291424ff56d 100644
  IMPLEMENT_WAYLAND_OBJECT_TRAITS(gtk_primary_selection_device_manager)
  IMPLEMENT_WAYLAND_OBJECT_TRAITS(gtk_primary_selection_offer)
 diff --git a/ui/ozone/platform/wayland/common/wayland_object.h b/ui/ozone/platform/wayland/common/wayland_object.h
-index c84c084841ea9..9f2c034da7698 100644
+index c84c084841ea9387cfb246233c1a6fbed4759dc3..9f2c034da7698fb3695ec1b4515fa408edd7facd 100644
 --- a/ui/ozone/platform/wayland/common/wayland_object.h
 +++ b/ui/ozone/platform/wayland/common/wayland_object.h
 @@ -6,6 +6,7 @@
@@ -88,7 +88,7 @@ index c84c084841ea9..9f2c034da7698 100644
  DECLARE_WAYLAND_OBJECT_TRAITS(gtk_primary_selection_device_manager)
  DECLARE_WAYLAND_OBJECT_TRAITS(gtk_primary_selection_offer)
 diff --git a/ui/ozone/platform/wayland/host/wayland_connection.cc b/ui/ozone/platform/wayland/host/wayland_connection.cc
-index a7c0943650f05..2a018c632898d 100644
+index a7c0943650f05387a8f661dfc9533fadbffe9efe..2a018c632898d39ee937a0da04bf035c0962b31f 100644
 --- a/ui/ozone/platform/wayland/host/wayland_connection.cc
 +++ b/ui/ozone/platform/wayland/host/wayland_connection.cc
 @@ -8,6 +8,7 @@
@@ -143,7 +143,7 @@ index a7c0943650f05..2a018c632898d 100644
      compositor_ = wl::Bind<wl_compositor>(
          registry, name, std::min(version, kMaxCompositorVersion));
 diff --git a/ui/ozone/platform/wayland/host/wayland_connection.h b/ui/ozone/platform/wayland/host/wayland_connection.h
-index c78d900d03acd..2cb8078dbaab0 100644
+index c78d900d03acdb739bd1eb193bd3a437c3a0cee2..2cb8078dbaab084d80c5c18cce186a8c8936d9d4 100644
 --- a/ui/ozone/platform/wayland/host/wayland_connection.h
 +++ b/ui/ozone/platform/wayland/host/wayland_connection.h
 @@ -110,6 +110,8 @@ class WaylandConnection {
@@ -174,7 +174,7 @@ index c78d900d03acd..2cb8078dbaab0 100644
    wl::Object<wl_proxy> wrapped_display_;
    wl::Object<wl_event_queue> event_queue_;
 diff --git a/ui/ozone/platform/wayland/host/xdg_toplevel_wrapper_impl.cc b/ui/ozone/platform/wayland/host/xdg_toplevel_wrapper_impl.cc
-index bd3f0ce0d7e29..dd66fd2e2a635 100644
+index bd3f0ce0d7e2930a1060068191fbce573b4d923c..dd66fd2e2a635f42978c895b66bc5983b1d319f6 100644
 --- a/ui/ozone/platform/wayland/host/xdg_toplevel_wrapper_impl.cc
 +++ b/ui/ozone/platform/wayland/host/xdg_toplevel_wrapper_impl.cc
 @@ -6,6 +6,7 @@
