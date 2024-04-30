@@ -1,6 +1,6 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
-From: Tariq Bashir <120014322+t-bashir-bs@users.noreply.github.com>
-Date: Fri, 19 Apr 2024 17:36:50 +0100
+From: Caner Altinbasak <cal@brightsign.biz>
+Date: Tue, 30 Apr 2024 16:56:21 +0100
 Subject: feat:(backported) add storage quota capability for partitions
 
 This patch adds the capability for a storage quota
@@ -185,7 +185,7 @@ index f1f1e97985b63b6d651046c667502784e138a334..f0daf26d55f7752e7b99024a0ad92b9f
  
  void QuotaManagerImpl::AddObserver(
 diff --git a/storage/browser/quota/quota_manager_impl.h b/storage/browser/quota/quota_manager_impl.h
-index 82476fcb3cb14c79947d9d6261db495b3730fef5..f878d345632df3fd25755b77e1f52b36f8b5be48 100644
+index 82476fcb3cb14c79947d9d6261db495b3730fef5..6e452aecb1866ae583c493d5c76fac5ba3791621 100644
 --- a/storage/browser/quota/quota_manager_impl.h
 +++ b/storage/browser/quota/quota_manager_impl.h
 @@ -160,7 +160,8 @@ class COMPONENT_EXPORT(STORAGE_BROWSER) QuotaManagerImpl
@@ -229,4 +229,3 @@ index 82476fcb3cb14c79947d9d6261db495b3730fef5..f878d345632df3fd25755b77e1f52b36
    std::unique_ptr<EvictionRoundInfoHelper> eviction_helper_;
    std::map<BucketSetDataDeleter*, std::unique_ptr<BucketSetDataDeleter>>
        bucket_set_data_deleters_;
- 
