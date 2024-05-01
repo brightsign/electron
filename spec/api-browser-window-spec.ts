@@ -2867,12 +2867,15 @@ describe('BrowserWindow module', () => {
     });
 
     ifdescribe(process.platform === 'linux')(('Linux'), () => {
+    // BRIGHTSIGN: Brightsign uses wayland extensions
+    // to set the opacity of the window. This feature
+    // works.
       it('sets 1 regardless of parameter', () => {
         const w = new BrowserWindow({ show: false });
         w.setOpacity(0);
-        expect(w.getOpacity()).to.equal(1.0);
+        expect(w.getOpacity()).to.equal(0.0);
         w.setOpacity(0.5);
-        expect(w.getOpacity()).to.equal(1.0);
+        expect(w.getOpacity()).to.equal(0.5);
       });
     });
   });
