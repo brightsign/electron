@@ -2400,13 +2400,16 @@ describe('BrowserWindow module', () => {
     });
 
     it('sets the window as always on top', () => {
+      // BRIGHTSIGN: Brightsign doesn't let window to get on top
+      // of everything else. It breaks presentations. Layering is
+      // done with wayland extensions.
       expect(w.isAlwaysOnTop()).to.be.false('is alwaysOnTop');
       w.setAlwaysOnTop(true, 'screen-saver');
-      expect(w.isAlwaysOnTop()).to.be.true('is not alwaysOnTop');
+      expect(w.isAlwaysOnTop()).to.be.false('is alwaysOnTop');
       w.setAlwaysOnTop(false);
       expect(w.isAlwaysOnTop()).to.be.false('is alwaysOnTop');
       w.setAlwaysOnTop(true);
-      expect(w.isAlwaysOnTop()).to.be.true('is not alwaysOnTop');
+      expect(w.isAlwaysOnTop()).to.be.false('is alwaysOnTop');
     });
 
     ifit(process.platform === 'darwin')('resets the windows level on minimize', async () => {
@@ -2428,7 +2431,10 @@ describe('BrowserWindow module', () => {
       expect(w.isAlwaysOnTop()).to.be.false('is alwaysOnTop');
       w.setAlwaysOnTop(true);
       const [, alwaysOnTop] = await alwaysOnTopChanged;
-      expect(alwaysOnTop).to.be.true('is not alwaysOnTop');
+      // BRIGHTSIGN: Brightsign doesn't let window to get on top
+      // of everything else. It breaks presentations. Layering is
+      // done with wayland extensions.
+      expect(alwaysOnTop).to.be.false('is alwaysOnTop');
     });
 
     ifit(process.platform === 'darwin')('honors the alwaysOnTop level of a child window', () => {
