@@ -2873,7 +2873,10 @@ describe('BrowserWindow module', () => {
       const alwaysOnTopChanged = once(w, 'always-on-top-changed') as Promise<[any, boolean]>;
       w.setAlwaysOnTop(alwaysOnTop);
       const [, emittedAlwaysOnTop] = await alwaysOnTopChanged;
-      expect(emittedAlwaysOnTop).to.equal(alwaysOnTop, `${label}: unexpected event payload`);
+      // BRIGHTSIGN: Brightsign doesn't let window to get on top
+      // of everything else. It breaks presentations. Layering is
+      // done with wayland extensions.
+      expect(emittedAlwaysOnTop).to.be.false('is alwaysOnTop');
       await waitForAlwaysOnTop(alwaysOnTop, label);
     };
 
@@ -2884,13 +2887,16 @@ describe('BrowserWindow module', () => {
     });
 
     it('sets the window as always on top', () => {
+      // BRIGHTSIGN: Brightsign doesn't let window to get on top
+      // of everything else. It breaks presentations. Layering is
+      // done with wayland extensions.
       expect(w.isAlwaysOnTop()).to.be.false('is alwaysOnTop');
       w.setAlwaysOnTop(true, 'screen-saver');
-      expect(w.isAlwaysOnTop()).to.be.true('is not alwaysOnTop');
+      expect(w.isAlwaysOnTop()).to.be.false('is alwaysOnTop');
       w.setAlwaysOnTop(false);
       expect(w.isAlwaysOnTop()).to.be.false('is alwaysOnTop');
       w.setAlwaysOnTop(true);
-      expect(w.isAlwaysOnTop()).to.be.true('is not alwaysOnTop');
+      expect(w.isAlwaysOnTop()).to.be.false('is alwaysOnTop');
     });
 
     ifit(process.platform === 'darwin')('resets the windows level on minimize', async () => {
@@ -2937,7 +2943,10 @@ describe('BrowserWindow module', () => {
       w.setAlwaysOnTop(true, 'screen-saver');
       w.show();
       await setTimeout(1000);
-      expect(w.isAlwaysOnTop()).to.be.true('is not alwaysOnTop');
+      // BRIGHTSIGN: Brightsign doesn't let window to get on top
+      // of everything else. It breaks presentations. Layering is
+      // done with wayland extensions.
+      expect(w.isAlwaysOnTop()).to.be.false('is not alwaysOnTop');
     });
 
     it('works when called prior to showInactive', async () => {
@@ -2945,7 +2954,10 @@ describe('BrowserWindow module', () => {
       w.setAlwaysOnTop(true, 'screen-saver');
       w.showInactive();
       await setTimeout(1000);
-      expect(w.isAlwaysOnTop()).to.be.true('is not alwaysOnTop');
+      // BRIGHTSIGN: Brightsign doesn't let window to get on top
+      // of everything else. It breaks presentations. Layering is
+      // done with wayland extensions.
+      expect(w.isAlwaysOnTop()).to.be.false('is not alwaysOnTop');
     });
   });
 
