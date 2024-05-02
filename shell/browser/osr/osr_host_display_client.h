@@ -73,7 +73,7 @@ class OffScreenHostDisplayClient : public viz::HostDisplayClient {
       override;
 
 #if BUILDFLAG(IS_LINUX) && !BUILDFLAG(IS_CHROMEOS) && \
-    BUILDFLAG(OZONE_PLATFORM_X11)
+    defined(USE_OZONE_PLATFORM_X11)
   void DidCompleteSwapWithNewSize(const gfx::Size& size) override;
 #endif
 

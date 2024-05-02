@@ -97,7 +97,7 @@ void OffScreenHostDisplayClient::CreateLayeredWindowUpdater(
 }
 
 #if BUILDFLAG(IS_LINUX) && !BUILDFLAG(IS_CHROMEOS) && \
-    BUILDFLAG(OZONE_PLATFORM_X11)
+    defined(USE_OZONE_PLATFORM_X11)
 void OffScreenHostDisplayClient::DidCompleteSwapWithNewSize(
     const gfx::Size& size) {}
 #endif
