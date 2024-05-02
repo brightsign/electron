@@ -226,7 +226,7 @@ jobs:
       if: inputs.build_type == 'test'
       run: |
         cd src/electron
-        xvfb-run npm run test
+        xvfb-run node script/spec-runner --disable-gpu
 
     - name: Run Node.js Smoke Tests
       if: inputs.build_type == 'test'
