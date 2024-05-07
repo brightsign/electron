@@ -1228,7 +1228,6 @@ double NativeWindowViews::GetOpacity() {
 }
 
 void NativeWindowViews::SetIgnoreMouseEvents(bool ignore, bool forward) {
-#if BUILDFLAG(IS_WIN)
 #if BUILDFLAG(OZONE_PLATFORM_WAYLAND)
   // Custom BrightSign implementation for Wayland.
   // This uses the Chromium mouse lock functionality together with a change
@@ -1247,6 +1246,7 @@ void NativeWindowViews::SetIgnoreMouseEvents(bool ignore, bool forward) {
     }
   }
 #endif
+#if BUILDFLAG(IS_WIN)
   LONG ex_style = ::GetWindowLong(GetAcceleratedWidget(), GWL_EXSTYLE);
   if (ignore)
     ex_style |= (WS_EX_TRANSPARENT | WS_EX_LAYERED);
