@@ -1,0 +1,36 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Tariq Bashir <120014322+t-bashir-bs@users.noreply.github.com>
+Date: Fri, 3 May 2024 10:25:41 +0100
+Subject: OS-16623 add setopacity to wayland toplevel window
+
+This patch adds a setopacity method to the wayland_toplevel_window class to
+allow the opacity of the window to be set.
+
+diff --git a/ui/ozone/platform/wayland/host/wayland_toplevel_window.cc b/ui/ozone/platform/wayland/host/wayland_toplevel_window.cc
+index 33b7d01af0da3564fa6ddc4f5467d9727d4adf17..5f5390ee8a0ca29cabddafaec7a6e2bbfb501e00 100644
+--- a/ui/ozone/platform/wayland/host/wayland_toplevel_window.cc
++++ b/ui/ozone/platform/wayland/host/wayland_toplevel_window.cc
+@@ -356,6 +356,11 @@ void WaylandToplevelWindow::SizeConstraintsChanged() {
+   SetSizeConstraints();
+ }
+ 
++void WaylandToplevelWindow::SetOpacity(float opacity) {
++  root_surface()->set_opacity(opacity);
++  root_surface()->set_blending(true);
++}
++
+ void WaylandToplevelWindow::SetZOrderLevel(ZOrderLevel order) {
+   // TODO(crbug.com/374244479): Linux/Wayland doesn't support zorder level.
+   // Consider complete removal of that.
+diff --git a/ui/ozone/platform/wayland/host/wayland_toplevel_window.h b/ui/ozone/platform/wayland/host/wayland_toplevel_window.h
+index 7e8f32b4b8f24c16fc1b903431ff915e056cf0da..235f0e5b178943d5e0962d2f9ea4fa2dbe510fee 100644
+--- a/ui/ozone/platform/wayland/host/wayland_toplevel_window.h
++++ b/ui/ozone/platform/wayland/host/wayland_toplevel_window.h
+@@ -103,6 +103,7 @@ class WaylandToplevelWindow : public WaylandWindow,
+   void SetWindowIcons(const gfx::ImageSkia& window_icon,
+                       const gfx::ImageSkia& app_icon) override;
+   void SizeConstraintsChanged() override;
++  void SetOpacity(float opacity) override;
+   // `SetZOrderLevel()` must be called on `z_order_` in
+   // `SetUpShellIntegration()`.
+   void SetZOrderLevel(ZOrderLevel order) override;
