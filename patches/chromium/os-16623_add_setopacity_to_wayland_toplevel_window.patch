@@ -3,7 +3,7 @@ From: Tariq Bashir <120014322+t-bashir-bs@users.noreply.github.com>
 Date: Fri, 3 May 2024 10:25:41 +0100
 Subject: OS-16623 add setopacity to wayland toplevel window
 
-This patch adds a setopacity method to the wayland_toplevel_window class to 
+This patch adds a setopacity method to the wayland_toplevel_window class to
 allow the opacity of the window to be set.
 
 diff --git a/ui/ozone/platform/wayland/host/wayland_toplevel_window.cc b/ui/ozone/platform/wayland/host/wayland_toplevel_window.cc
@@ -23,7 +23,7 @@ index 695531d1d280586191c112060302a97fe981beb6..b339b7814be5c8fdc7cc3b7cffd80265
    if (shell_toplevel_)
      shell_toplevel_->SetZOrder(order);
 diff --git a/ui/ozone/platform/wayland/host/wayland_toplevel_window.h b/ui/ozone/platform/wayland/host/wayland_toplevel_window.h
-index f39a9a89bfb48ff9cf953bf3bc0e596d43f54856..5a893e91bbd8e33180e4fa942c0cf85f26602605 100644
+index f39a9a89bfb48ff9cf953bf3bc0e596d43f54856..09159b7726f92efe60f4c3262359ffbb2f41437c 100644
 --- a/ui/ozone/platform/wayland/host/wayland_toplevel_window.h
 +++ b/ui/ozone/platform/wayland/host/wayland_toplevel_window.h
 @@ -124,6 +124,7 @@ class WaylandToplevelWindow : public WaylandWindow,
