@@ -1,0 +1,47 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Tariq Bashir <120014322+t-bashir-bs@users.noreply.github.com>
+Date: Wed, 22 May 2024 10:29:28 +0100
+Subject: OS-17230 fix ozone image gl texture holder memory leak
+
+Between Chromium 110 and 120 the ozone_image_* code has been refactored. There used to be 
+a TextureHolder class and this has been removed and partially added to the new class 
+OzoneImageGLTexturesHolder. This was done using:
+https://source.chromium.org/chromium/chromium/src/+/c8cbab4f196ed9258781a3a30c6f53934908bc34.
+As part of this change the individual textures that are stored in texture_ are freed when 
+TextureHolder was destroyed by calling RemoveLightweightRef. In the OzoneImageGLTexturesHolder 
+these textures are stored in an array std::vector<raw_ptr<gles2::Texture>> textures_ and are 
+not freed anywhere.
+This patch ensures that the textures are freed (by calling RemoveLightweightRef) when the 
+OzoneImageGLTexturesHolder is destroyed.
+
+Note: This error has been "fixed" in newer Chromium as part of the following change that 
+removes the textures array and non passthrough handling: 
+https://source.chromium.org/chromium/chromium/src/+/629f0ed8dfd4757550d99eefff61f058cacb79d6
+
+diff --git a/gpu/command_buffer/service/shared_image/ozone_image_gl_textures_holder.cc b/gpu/command_buffer/service/shared_image/ozone_image_gl_textures_holder.cc
+index ae0ab9b32faa2e2c3aece792316147e5b9cdbc82..0708b19c2d264d1581b91033897a24c125ce710a 100644
+--- a/gpu/command_buffer/service/shared_image/ozone_image_gl_textures_holder.cc
++++ b/gpu/command_buffer/service/shared_image/ozone_image_gl_textures_holder.cc
+@@ -205,6 +205,12 @@ OzoneImageGLTexturesHolder::~OzoneImageGLTexturesHolder() {
+   }
+ 
+   MaybeDestroyTexturesOnContext();
++
++  if (!textures_.empty()) {
++    for (auto& texture : textures_) {
++      texture->RemoveLightweightRef(!context_lost_);
++    }
++  }
+ }
+ 
+ void OzoneImageGLTexturesHolder::OnContextWillDestroy(gl::GLContext* context) {
+@@ -230,6 +236,9 @@ void OzoneImageGLTexturesHolder::MaybeDestroyTexturesOnContext() {
+   context_->MakeCurrentDefault();
+ 
+   textures_passthrough_.clear();
++  for (auto& texture : textures_) {
++    texture->RemoveLightweightRef(!context_lost_);
++  }
+   textures_.clear();
+   bindings_.clear();
+ 
