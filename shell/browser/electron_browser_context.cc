@@ -522,6 +522,30 @@ ElectronBrowserContext::GetReduceAcceptLanguageControllerDelegate() {
   return nullptr;
 }
 
+uid_t ElectronBrowserContext::GetUIDForRenderer() const {
+  uid_t uid = 0;
+  base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
+  base::StringToUint(
+      command_line->GetSwitchValueASCII(switches::kRendererProcessUid), &uid);
+  return uid;
+}
+
+std::vector<gid_t> ElectronBrowserContext::GetGroupsForRenderer() const {
+  std::vector<gid_t> gids;
+  base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
+  std::string gids_str =
+      command_line->GetSwitchValueASCII(switches::kRendererProcessGids);
+  std::vector<base::StringPiece> gid_list = base::SplitStringPiece(
+      gids_str, ",", base::TRIM_WHITESPACE, base::SPLIT_WANT_NONEMPTY);
+  for (const auto& gid : gid_list) {
+    gid_t gid_value;
+    if (base::StringToUint(gid, &gid_value)) {
+      gids.push_back(gid_value);
+    }
+  }
+  return gids;
+}
+
 ResolveProxyHelper* ElectronBrowserContext::GetResolveProxyHelper() {
   if (!resolve_proxy_helper_) {
     resolve_proxy_helper_ = base::MakeRefCounted<ResolveProxyHelper>(this);

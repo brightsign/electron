@@ -273,6 +273,10 @@ const char kDisableNTLMv2[] = "disable-ntlm-v2";
 
 const char kEnableWebSQL[] = "enable-websql";
 
+const char kRendererProcessUid[] = "renderer-process-uid";
+
+const char kRendererProcessGids[] = "renderer-process-gids";
+
 }  // namespace switches
 
 }  // namespace electron

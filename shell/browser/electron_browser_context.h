@@ -180,6 +180,9 @@ class ElectronBrowserContext : public content::BrowserContext {
     return weak_factory_.GetWeakPtr();
   }
 
+  uid_t GetUIDForRenderer() const override;
+  std::vector<gid_t> GetGroupsForRenderer() const override;
+
 #if BUILDFLAG(ENABLE_ELECTRON_EXTENSIONS)
   extensions::ElectronExtensionSystem* extension_system() {
     // Guard usages of extension_system() with !IsOffTheRecord()

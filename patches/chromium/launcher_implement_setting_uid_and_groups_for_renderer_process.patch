@@ -1,0 +1,361 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Tariq Bashir <120014322+t-bashir-bs@users.noreply.github.com>
+Date: Tue, 11 Jun 2024 15:55:18 +0100
+Subject: launcher: Implement setting uid and groups for renderer process
+ OS-17053
+
+Cherry picked changes from QTWebEngine to allow setting the uid and groups
+for the renderer process. This is needed to allow the renderer process to
+run as a different user and group than the main process.
+
+The parameters are passed via switches --renderer-process-uid and
+--renderer-process-gids. A safety check has been added to ensure the
+renderer process is not run as root.
+
+diff --git a/base/process/launch.h b/base/process/launch.h
+index e18dde678ef769b7786028a785a76a72323cc0db..605796cac762c9a0600d57460f4d81fa9e7fd50a 100644
+--- a/base/process/launch.h
++++ b/base/process/launch.h
+@@ -213,6 +213,12 @@ struct BASE_EXPORT LaunchOptions {
+ 
+   // Sets parent process death signal to SIGKILL.
+   bool kill_on_parent_death = false;
++
++  // UID to run as (0 = don't change)
++  uid_t uid = 0;
++
++  // Groups to run with
++  std::vector<gid_t> groups;
+ #endif  // BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS)
+ 
+ #if BUILDFLAG(IS_MAC) || (BUILDFLAG(IS_IOS) && BUILDFLAG(USE_BLINK))
+diff --git a/base/process/launch_posix.cc b/base/process/launch_posix.cc
+index b24968647b25319f62b2ced4060db355cc2d6ad1..d16ce375b643eff04edc553a9998858af8244e30 100644
+--- a/base/process/launch_posix.cc
++++ b/base/process/launch_posix.cc
+@@ -19,6 +19,7 @@
+ #include <sys/types.h>
+ #include <sys/wait.h>
+ #include <unistd.h>
++#include <grp.h>
+ 
+ #include <iterator>
+ #include <limits>
+@@ -409,6 +410,18 @@ Process LaunchProcess(const std::vector<std::string>& argv,
+       }
+     }
+ 
++    gid_t gid = 0;
++    if (!options.groups.empty()) {
++      gid = options.groups[0];
++      PCHECK(0 == setgroups(options.groups.size(),options.groups.data()));
++    }
++    if (options.uid > 0)
++      PCHECK(0 == prctl (PR_SET_KEEPCAPS, 1));
++    if (gid > 0)
++      PCHECK(0 == setgid(gid));
++    if (options.uid > 0)
++      PCHECK(0 == setuid(options.uid));
++
+     ResetChildSignalHandlersToDefaults();
+     SetSignalMask(orig_sigmask);
+ 
+diff --git a/content/browser/child_process_launcher.cc b/content/browser/child_process_launcher.cc
+index 8675f46aad279868c80e10ea6b9d38d40513499f..935320654ba391c54b6fe0b02cc37e0be61826f2 100644
+--- a/content/browser/child_process_launcher.cc
++++ b/content/browser/child_process_launcher.cc
+@@ -100,7 +100,9 @@ ChildProcessLauncher::ChildProcessLauncher(
+     mojo::OutgoingInvitation mojo_invitation,
+     const mojo::ProcessErrorCallback& process_error_callback,
+     std::unique_ptr<ChildProcessLauncherFileData> file_data,
+-    bool terminate_on_shutdown)
++    bool terminate_on_shutdown,
++    uid_t uid,
++    std::vector<gid_t> groups)
+     : client_(client),
+       starting_(true),
+ #if defined(ADDRESS_SANITIZER) || defined(LEAK_SANITIZER) ||  \
+@@ -123,7 +125,8 @@ ChildProcessLauncher::ChildProcessLauncher(
+ #if BUILDFLAG(IS_ANDROID)
+       client_->CanUseWarmUpConnection(),
+ #endif
+-      std::move(mojo_invitation), process_error_callback, std::move(file_data));
++      std::move(mojo_invitation), process_error_callback, std::move(file_data),
++      uid, std::move(groups));
+   helper_->StartLaunchOnClientThread();
+ }
+ 
+diff --git a/content/browser/child_process_launcher.h b/content/browser/child_process_launcher.h
+index 0669361cb063c9dd15a19486fce1a609171d4cda..a5150ad17f885fb27a1bc41fceb6bdeabeb733e9 100644
+--- a/content/browser/child_process_launcher.h
++++ b/content/browser/child_process_launcher.h
+@@ -232,7 +232,9 @@ class CONTENT_EXPORT ChildProcessLauncher {
+       mojo::OutgoingInvitation mojo_invitation,
+       const mojo::ProcessErrorCallback& process_error_callback,
+       std::unique_ptr<ChildProcessLauncherFileData> file_data,
+-      bool terminate_on_shutdown = true);
++      bool terminate_on_shutdown = true,
++      uid_t uid = 0,
++      std::vector<gid_t> groups = std::vector<gid_t>());
+ 
+   ChildProcessLauncher(const ChildProcessLauncher&) = delete;
+   ChildProcessLauncher& operator=(const ChildProcessLauncher&) = delete;
+diff --git a/content/browser/child_process_launcher_helper.cc b/content/browser/child_process_launcher_helper.cc
+index a8447bbfa864b1a969b847be86708c01ade79463..d0000e7ecc5278e58e53a8e0cb5967af56d34a70 100644
+--- a/content/browser/child_process_launcher_helper.cc
++++ b/content/browser/child_process_launcher_helper.cc
+@@ -82,7 +82,9 @@ ChildProcessLauncherHelper::ChildProcessLauncherHelper(
+ #endif
+     mojo::OutgoingInvitation mojo_invitation,
+     const mojo::ProcessErrorCallback& process_error_callback,
+-    std::unique_ptr<ChildProcessLauncherFileData> file_data)
++    std::unique_ptr<ChildProcessLauncherFileData> file_data,
++    uid_t uid,
++    std::vector<gid_t> groups)
+     : child_process_id_(child_process_id),
+       client_task_runner_(base::SequencedTaskRunner::GetCurrentDefault()),
+       command_line_(std::move(command_line)),
+@@ -96,6 +98,9 @@ ChildProcessLauncherHelper::ChildProcessLauncherHelper(
+       ,
+       can_use_warm_up_connection_(can_use_warm_up_connection)
+ #endif
++      ,
++      uid_(uid),
++      groups_(std::move(groups))
+ {
+   if (!mojo::core::GetConfiguration().is_broker_process &&
+       !command_line_->HasSwitch(switches::kDisableMojoBroker)) {
+@@ -146,10 +151,11 @@ void ChildProcessLauncherHelper::LaunchOnLauncherThread() {
+   int launch_result = LAUNCH_RESULT_FAILURE;
+   absl::optional<base::LaunchOptions> options;
+   base::LaunchOptions* options_ptr = nullptr;
+-  if (IsUsingLaunchOptions()) {
++  // if (IsUsingLaunchOptions()) {
++    // Always use launch options as we added uid and groups.
+     options.emplace();
+     options_ptr = &*options;
+-  }
++  // }
+ 
+   Process process;
+   if (BeforeLaunchOnLauncherThread(*files_to_register, options_ptr)) {
+diff --git a/content/browser/child_process_launcher_helper.h b/content/browser/child_process_launcher_helper.h
+index 5ecaeb8607c0b0f43aa4d864082dbe53c512462d..3bc8d1112cbf918f238e0307a9405d713a7744a4 100644
+--- a/content/browser/child_process_launcher_helper.h
++++ b/content/browser/child_process_launcher_helper.h
+@@ -121,7 +121,9 @@ class ChildProcessLauncherHelper
+ #endif
+       mojo::OutgoingInvitation mojo_invitation,
+       const mojo::ProcessErrorCallback& process_error_callback,
+-      std::unique_ptr<ChildProcessLauncherFileData> file_data);
++      std::unique_ptr<ChildProcessLauncherFileData> file_data,
++      uid_t uid,
++      std::vector<gid_t> groups);
+ 
+   // The methods below are defined in the order they are called.
+ 
+@@ -285,6 +287,8 @@ class ChildProcessLauncherHelper
+   mojo::OutgoingInvitation mojo_invitation_;
+   const mojo::ProcessErrorCallback process_error_callback_;
+   std::unique_ptr<ChildProcessLauncherFileData> file_data_;
++  uid_t uid_;
++  const std::vector<gid_t> groups_;
+ 
+ #if BUILDFLAG(IS_MAC)
+   std::unique_ptr<sandbox::SeatbeltExecClient> seatbelt_exec_client_;
+diff --git a/content/browser/child_process_launcher_helper_linux.cc b/content/browser/child_process_launcher_helper_linux.cc
+index 7560f17040c40291f9f603e5811db4c94dece517..104dfb3a159b611947ab0f923edfeae1907dd6c4 100644
+--- a/content/browser/child_process_launcher_helper_linux.cc
++++ b/content/browser/child_process_launcher_helper_linux.cc
+@@ -53,7 +53,6 @@ bool ChildProcessLauncherHelper::BeforeLaunchOnLauncherThread(
+     PosixFileDescriptorInfo& files_to_register,
+     base::LaunchOptions* options) {
+   if (options) {
+-    DCHECK(!GetZygoteForLaunch());
+     // Convert FD mapping to FileHandleMappingVector
+     options->fds_to_remap = files_to_register.GetMappingWithIDAdjustment(
+         base::GlobalDescriptors::kBaseDescriptor);
+@@ -80,6 +79,8 @@ bool ChildProcessLauncherHelper::BeforeLaunchOnLauncherThread(
+     options->current_directory = delegate_->GetCurrentDirectory();
+     options->environment = delegate_->GetEnvironment();
+     options->clear_environment = !delegate_->ShouldInheritEnvironment();
++    options->uid = uid_;
++    options->groups = groups_;
+   } else {
+     DCHECK(GetZygoteForLaunch());
+     // Environment variables could be supported in the future, but are not
+@@ -105,7 +106,7 @@ ChildProcessLauncherHelper::LaunchProcessOnLauncherThread(
+     // Additionally, the delegate could provide a UseGenericZygote() method.
+     base::ProcessHandle handle = zygote_handle->ForkRequest(
+         command_line()->argv(), files_to_register->GetMapping(),
+-        GetProcessType());
++        GetProcessType(), options);
+     *launch_result = LAUNCH_RESULT_SUCCESS;
+ 
+ #if !BUILDFLAG(IS_OPENBSD)
+diff --git a/content/browser/renderer_host/render_process_host_impl.cc b/content/browser/renderer_host/render_process_host_impl.cc
+index de1b544b1e496dcf9f8a99719a988cc904758cb3..152a7bfebf7b7656eb6831d0e7f18687590221f4 100644
+--- a/content/browser/renderer_host/render_process_host_impl.cc
++++ b/content/browser/renderer_host/render_process_host_impl.cc
+@@ -1731,6 +1731,9 @@ bool RenderProcessHostImpl::Init() {
+     file_data->files_to_preload = GetV8SnapshotFilesToPreload();
+ #endif
+ 
++    uid_t uid = GetBrowserContext()->GetUIDForRenderer();
++    std::vector<gid_t> groups = GetBrowserContext()->GetGroupsForRenderer();
++
+     // Spawn the child process asynchronously to avoid blocking the UI thread.
+     // As long as there's no renderer prefix, we can use the zygote process
+     // at this stage.
+@@ -1738,7 +1741,8 @@ bool RenderProcessHostImpl::Init() {
+         std::move(sandbox_delegate), std::move(cmd_line), GetID(), this,
+         std::move(mojo_invitation_),
+         base::BindRepeating(&RenderProcessHostImpl::OnMojoError, id_),
+-        std::move(file_data));
++        std::move(file_data), true /* terminate_on_shutdown */,
++        uid, groups);
+     channel_->Pause();
+ 
+     // In single process mode, browser-side tracing and memory will cover the
+diff --git a/content/common/zygote/zygote_communication_linux.cc b/content/common/zygote/zygote_communication_linux.cc
+index 25e8b115ebb5c762447e9b2c7d6d91c936708446..c44b3215889a99b14c111ee16764de7482e3fe13 100644
+--- a/content/common/zygote/zygote_communication_linux.cc
++++ b/content/common/zygote/zygote_communication_linux.cc
+@@ -94,7 +94,8 @@ void ZygoteCommunication::ReinitializeLogging(
+ pid_t ZygoteCommunication::ForkRequest(
+     const std::vector<std::string>& argv,
+     const base::FileHandleMappingVector& mapping,
+-    const std::string& process_type) {
++    const std::string& process_type,
++    const base::LaunchOptions* options) {
+   DCHECK(init_);
+ 
+   base::Pickle pickle;
+@@ -114,6 +115,10 @@ pid_t ZygoteCommunication::ForkRequest(
+   icu::UnicodeString timezone_id;
+   pickle.WriteString16(
+       base::i18n::UnicodeStringToString16(timezone->getID(timezone_id)));
++  pickle.WriteInt(options->uid);
++  pickle.WriteInt(options->groups.size());
++  for (const auto g: options->groups)
++    pickle.WriteInt(g);
+ 
+   // Fork requests contain one file descriptor for the PID oracle, and one
+   // more for each file descriptor mapping for the child process.
+diff --git a/content/common/zygote/zygote_communication_linux.h b/content/common/zygote/zygote_communication_linux.h
+index 6a6e52f537fe8d4e23a3c01a36923bef5f5f0612..a6f878b49c11637206199066fa019aec791edd1f 100644
+--- a/content/common/zygote/zygote_communication_linux.h
++++ b/content/common/zygote/zygote_communication_linux.h
+@@ -48,7 +48,8 @@ class CONTENT_EXPORT ZygoteCommunication {
+   // Returns its pid on success, otherwise base::kNullProcessHandle;
+   pid_t ForkRequest(const std::vector<std::string>& command_line,
+                     const base::FileHandleMappingVector& mapping,
+-                    const std::string& process_type);
++                    const std::string& process_type,
++                    const base::LaunchOptions* options);
+ 
+   void EnsureProcessTerminated(pid_t process);
+ 
+diff --git a/content/public/browser/browser_context.h b/content/public/browser/browser_context.h
+index 1bcfcfe63ccf8a338409104becbd93f534263dc3..7ed3b4a7ac4a4ae2d27a039fd4969b9debf1fda7 100644
+--- a/content/public/browser/browser_context.h
++++ b/content/public/browser/browser_context.h
+@@ -331,6 +331,12 @@ class CONTENT_EXPORT BrowserContext : public base::SupportsUserData {
+   // also off the record.
+   virtual bool IsOffTheRecord() = 0;
+ 
++  // UID to run renderer as
++  virtual uid_t GetUIDForRenderer () const = 0;
++
++  // Groups that renderer should be in
++  virtual std::vector<gid_t> GetGroupsForRenderer() const = 0;
++
+   // Returns the resource context.
+   virtual ResourceContext* GetResourceContext() = 0;
+ 
+diff --git a/content/renderer/renderer_main.cc b/content/renderer/renderer_main.cc
+index 47d0eed6bc95cb7b034fe07473defb5a70e95de3..8954fea7876f8fd9f383d9df8e43b2460186c5c6 100644
+--- a/content/renderer/renderer_main.cc
++++ b/content/renderer/renderer_main.cc
+@@ -146,6 +146,12 @@ int RendererMain(MainFunctionParams parameters) {
+   // expect synchronous events around the main loop of a thread.
+   TRACE_EVENT_INSTANT0("startup", "RendererMain", TRACE_EVENT_SCOPE_THREAD);
+ 
++#if BUILDFLAG(IS_LINUX)
++  if (getuid() == 0) {
++    LOG(FATAL) << "Renderer process is being run as root.";
++  }
++#endif
++
+ #if BUILDFLAG(IS_MAC)
+   // Declare that this process has CPU security mitigations enabled (see
+   // RendererSandboxedProcessLauncherDelegate::EnableCpuSecurityMitigations).
+diff --git a/content/zygote/zygote_linux.cc b/content/zygote/zygote_linux.cc
+index bac30c699bfd2b94d5d8cd31834270f928e04571..53a206d1a0e665fecafda278a6e2bb2f15a638b2 100644
+--- a/content/zygote/zygote_linux.cc
++++ b/content/zygote/zygote_linux.cc
+@@ -13,6 +13,7 @@
+ #include <sys/socket.h>
+ #include <sys/types.h>
+ #include <sys/wait.h>
++#include <grp.h>
+ 
+ #include <tuple>
+ #include <utility>
+@@ -434,7 +435,7 @@ int Zygote::ForkWithRealPid(const std::string& process_type,
+       pid = sandbox::NamespaceSandbox::ForkInNewPidNamespace(
+           /*drop_capabilities_in_child=*/true);
+     } else {
+-      pid = sandbox::Credentials::ForkAndDropCapabilitiesInChild();
++      pid = fork();
+     }
+   }
+ 
+@@ -550,6 +551,9 @@ base::ProcessId Zygote::ReadArgsAndFork(base::PickleIterator iter,
+   base::GlobalDescriptors::Mapping mapping;
+   std::string process_type;
+ 
++  uid_t uid = 0;
++  std::vector<gid_t> groups;
++
+   if (!iter.ReadString(&process_type))
+     return -1;
+   if (!iter.ReadInt(&argc))
+@@ -571,6 +575,18 @@ base::ProcessId Zygote::ReadArgsAndFork(base::PickleIterator iter,
+   icu::TimeZone::adoptDefault(icu::TimeZone::createTimeZone(
+       icu::UnicodeString(false, timezone_id.data(), timezone_id.length())));
+ 
++  if (!iter.ReadUInt32(&uid))
++    return -1;
++  int ngroups;
++  if (!iter.ReadInt(&ngroups))
++    return -1;
++  for (int i = 0; i < ngroups; i++) {
++    gid_t g;
++    if (!iter.ReadUInt32(&g))
++      return -1;
++    groups.push_back(g);
++  }
++
+   if (!iter.ReadInt(&numfds))
+     return -1;
+   if (numfds != static_cast<int>(fds.size()))
+@@ -619,6 +635,18 @@ base::ProcessId Zygote::ReadArgsAndFork(base::PickleIterator iter,
+     // SetProcessTitleFromCommandLine in ChromeMain, so we can pass NULL here
+     // (we don't have the original argv at this point).
+     SetProcessTitleFromCommandLine(nullptr);
++
++    gid_t gid = 0;
++    if (!groups.empty()) {
++      gid = groups[0];
++      PCHECK(0 == setgroups(groups.size(),groups.data()));
++    }
++    if (uid > 0)
++      PCHECK(0 == prctl (PR_SET_KEEPCAPS, 1));
++    if (gid > 0)
++      PCHECK(0 == setgid(gid));
++    if (uid > 0)
++      PCHECK(0 == setuid(uid));
+   } else if (child_pid < 0) {
+     LOG(ERROR) << "Zygote could not fork: process_type " << process_type
+                << " numfds " << numfds << " child_pid " << child_pid;
