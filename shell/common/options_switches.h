@@ -313,6 +313,12 @@ inline constexpr base::cstring_view kDisableNTLMv2 = "disable-ntlm-v2";
 inline constexpr base::cstring_view kServiceWorkerPreload =
     "service-worker-preload";
 
+inline constexpr base::cstring_view kRendererProcessUid =
+    "renderer-process-uid";
+
+inline constexpr base::cstring_view kRendererProcessGids =
+    "renderer-process-gids";
+
 }  // namespace switches
 
 }  // namespace electron
