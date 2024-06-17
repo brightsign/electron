@@ -135,6 +135,9 @@ class ElectronBrowserContext : public content::BrowserContext {
     return in_memory_pref_store_.get();
   }
 
+  uid_t GetUIDForRenderer() const override;
+  std::vector<gid_t> GetGroupsForRenderer() const override;
+
   ProtocolRegistry* protocol_registry() const {
     return protocol_registry_.get();
   }
