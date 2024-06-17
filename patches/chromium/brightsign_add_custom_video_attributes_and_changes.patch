@@ -1,0 +1,199 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Tariq Bashir <120014322+t-bashir-bs@users.noreply.github.com>
+Date: Fri, 31 May 2024 10:20:51 +0100
+Subject: BrightSign: add custom video attributes and changes
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Adds custom BrightSign video attributes to the HTMLMediaElement and HTMLVideoElement
+and other changes to support these attributes.
+
+Taken from QtWebEngine changes:
+• I495e3507391612e4c2939a82c91acbbecf7fb88e
+• I90555844c5377cd6e8d98297d21ed4486aacc887
+• Icba1ec3a3da437260f8f204591b2e14098742665
+• I715322502d305be8c9f5a30adceef26978e0e0a4
+• I4ff27dd83e60c29b1febbfc65de733821e2fdca3
+• I13ee1d868babbe7e11a3183cf6709a6b6ef1a86a
+• Ic74e1a9d7c2d780e0eb1156e5137eed20a0ceb9f
+
+diff --git a/third_party/blink/public/platform/web_media_player.h b/third_party/blink/public/platform/web_media_player.h
+index 0001bd2a1908eef8c937ca8593f1e40715da85d9..08f30ab2390f4b21fb8288f9e713e0a23b3a1e19 100644
+--- a/third_party/blink/public/platform/web_media_player.h
++++ b/third_party/blink/public/platform/web_media_player.h
+@@ -392,6 +392,8 @@ class WebMediaPlayer {
+   virtual void UnregisterFrameSinkHierarchy() {}
+ 
+   // BRIGHTSIGN EXTENSION
++  virtual void SetAttribute(const std::string& name, const std::string& value) {}
++  virtual void SetSyncParams(const std::string& domain, const std::string& id, const std::string& timestamp) {}
+   virtual LoadTiming Load(LoadType type,
+                           const WebMediaPlayerSource& source,
+                           CorsMode mode,
+diff --git a/third_party/blink/renderer/core/html/html_attribute_names.json5 b/third_party/blink/renderer/core/html/html_attribute_names.json5
+index 45a33107cae485b358e6e2604fc8dc44a3a01633..c33a31f0bb959e403ff6fdc0bf6139fe161a346a 100644
+--- a/third_party/blink/renderer/core/html/html_attribute_names.json5
++++ b/third_party/blink/renderer/core/html/html_attribute_names.json5
+@@ -352,5 +352,24 @@
+     "webkitdirectory",
+     "width",
+     "wrap",
++    "pcmaudio",
++    "compaudio",
++    "multiaudio",
++    "hwz",
++    "viewmode",
++    "preferredvideo",
++    "preferredaudio",
++    "preferredcaptions",
++    "brightsign-properties",
++    "encryptionalgorithm",
++    "encryptionkey",
++    "privatekey",
++    "encryptionkey1",
++    "encryptioniv",
++    "encryptioniv1",
++    "contrast",
++    "hue",
++    "saturation",
++    "brightness"
+   ],
+ }
+diff --git a/third_party/blink/renderer/core/html/media/html_media_element.cc b/third_party/blink/renderer/core/html/media/html_media_element.cc
+index 459f0d8b3df2aab65527ea825b2402934b612d37..023cd523aa27b3a4c8b16737792a6015f9f3929b 100644
+--- a/third_party/blink/renderer/core/html/media/html_media_element.cc
++++ b/third_party/blink/renderer/core/html/media/html_media_element.cc
+@@ -364,8 +364,10 @@ void RecordShowControlsUsage(const HTMLMediaElement* element,
+ }
+ 
+ bool IsValidPlaybackRate(double rate) {
+-  return rate == 0.0 || (rate >= HTMLMediaElement::kMinPlaybackRate &&
+-                         rate <= HTMLMediaElement::kMaxPlaybackRate);
++  // BrightSign - we support all values of rate, positive and negative
++  return true;
++  //return rate == 0.0 || (rate >= HTMLMediaElement::kMinPlaybackRate &&
++  //                       rate <= HTMLMediaElement::kMaxPlaybackRate);
+ }
+ 
+ std::ostream& operator<<(std::ostream& stream,
+@@ -794,6 +796,9 @@ void HTMLMediaElement::ParseAttribute(
+   } else {
+     HTMLElement::ParseAttribute(params);
+   }
++
++  if (GetWebMediaPlayer())
++    GetWebMediaPlayer()->SetAttribute(name.ToString().Utf8().data(), params.new_value.GetString().Utf8().data());
+ }
+ 
+ void HTMLMediaElement::ParserDidSetAttributes() {
+@@ -1531,6 +1536,10 @@ void HTMLMediaElement::StartPlayerLoad() {
+     player_created = true;
+   }
+ 
++  // If any of the sync parameters were set, pass them on to the player
++  if (!sync_domain_.empty() || !sync_id_.empty() || !sync_timestamp_.empty())
++    setSyncParams(sync_domain_, sync_id_, sync_timestamp_);
++
+   if (!web_media_player_) {
+     MediaLoadingFailed(WebMediaPlayer::kNetworkStateFormatError,
+                        BuildElementErrorMessage(
+@@ -1686,6 +1695,17 @@ bool HTMLMediaElement::PausedWhenVisible() const {
+   return paused_ && web_media_player_ && !web_media_player_->PausedWhenHidden();
+ }
+ 
++void HTMLMediaElement::setSyncParams(const String& domain, const String& id, const String& iso_timestamp) {
++  if (GetWebMediaPlayer()) {
++    GetWebMediaPlayer()->SetSyncParams(domain.Utf8().data(), id.Utf8().data(), iso_timestamp.Utf8().data());
++  }
++
++  // Just remember them for later
++  sync_domain_ = domain;
++  sync_id_ = id;
++  sync_timestamp_ = iso_timestamp;
++}
++
+ void HTMLMediaElement::DidAudioOutputSinkChanged(
+     const String& hashed_device_id) {
+   for (auto& observer : media_player_observer_remote_set_->Value())
+@@ -3864,7 +3884,7 @@ void HTMLMediaElement::UpdatePlayState(bool pause_speech /* = true */) {
+     was_always_muted_ = false;
+ 
+   if (should_be_playing) {
+-    if (!is_playing) {
++    if (!is_playing && GetWebMediaPlayer()) {
+       // Set rate, muted before calling play in case they were set before the
+       // media engine was setup.  The media engine should just stash the rate
+       // and muted values since it isn't already playing.
+diff --git a/third_party/blink/renderer/core/html/media/html_media_element.h b/third_party/blink/renderer/core/html/media/html_media_element.h
+index ac3585030e475e8427d4d4b0f730e4e0e6eefca9..a353632266ee20454893fc1db1efa7171940a7cb 100644
+--- a/third_party/blink/renderer/core/html/media/html_media_element.h
++++ b/third_party/blink/renderer/core/html/media/html_media_element.h
+@@ -396,6 +396,8 @@ class CORE_EXPORT HTMLMediaElement
+ 
+   bool IsShowPosterFlagSet() const { return show_poster_flag_; }
+ 
++  void setSyncParams(const String& domain, const String& id, const String& iso_timestamp);
++
+   // What LocalFrame should own our player?  Normally, players are tied to their
+   // HTMLMediaElement's LocalFrame for metrics, network fetch, etc.  This has
+   // the side-effect of requiring that a player is destroyed when the element's
+@@ -849,6 +851,10 @@ class CORE_EXPORT HTMLMediaElement
+   bool tracks_are_ready_ : 1;
+   bool processing_preference_change_ : 1;
+ 
++  String sync_domain_;
++  String sync_id_;
++  String sync_timestamp_;
++
+   bool was_always_muted_ : 1;
+ 
+   // Set if the user has used the context menu to set the visibility of the
+diff --git a/third_party/blink/renderer/core/html/media/html_media_element.idl b/third_party/blink/renderer/core/html/media/html_media_element.idl
+index 1fa8a060db459148b3f5a6ca98b0ecf26344c6f6..675efd509452d12fd07b960ad97c4e49289b2861 100644
+--- a/third_party/blink/renderer/core/html/media/html_media_element.idl
++++ b/third_party/blink/renderer/core/html/media/html_media_element.idl
+@@ -77,6 +77,7 @@ enum CanPlayTypeResult { "" /* empty string */, "maybe", "probably" };
+     [RuntimeEnabled=MediaLatencyHint, CEReactions]
+     attribute double latencyHint;
+     attribute boolean preservesPitch;
++    void setSyncParams(DOMString domain, DOMString id, DOMString iso_timestamp);
+ 
+     // controls
+     [CEReactions, Reflect] attribute boolean controls;
+@@ -96,4 +97,10 @@ enum CanPlayTypeResult { "" /* empty string */, "maybe", "probably" };
+     // The number of bytes consumed by the media decoder.
+     [MeasureAs=PrefixedAudioDecodedByteCount] readonly attribute unsigned long long webkitAudioDecodedByteCount;
+     [MeasureAs=PrefixedVideoDecodedByteCount] readonly attribute unsigned long long webkitVideoDecodedByteCount;
++
++    // BrightSign audio control
++    [CEReactions, Reflect] attribute DOMString pcmaudio;
++    [CEReactions, Reflect] attribute DOMString compaudio;
++    [CEReactions, Reflect] attribute DOMString multiaudio;
++    [CEReactions, Reflect] attribute DOMString preferredaudio;
+ };
+diff --git a/third_party/blink/renderer/core/html/media/html_video_element.idl b/third_party/blink/renderer/core/html/media/html_video_element.idl
+index 1f1749a272cdaba020a2feec8889e21b46d83a8d..aa754cde579025501ef22bfc00633044739ad604 100644
+--- a/third_party/blink/renderer/core/html/media/html_video_element.idl
++++ b/third_party/blink/renderer/core/html/media/html_video_element.idl
+@@ -56,4 +56,20 @@
+     [HighEntropy=Direct, MeasureAs=PrefixedVideoDroppedFrameCount] readonly attribute unsigned long webkitDroppedFrameCount;
+ 
+     [CEReactions, Reflect] attribute boolean playsInline;
++    [CEReactions, Reflect] attribute DOMString hwz;
++    [CEReactions, Reflect] attribute DOMString async;
++    [CEReactions, Reflect] attribute DOMString viewmode;
++    [CEReactions, Reflect] attribute DOMString preferredvideo;
++    [CEReactions, Reflect] attribute DOMString preferredcaptions;
++    [CEReactions, Reflect] attribute DOMString brightsign_properties;
++    [CEReactions, Reflect] attribute DOMString encryptionalgorithm;
++    [CEReactions, Reflect] attribute DOMString encryptionkey;
++    [CEReactions, Reflect] attribute DOMString encryptionkey1;
++    [CEReactions, Reflect] attribute DOMString encryptioniv;
++    [CEReactions, Reflect] attribute DOMString encryptioniv1;
++    [CEReactions, Reflect] attribute DOMString privatekey;
++    [CEReactions, Reflect] attribute DOMString contrast;
++    [CEReactions, Reflect] attribute DOMString hue;
++    [CEReactions, Reflect] attribute DOMString saturation;
++    [CEReactions, Reflect] attribute DOMString brightness;
+ };
