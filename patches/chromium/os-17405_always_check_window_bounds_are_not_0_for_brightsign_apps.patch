@@ -1,0 +1,41 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Tariq Bashir <120014322+t-bashir-bs@users.noreply.github.com>
+Date: Mon, 24 Jun 2024 18:16:49 +0100
+Subject: OS-17405: Always check window bounds are not 0 for BrightSign apps
+
+Some BrightSign customers create windows with zero width and height bounds.
+This change ensures that the bounds are always at least 1 pixel in size.
+
+diff --git a/ui/ozone/platform/wayland/host/wayland_toplevel_window.cc b/ui/ozone/platform/wayland/host/wayland_toplevel_window.cc
+index 629adb3b08877f60b815bab6aed101b1708ba263..66f7c8e535bc178753e0d028bc4b0640d6362603 100644
+--- a/ui/ozone/platform/wayland/host/wayland_toplevel_window.cc
++++ b/ui/ozone/platform/wayland/host/wayland_toplevel_window.cc
+@@ -719,17 +719,19 @@ void WaylandToplevelWindow::SetWindowGeometry(gfx::Size size_dip) {
+   const auto insets = GetDecorationInsetsInDIP();
+   if (state_ == PlatformWindowState::kNormal && !insets.IsEmpty()) {
+     geometry_dip.Inset(insets);
++  }
+ 
+-    // Shrinking the bounds by the decoration insets might result in empty
+-    // bounds. For the reasons already explained in WaylandWindow::Initialize(),
+-    // we mustn't request an empty window geometry.
+-    if (geometry_dip.width() == 0) {
+-      geometry_dip.set_width(1);
+-    }
+-    if (geometry_dip.height() == 0) {
+-      geometry_dip.set_height(1);
+-    }
++  // Always check if the bounds are zero, this can happen for certain BrightSign
++  // customer scenarios where the window is created with zero width or height
++  // bounds. For the reasons already explained in WaylandWindow::Initialize(),
++  // we mustn't request an empty window geometry.
++  if (geometry_dip.width() == 0) {
++    geometry_dip.set_width(1);
+   }
++  if (geometry_dip.height() == 0) {
++    geometry_dip.set_height(1);
++  }
++
+   // BrightSign modification to set the x & y offsets from the window bounds
+   // in the SetWindowGeometry call. This is because we don't support aura shell
+   // and hence cannot use RequestWindowBounds calls to set the offset.
