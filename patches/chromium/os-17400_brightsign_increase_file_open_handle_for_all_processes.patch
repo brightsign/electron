@@ -1,0 +1,79 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Tariq Bashir <120014322+t-bashir-bs@users.noreply.github.com>
+Date: Tue, 25 Jun 2024 11:34:26 +0100
+Subject: OS-17405: BrightSign increase file open handle for all processes
+
+Chromium increases the file open handle limit as, according to
+comments in the code, the linux default of 1024 is too low. This
+increase is made in the browser main loop, but gets run in the
+Electron main process. This means the renderer process is left
+with the default value of 1024.
+A customer scenario results in frequest crashes due to the Electron
+renderer process "exceeded file handle limit". The test scenario
+is reloading a specific website and the crash happens quite soon
+after opening it, which means the web page needs a lot of tmp files
+rather than the web page isn't freeing resources and it slowly
+builds up over time.
+This patch fixes the issue by calling base::IncreaseFdLimitTo in
+the Zygote and LaunchProcess classes to ensure the file handle limit
+is also increased in the other processes (including the renderer) that
+are forked from here. The comments explaining the 8192 value have been
+copied accross from the brower main call code.
+
+Note: This patch is based on the QtWebEngine change
+I56506a41eb9c224b83ca529dce6d888d3fe00cfc.
+
+diff --git a/base/process/launch_posix.cc b/base/process/launch_posix.cc
+index d16ce375b643eff04edc553a9998858af8244e30..50e8238239aa31a4d8503ee183a40f5ee10b5909 100644
+--- a/base/process/launch_posix.cc
++++ b/base/process/launch_posix.cc
+@@ -40,6 +40,7 @@
+ #include "base/process/environment_internal.h"
+ #include "base/process/process.h"
+ #include "base/process/process_metrics.h"
++#include "base/process/process_metrics.h"
+ #include "base/synchronization/waitable_event.h"
+ #include "base/threading/platform_thread.h"
+ #include "base/threading/platform_thread_internal_posix.h"
+@@ -422,6 +423,14 @@ Process LaunchProcess(const std::vector<std::string>& argv,
+     if (options.uid > 0)
+       PCHECK(0 == setuid(options.uid));
+ 
++    // We use quite a few file descriptors for our IPC as well as disk the disk
++    // cache, and the default limit on Apple is low (256), so bump it up.
++    // Same for Linux. The default various per distro, but it is 1024 on Fedora.
++    // Low soft limits combined with liberal use of file descriptors means power
++    // users can easily hit this limit with many open tabs. Bump up the limit to
++    // an arbitrarily high number. See https://crbug.com/539567
++    base::IncreaseFdLimitTo(8192);
++
+     ResetChildSignalHandlersToDefaults();
+     SetSignalMask(orig_sigmask);
+ 
+diff --git a/content/zygote/zygote_linux.cc b/content/zygote/zygote_linux.cc
+index 53a206d1a0e665fecafda278a6e2bb2f15a638b2..03e6f35014cd88bc64bf947e25a54f2912d889e1 100644
+--- a/content/zygote/zygote_linux.cc
++++ b/content/zygote/zygote_linux.cc
+@@ -33,6 +33,7 @@
+ #include "base/process/launch.h"
+ #include "base/process/process.h"
+ #include "base/process/process_handle.h"
++#include "base/process/process_metrics.h"
+ #include "base/time/time.h"
+ #include "base/trace_event/trace_event.h"
+ #include "build/build_config.h"
+@@ -647,6 +648,14 @@ base::ProcessId Zygote::ReadArgsAndFork(base::PickleIterator iter,
+       PCHECK(0 == setgid(gid));
+     if (uid > 0)
+       PCHECK(0 == setuid(uid));
++
++    // We use quite a few file descriptors for our IPC as well as disk the disk
++    // cache, and the default limit on Apple is low (256), so bump it up.
++    // Same for Linux. The default various per distro, but it is 1024 on Fedora.
++    // Low soft limits combined with liberal use of file descriptors means power
++    // users can easily hit this limit with many open tabs. Bump up the limit to
++    // an arbitrarily high number. See https://crbug.com/539567
++    base::IncreaseFdLimitTo(8192);
+   } else if (child_pid < 0) {
+     LOG(ERROR) << "Zygote could not fork: process_type " << process_type
+                << " numfds " << numfds << " child_pid " << child_pid;
