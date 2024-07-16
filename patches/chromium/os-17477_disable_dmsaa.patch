@@ -1,0 +1,25 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Tariq Bashir <120014322+t-bashir-bs@users.noreply.github.com>
+Date: Fri, 12 Jul 2024 13:33:46 +0100
+Subject: OS-17477: Disable DMSAA
+
+Between Chromium 110 and 120 the DMSAA feature has been enabled. 
+This feature causes issues rending images on rk3568 based BrightSign
+devices. When a page has inline svg images mixed with other images
+then the non svg images end up being partially rendered or mixed up
+and displayed in the place of a different image. This patch disables
+the DMSAA feature by default.
+
+diff --git a/cc/base/features.cc b/cc/base/features.cc
+index dcdbd51e55502ac728e7432b8c44d12e469e22a1..9bb3f57ecdbb934b4e68754f0a36d66153be4542 100644
+--- a/cc/base/features.cc
++++ b/cc/base/features.cc
+@@ -85,7 +85,7 @@ BASE_FEATURE(kNormalPriorityImageDecoding,
+ BASE_FEATURE(kUseDMSAAForTiles,
+              "UseDMSAAForTiles",
+ #if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_ANDROID)
+-             base::FEATURE_ENABLED_BY_DEFAULT
++             base::FEATURE_DISABLED_BY_DEFAULT
+ #else
+              base::FEATURE_DISABLED_BY_DEFAULT
+ #endif
