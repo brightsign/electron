@@ -5,7 +5,10 @@
 #include "shell/browser/linux/unity_service.h"
 
 #include <dlfcn.h>
+#ifdef USE_GTK
 #include <gtk/gtk.h>
+#endif
+#include <glib.h>
 
 #include <string>
 

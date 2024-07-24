@@ -31,7 +31,9 @@
 #include "dbus/object_proxy.h"
 #include "shell/common/platform_util_internal.h"
 #include "third_party/abseil-cpp/absl/types/optional.h"
+#ifdef USE_GTK
 #include "ui/gtk/gtk_util.h"  // nogncheck
+#endif
 #include "url/gurl.h"
 
 #define ELECTRON_TRASH "ELECTRON_TRASH"

@@ -21,8 +21,10 @@
 #include "ui/gfx/geometry/skia_conversions.h"
 #include "ui/gfx/skia_util.h"
 #include "ui/gfx/text_constants.h"
+#ifdef USE_GTK
 #include "ui/gtk/gtk_compat.h"  // nogncheck
 #include "ui/gtk/gtk_util.h"    // nogncheck
+#endif
 #include "ui/linux/linux_ui.h"
 #include "ui/linux/nav_button_provider.h"
 #include "ui/native_theme/native_theme.h"
@@ -314,6 +316,7 @@ void ClientFrameViewLinux::PaintAsActiveChanged() {
 }
 
 void ClientFrameViewLinux::UpdateThemeValues() {
+#ifdef USE_GTK
   gtk::GtkCssContext window_context =
       gtk::AppendCssNodeToStyleContext({}, "window.background.csd");
   gtk::GtkCssContext headerbar_context = gtk::AppendCssNodeToStyleContext(
@@ -354,6 +357,7 @@ void ClientFrameViewLinux::UpdateThemeValues() {
 
   InvalidateLayout();
   SchedulePaint();
+#endif
 }
 
 ui::NavButtonProvider::FrameButtonDisplayType
