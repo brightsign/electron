@@ -14,7 +14,9 @@
 #include "ui/views/layout/box_layout.h"
 
 #if BUILDFLAG(IS_LINUX)
+#if defined(USE_GTK)
 #include "ui/gtk/gtk_util.h"  // nogncheck
+#endif
 #endif
 
 #if BUILDFLAG(IS_WIN)
@@ -219,11 +221,13 @@ void MenuBar::ViewHierarchyChanged(
 void MenuBar::RefreshColorCache(const ui::NativeTheme* theme) {
   if (theme) {
 #if BUILDFLAG(IS_LINUX)
+#if defined(USE_GTK)
     background_color_ = gtk::GetBgColor("GtkMenuBar#menubar");
     enabled_color_ =
         gtk::GetFgColor("GtkMenuBar#menubar GtkMenuItem#menuitem GtkLabel");
     disabled_color_ = gtk::GetFgColor(
         "GtkMenuBar#menubar GtkMenuItem#menuitem:disabled GtkLabel");
+#endif
 #elif BUILDFLAG(IS_WIN)
     background_color_ = GetBackground()->get_color();
 #endif

@@ -13,7 +13,9 @@
 #include "base/logging.h"
 #include "electron/electron_version.h"
 #include "shell/common/platform_util.h"
+#ifdef USE_GTK
 #include "ui/gtk/gtk_util.h"  // nogncheck
+#endif
 
 namespace {
 

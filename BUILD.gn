@@ -1,6 +1,7 @@
 import("//build/config/locales.gni")
 import("//build/config/ui.gni")
 import("//build/config/win/manifest.gni")
+import("//build/config/linux/gtk/gtk.gni")
 import("//components/os_crypt/sync/features.gni")
 import("//components/spellcheck/spellcheck_build_features.gni")
 import("//content/public/app/mac_helpers.gni")
@@ -94,7 +95,9 @@ if (is_linux) {
     ]
     extra_header = "shell/browser/ui/electron_gtk.fragment"
     output_name = "electron_gtk_stubs"
-    public_deps = [ "//ui/gtk:gtk_config" ]
+    if (use_gtk) {
+        public_deps = [ "//ui/gtk:gtk_config" ]
+    }
     logging_function = "LogNoop()"
     logging_include = "ui/gtk/log_noop.h"
   }
@@ -540,6 +543,13 @@ source_set("electron_lib") {
   }
   if (is_linux) {
     sources += filenames.lib_sources_linux
+
+    if (use_gtk) {
+      sources += filenames.lib_sources_linux_gtk
+    }
+    else {
+      sources += filenames.lib_sources_linux_ozone
+    }
   }
   if (!is_mac) {
     sources += filenames.lib_sources_views
@@ -614,20 +624,25 @@ source_set("electron_lib") {
   }
   if (is_linux) {
     deps += [
-      ":electron_gtk_stubs",
       ":libnotify_loader",
-      "//build/config/linux/gtk",
       "//components/crash/content/browser",
       "//dbus",
       "//device/bluetooth",
       "//third_party/crashpad/crashpad/client",
       "//ui/base/ime/linux",
-      "//ui/gtk:gtk_config",
       "//ui/linux:linux_ui",
       "//ui/linux:linux_ui_factory",
       "//ui/views/controls/webview",
       "//ui/wm",
     ]
+    if (use_gtk) {
+        deps += [
+          ":electron_gtk_stubs",
+          "//build/config/linux/gtk",
+          "//ui/gtk:gtk_config",
+        ]
+    }
+
     if (ozone_platform_x11) {
       libs = [ "xshmfence" ]
       sources += filenames.lib_sources_linux_x11
@@ -649,9 +664,13 @@ source_set("electron_lib") {
     sources += [
       "shell/browser/certificate_manager_model.cc",
       "shell/browser/certificate_manager_model.h",
-      "shell/browser/ui/gtk_util.cc",
-      "shell/browser/ui/gtk_util.h",
     ]
+    if (use_gtk) {
+        sources += [
+          "shell/browser/ui/gtk_util.cc",
+          "shell/browser/ui/gtk_util.h",
+        ]
+    }
   }
   if (is_win) {
     libs += [ "dwmapi.lib" ]

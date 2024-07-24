@@ -69,6 +69,7 @@ ui::MenuModel* TrayIconLinux::GetMenuModel() const {
 }
 
 void TrayIconLinux::OnImplInitializationFailed() {
+#ifdef USE_GTK
   switch (status_icon_type_) {
     case StatusIconType::kDbus:
       status_icon_dbus_.reset();
@@ -84,6 +85,7 @@ void TrayIconLinux::OnImplInitializationFailed() {
     case StatusIconType::kNone:
       NOTREACHED();
   }
+#endif
 }
 
 void TrayIconLinux::OnClick() {
@@ -97,6 +99,7 @@ bool TrayIconLinux::HasClickAction() {
 }
 
 ui::StatusIconLinux* TrayIconLinux::GetStatusIcon() {
+#ifdef USE_GTK
   switch (status_icon_type_) {
     case StatusIconType::kDbus:
       return status_icon_dbus_.get();
@@ -105,6 +108,9 @@ ui::StatusIconLinux* TrayIconLinux::GetStatusIcon() {
     case StatusIconType::kNone:
       return nullptr;
   }
+#else
+  return nullptr;
+#endif
 }
 
 // static
