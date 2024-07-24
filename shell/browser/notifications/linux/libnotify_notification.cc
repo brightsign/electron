@@ -12,11 +12,15 @@
 #include "base/logging.h"
 #include "base/strings/utf_string_conversions.h"
 #include "shell/browser/notifications/notification_delegate.h"
+#ifdef USE_GTK
 #include "shell/browser/ui/gtk_util.h"
+#endif
 #include "shell/common/application_info.h"
 #include "shell/common/platform_util.h"
 #include "third_party/skia/include/core/SkBitmap.h"
+#ifdef USE_GTK
 #include "ui/gtk/gtk_util.h"  // nogncheck
+#endif
 
 namespace electron {
 
@@ -110,12 +114,14 @@ void LibnotifyNotification::Show(const NotificationOptions& options) {
   // Set the urgency level of the notification.
   libnotify_loader_.notify_notification_set_urgency(notification_, urgency);
 
+#if defined(USE_X11)
   if (!options.icon.drawsNothing()) {
     GdkPixbuf* pixbuf = gtk_util::GdkPixbufFromSkBitmap(options.icon);
     libnotify_loader_.notify_notification_set_image_from_pixbuf(notification_,
                                                                 pixbuf);
     g_object_unref(pixbuf);
   }
+#endif
 
   // Set the timeout duration for the notification
   bool neverTimeout = options.timeout_type == u"never";

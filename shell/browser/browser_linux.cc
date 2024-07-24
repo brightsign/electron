@@ -18,7 +18,9 @@
 
 #if BUILDFLAG(IS_LINUX)
 #include "shell/browser/linux/unity_service.h"
+#if defined(USE_X11)
 #include "ui/gtk/gtk_util.h"  // nogncheck
+#endif
 #endif
 
 namespace electron {
@@ -160,6 +162,7 @@ bool Browser::IsEmojiPanelSupported() {
 }
 
 void Browser::ShowAboutPanel() {
+#if defined(USE_X11)
   const auto& opts = about_panel_options_;
 
   GtkWidget* dialogWidget = gtk_about_dialog_new();
@@ -217,6 +220,7 @@ void Browser::ShowAboutPanel() {
                            G_CALLBACK(gtk_widget_destroy), dialogWidget);
 
   gtk_widget_show_all(dialogWidget);
+#endif
 }
 
 void Browser::SetAboutPanelOptions(base::Value::Dict options) {

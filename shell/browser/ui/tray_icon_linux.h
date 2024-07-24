@@ -45,7 +45,9 @@ class TrayIconLinux : public TrayIcon, public ui::StatusIconLinux::Delegate {
   ui::StatusIconLinux* GetStatusIcon();
 
   scoped_refptr<StatusIconLinuxDbus> status_icon_dbus_;
+#ifdef USE_GTK
   std::unique_ptr<StatusIconGtk> status_icon_gtk_;
+#endif
   StatusIconType status_icon_type_;
 
   gfx::ImageSkia image_;

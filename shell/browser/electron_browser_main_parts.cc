@@ -83,11 +83,15 @@
 #include "device/bluetooth/bluetooth_adapter_factory.h"
 #include "device/bluetooth/dbus/bluez_dbus_manager.h"
 #include "device/bluetooth/dbus/dbus_bluez_manager_wrapper_linux.h"
+#if defined(USE_GTK)
 #include "electron/electron_gtk_stubs.h"
+#endif
 #include "ui/base/cursor/cursor_factory.h"
 #include "ui/base/ime/linux/linux_input_method_context_factory.h"
+#if defined(USE_GTK)
 #include "ui/gtk/gtk_compat.h"  // nogncheck
 #include "ui/gtk/gtk_util.h"    // nogncheck
+#endif
 #include "ui/linux/linux_ui.h"
 #include "ui/linux/linux_ui_factory.h"
 #include "ui/linux/linux_ui_getter.h"
@@ -398,6 +402,7 @@ void ElectronBrowserMainParts::ToolkitInitialized() {
   CHECK(linux_ui);
   linux_ui_getter_ = std::make_unique<LinuxUiGetterImpl>();
 
+#if defined(USE_GTK)
   // Try loading gtk symbols used by Electron.
   electron::InitializeElectron_gtk(gtk::GetLibGtk());
   if (!electron::IsElectron_gtkInitialized()) {
@@ -407,6 +412,7 @@ void ElectronBrowserMainParts::ToolkitInitialized() {
   electron::InitializeElectron_gdk_pixbuf(gtk::GetLibGdkPixbuf());
   CHECK(electron::IsElectron_gdk_pixbufInitialized())
       << "Failed to initialize libgdk_pixbuf-2.0.so.0";
+#endif
 
   // source theme changes from system settings, including settings portal:
   // https://flatpak.github.io/xdg-desktop-portal/#gdbus-org.freedesktop.portal.Settings
