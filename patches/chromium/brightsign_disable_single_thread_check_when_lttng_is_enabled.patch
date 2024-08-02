@@ -1,0 +1,62 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Tariq Bashir <tbashir@brightsign.biz>
+Date: Fri, 2 Aug 2024 17:31:39 +0100
+Subject: brightsign: Disable single thread check when lttng is enabled.
+ OS-12162
+
+Added a new flag to inform Electron if lttng is enabled or not. When
+lttng is enabled, do not check if process is single threaded. Check
+fails, process gets SIGTRAP and brightsign reboots if
+reboot_on_userfault is enabled.
+
+Same flag can be utilized for generating lttng tracepoints in the
+future if needed.
+
+Cherry picked from: I47d986c342440d1db1ebf5b6d479fb6e6d5024c2
+
+diff --git a/build/config/brightsign_build.gni b/build/config/brightsign_build.gni
+index 41904fbec3bf4924d6fcc0e1ea7fbe2339753ba4..faca73939118442d5eed0ecae010d568cdc30f58 100644
+--- a/build/config/brightsign_build.gni
++++ b/build/config/brightsign_build.gni
+@@ -1,4 +1,5 @@
+ declare_args() {
+   # Defines if BrightSign specific Chromium features are enabled
+   is_brightsign = false
++  use_lttng = false
+ }
+diff --git a/content/zygote/BUILD.gn b/content/zygote/BUILD.gn
+index aa0261e863886e527f905fae8b3f5f698d28e227..54db556ac81094eccac80d8b5c2ea23be5ab9059 100644
+--- a/content/zygote/BUILD.gn
++++ b/content/zygote/BUILD.gn
+@@ -4,6 +4,7 @@
+ 
+ import("//build/config/nacl/config.gni")
+ import("//content/public/common/zygote/features.gni")
++import("//build/config/brightsign_build.gni")
+ 
+ if (is_linux || is_chromeos) {
+   source_set("zygote") {
+@@ -27,6 +28,10 @@ if (is_linux || is_chromeos) {
+     ]
+ 
+     configs += [ "//content:content_implementation" ]
++
++    if (use_lttng) {
++      defines = [ "USE_LTTNG" ]
++    }
+   }
+ } else {
+   group("zygote") {
+diff --git a/content/zygote/zygote_main_linux.cc b/content/zygote/zygote_main_linux.cc
+index c7ee91878e6dde5011eed0c576bd2f85f99b5c1a..cf61772b06575e62cffb9fea39da169a7b763526 100644
+--- a/content/zygote/zygote_main_linux.cc
++++ b/content/zygote/zygote_main_linux.cc
+@@ -141,7 +141,7 @@ static void EnterLayerOneSandbox(sandbox::policy::SandboxLinux* linux_sandbox,
+ // Check that the pre-sandbox initialization didn't spawn threads.
+ // It's not just our code which may do so - some system-installed libraries
+ // are known to be culprits, e.g. lttng.
+-#if !defined(THREAD_SANITIZER)
++#if !defined(THREAD_SANITIZER) && !defined(USE_LTTNG)
+   CHECK(sandbox::ThreadHelpers::IsSingleThreaded());
+ #endif
+ 
