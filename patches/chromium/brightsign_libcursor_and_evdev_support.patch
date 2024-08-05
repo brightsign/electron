@@ -1,0 +1,697 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Tariq Bashir <tbashir@brightsign.biz>
+Date: Mon, 5 Aug 2024 18:13:53 +0100
+Subject: BrightSign: libcursor and evdev support
+
+Added a BrightsignCursorDelegateEvdev class which integrates with
+brightsign cursor using libcursor.
+
+NexusWindowManager is extended to support finding the window under
+cursor(pointer).
+
+NexusWindow inherits from PlatformEventDispatcher and registers itself
+as PlatformEventDispatcher. It receives the Evdev events and dispatches
+it to Browser
+
+Brightsign does not use udev. Electron fills in the gap with a manual
+device detector if udev is not used. Use that instead.
+
+diff --git a/build/config/features.gni b/build/config/features.gni
+index 7676483db583727de8ba4d47ff4c4bd61ae956df..d9874b63b30be0379e8b6a17d44492603647a8f6 100644
+--- a/build/config/features.gni
++++ b/build/config/features.gni
+@@ -16,6 +16,7 @@
+ 
+ import("//build/config/chrome_build.gni")
+ import("//build/config/chromecast_build.gni")
++import("//build/config/brightsign_build.gni")
+ 
+ declare_args() {
+   # Enables proprietary codecs and demuxers; e.g. H264, AAC, MP3, and MP4.
+@@ -32,7 +33,7 @@ declare_args() {
+                        is_chrome_for_testing_branded
+ 
+   # libudev usage. This currently only affects the content layer.
+-  use_udev = (is_linux && !is_castos) || is_chromeos
++  use_udev = (is_linux && !is_castos && !is_brightsign) || is_chromeos
+ 
+   use_dbus = is_linux || is_chromeos
+ 
+diff --git a/ui/events/ozone/evdev/keyboard_imposter_checker_evdev.cc b/ui/events/ozone/evdev/keyboard_imposter_checker_evdev.cc
+index fa65ef19d89e7f6be26ddb6a0a09ab2e70e76358..931430b1a0cf62a05e52d1922c5d303b8a0c36e5 100644
+--- a/ui/events/ozone/evdev/keyboard_imposter_checker_evdev.cc
++++ b/ui/events/ozone/evdev/keyboard_imposter_checker_evdev.cc
+@@ -29,7 +29,7 @@ std::string KeyboardImposterCheckerEvdev::StandardizedPhys(
+   // For input devices on USB, remove the final digits in the phys_path. This
+   // means devices with the same USB topology will have identical phys_paths.
+   std::string standard_phys = phys_path;
+-  static constexpr re2::LazyRE2 usb_input_re("^(usb[-:.0-9]*/input)[0-9]*$");
++  static constexpr re2::LazyRE2 usb_input_re = {"^(usb[-:.0-9]*/input)[0-9]*$"};
+   re2::RE2::Replace(&standard_phys, *usb_input_re, "\\1");
+   return standard_phys;
+ }
+diff --git a/ui/events/ozone/layout/xkb/xkb_keyboard_layout_engine.cc b/ui/events/ozone/layout/xkb/xkb_keyboard_layout_engine.cc
+index d8633d63e2bca484f0f8f811fc0d52916038b518..03234a88a655d81278b8f4f1f9e8ad1460bb0810 100644
+--- a/ui/events/ozone/layout/xkb/xkb_keyboard_layout_engine.cc
++++ b/ui/events/ozone/layout/xkb/xkb_keyboard_layout_engine.cc
+@@ -625,7 +625,7 @@ const PrintableSimpleEntry kSimpleMap[] = {
+     {0x0259, VKEY_OEM_3},      // schwa
+ };
+ 
+-#if BUILDFLAG(IS_CHROMEOS_ASH)
++#if BUILDFLAG(IS_CHROMEOS_ASH) || defined(OS_LINUX)
+ void LoadKeymap(const std::string& layout_name,
+                 scoped_refptr<base::SingleThreadTaskRunner> reply_runner,
+                 LoadKeymapCallback reply_callback) {
+@@ -699,7 +699,7 @@ bool XkbKeyboardLayoutEngine::SetCurrentLayoutByName(
+ bool XkbKeyboardLayoutEngine::SetCurrentLayoutByNameWithCallback(
+     const std::string& layout_name,
+     base::OnceClosure callback) {
+-#if BUILDFLAG(IS_CHROMEOS_ASH)
++#if BUILDFLAG(IS_CHROMEOS_ASH) || defined(OS_LINUX)
+   current_layout_name_ = layout_name;
+   for (const auto& entry : xkb_keymaps_) {
+     if (entry.layout_name == layout_name) {
+diff --git a/ui/ozone/platform/nexus/BUILD.gn b/ui/ozone/platform/nexus/BUILD.gn
+index 8468995171ad4c26b1acce06f21ec35828609264..82dff8720fe2b37d473dc1ba90ae2786570eaa7b 100644
+--- a/ui/ozone/platform/nexus/BUILD.gn
++++ b/ui/ozone/platform/nexus/BUILD.gn
+@@ -7,7 +7,7 @@ visibility = [ "//ui/ozone/*" ]
+ import("//build/config/linux/pkg_config.gni")
+ 
+ pkg_config("nexus_config") {
+-  packages = [ "nexus", "nxclient", "nxpl"]
++  packages = [ "nxclient", "nxpl", "libcursor_client"]
+ }
+ 
+ 
+@@ -15,6 +15,8 @@ source_set("nexus") {
+   sources = [
+     "client_native_pixmap_factory_nexus.cc",
+     "client_native_pixmap_factory_nexus.h",
++    "nexus_cursor.cc",
++    "nexus_cursor.h",
+     "nexus_screen.cc",
+     "nexus_screen.h",
+     "nexus_surface_factory.cc",
+@@ -38,6 +40,7 @@ source_set("nexus") {
+     "//ui/base",
+     "//ui/base/ime",
+     "//ui/events",
++    "//ui/events/ozone/evdev",
+     "//ui/events/ozone/layout",
+     "//ui/events/platform",
+     "//ui/gfx/geometry",
+diff --git a/ui/ozone/platform/nexus/nexus_cursor.cc b/ui/ozone/platform/nexus/nexus_cursor.cc
+new file mode 100644
+index 0000000000000000000000000000000000000000..37315bfe81f5c651c4114aa19ccb191b44142984
+--- /dev/null
++++ b/ui/ozone/platform/nexus/nexus_cursor.cc
+@@ -0,0 +1,66 @@
++#include "include/core/SkPixmap.h"
++#include "ui/ozone/platform/nexus/nexus_cursor.h"
++#include "ui/gfx/geometry/rect.h"
++
++#define BS_DEBUG(...) \
++              do { if (0) fprintf(stderr, ##__VA_ARGS__); } while (0)
++
++namespace ui {
++
++BrightsignCursorDelegateEvdev::BrightsignCursorDelegateEvdev() {
++  BS_DEBUG("%s:%d\n", __PRETTY_FUNCTION__, __LINE__);
++  cursor_client_ = std::make_unique<CursorClient>();
++}
++
++// CursorDelegateEvdev:
++void BrightsignCursorDelegateEvdev::MoveCursorTo(gfx::AcceleratedWidget widget,
++                                                 const gfx::PointF& location) {
++  BS_DEBUG("%s:%d\n", __PRETTY_FUNCTION__, __LINE__);
++  cursor_client_->SetCursorPosition(location.x(), location.y());
++}
++
++void BrightsignCursorDelegateEvdev::MoveCursorTo(const gfx::PointF& location) {
++  BS_DEBUG("%s:%d\n", __PRETTY_FUNCTION__, __LINE__);
++  cursor_client_->SetCursorPosition(location.x(), location.y());
++}
++
++void BrightsignCursorDelegateEvdev::MoveCursor(const gfx::Vector2dF& delta) {
++  BS_DEBUG("%s:%d\n", __PRETTY_FUNCTION__, __LINE__);
++  gfx::PointF current = GetLocation();
++  gfx::PointF next = current + delta;
++  MoveCursorTo(next);
++}
++
++bool BrightsignCursorDelegateEvdev::IsCursorVisible() {
++  BS_DEBUG("%s:%d\n", __PRETTY_FUNCTION__, __LINE__);
++  return cursor_client_->IsEnabled();
++}
++
++gfx::Rect BrightsignCursorDelegateEvdev::GetCursorConfinedBounds() {
++  BS_DEBUG("%s:%d\n", __PRETTY_FUNCTION__, __LINE__);
++  NOTIMPLEMENTED();
++  return gfx::Rect();
++}
++
++gfx::PointF BrightsignCursorDelegateEvdev::GetLocation() {
++  BS_DEBUG("%s:%d\n", __PRETTY_FUNCTION__, __LINE__);
++  int32_t x;
++  int32_t y;
++  cursor_client_->GetCursorPosition(&x, &y);
++  return gfx::PointF(x, y);
++}
++
++void BrightsignCursorDelegateEvdev::InitializeOnEvdev() {}
++
++void BrightsignCursorDelegateEvdev::SetCursor(scoped_refptr<BitmapCursor> platform_cursor) {
++  BS_DEBUG("%s:%d\n", __PRETTY_FUNCTION__, __LINE__);
++  SkPixmap pixmap = platform_cursor->bitmap().pixmap();
++  if (pixmap.addr()) {
++    cursor_client_->LoadCursor(pixmap.addr(), pixmap.computeByteSize(),
++                               pixmap.rowBytes(), pixmap.width(),
++                               pixmap.height(), platform_cursor->hotspot().x(),
++                               platform_cursor->hotspot().y());
++  }
++}
++
++}  // namespace ui
+diff --git a/ui/ozone/platform/nexus/nexus_cursor.h b/ui/ozone/platform/nexus/nexus_cursor.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..9b00520881ac5259bbba53591418ce80dcc292d8
+--- /dev/null
++++ b/ui/ozone/platform/nexus/nexus_cursor.h
+@@ -0,0 +1,34 @@
++#ifndef UI_OZONE_PLATFORM_NEXUS_NEXUS_CURSOR_H
++#define UI_OZONE_PLATFORM_NEXUS_NEXUS_CURSOR_H
++
++#include "cursor_client.h"
++#include "base/memory/scoped_refptr.h"
++#include "ui/ozone/common/bitmap_cursor.h"
++#include "ui/ozone/common/bitmap_cursor_factory.h"
++#include "ui/events/ozone/evdev/cursor_delegate_evdev.h"
++
++namespace ui {
++
++class BrightsignCursorDelegateEvdev : public CursorDelegateEvdev {
++ public:
++  BrightsignCursorDelegateEvdev();
++  ~BrightsignCursorDelegateEvdev() override {}
++
++  // CursorDelegateEvdev:
++  void MoveCursorTo(gfx::AcceleratedWidget widget,
++                    const gfx::PointF& location) override;
++  void MoveCursorTo(const gfx::PointF& location) override;
++  void MoveCursor(const gfx::Vector2dF& delta) override;
++  bool IsCursorVisible() override;
++  gfx::Rect GetCursorConfinedBounds() override;
++  gfx::PointF GetLocation() override;
++  void InitializeOnEvdev() override;
++  void SetCursor(scoped_refptr<BitmapCursor> platform_cursor);
++
++ private:
++  std::unique_ptr<CursorClient> cursor_client_;
++};
++
++}  // namespace ui
++
++#endif  //  UI_OZONE_PLATFORM_NEXUS_NEXUS_CURSOR_H
+diff --git a/ui/ozone/platform/nexus/nexus_window.cc b/ui/ozone/platform/nexus/nexus_window.cc
+index 460c1ca8e39696891fccf8f263db598b931168e2..3d85eb06048dc94f3b77c951608a8bcfebe5cdb4 100644
+--- a/ui/ozone/platform/nexus/nexus_window.cc
++++ b/ui/ozone/platform/nexus/nexus_window.cc
+@@ -4,22 +4,33 @@
+ 
+ #include "ui/ozone/platform/nexus/nexus_window.h"
+ 
+-#include <string>
+-
++#include "base/functional/bind.h"
+ #include "build/build_config.h"
+-#include "ui/base/cursor/platform_cursor.h"
++#include "ui/events/event.h"
++#include "ui/events/ozone/evdev/event_factory_evdev.h"
++#include "ui/events/ozone/events_ozone.h"
+ #include "ui/events/platform/platform_event_source.h"
++#include "ui/ozone/common/bitmap_cursor.h"
+ #include "ui/ozone/platform/nexus/nexus_window_manager.h"
++#include "ui/ozone/platform/nexus/nexus_cursor.h"
++
++#include <string>
+ 
+ #define BS_DEBUG(...) \
+               do { if (0) fprintf(stderr, ##__VA_ARGS__); } while (0)
++#define BS_DEBUG2(...) \
++              do { if (0) fprintf(stderr, ##__VA_ARGS__); } while (0)
+ namespace ui {
+ 
+ NexusWindow::NexusWindow(PlatformWindowDelegate* delegate,
+                          NexusWindowManager* window_manager,
+-                         const gfx::Rect& bounds)
++                         const gfx::Rect& bounds,
++                         EventFactoryEvdev* event_factory,
++                         BrightsignCursorDelegateEvdev* cursor)
+     : bounds_(bounds),
+     delegate_(delegate),
++    event_factory_(event_factory),
++    cursor_(cursor),
+     window_manager_(window_manager) {
+ 
+   BS_DEBUG( "%s %dx%d\n", __PRETTY_FUNCTION__, bounds.width(), bounds.height());
+@@ -34,9 +45,14 @@ NexusWindow::NexusWindow(PlatformWindowDelegate* delegate,
+ 
+   widget_ = window_manager_->AddWindow(this);
+   delegate->OnAcceleratedWidgetAvailable(widget_);
++
++  if (PlatformEventSource::GetInstance())
++    PlatformEventSource::GetInstance()->AddPlatformEventDispatcher(this);
+ }
+ 
+ NexusWindow::~NexusWindow() {
++  if (PlatformEventSource::GetInstance())
++    PlatformEventSource::GetInstance()->RemovePlatformEventDispatcher(this);
+ }
+ 
+ 
+@@ -114,15 +130,17 @@ void NexusWindow::SetTitle(const std::u16string& title) {
+ 
+ void NexusWindow::SetCapture() {
+   BS_DEBUG( "%s\n", __PRETTY_FUNCTION__);
++  window_manager_->GrabEvents(widget_);
+ }
+ 
+ void NexusWindow::ReleaseCapture() {
+   BS_DEBUG( "%s\n", __PRETTY_FUNCTION__);
++  window_manager_->UngrabEvents(widget_);
+ }
+ 
+ bool NexusWindow::HasCapture() const {
+   BS_DEBUG( "%s\n", __PRETTY_FUNCTION__);
+-  return false;
++  return widget_ == window_manager_->event_grabber();
+ }
+ 
+ void NexusWindow::SetFullscreen(bool fullscreen, int64_t target_display_id) {
+@@ -143,17 +161,17 @@ void NexusWindow::Restore() {
+ 
+ PlatformWindowState NexusWindow::GetPlatformWindowState() const {
+   BS_DEBUG( "%s\n", __PRETTY_FUNCTION__);
+-  return PlatformWindowState::kNormal;
++  return PlatformWindowState::kUnknown;
+ }
+ 
+ void NexusWindow::Activate() {
+   BS_DEBUG( "%s\n", __PRETTY_FUNCTION__);
+-  NOTIMPLEMENTED_LOG_ONCE();
++  delegate_->OnActivationChanged(true);
+ }
+ 
+ void NexusWindow::Deactivate() {
+   BS_DEBUG( "%s\n", __PRETTY_FUNCTION__);
+-  NOTIMPLEMENTED_LOG_ONCE();
++  delegate_->OnActivationChanged(false);
+ }
+ 
+ void NexusWindow::SetUseNativeFrame(bool use_native_frame) {
+@@ -167,17 +185,60 @@ bool NexusWindow::ShouldUseNativeFrame() const {
+ }
+ 
+ void NexusWindow::SetCursor(scoped_refptr<PlatformCursor> cursor) {
+-  BS_DEBUG( "%s\n", __PRETTY_FUNCTION__);
++  BS_DEBUG2( "%s\n", __PRETTY_FUNCTION__);
++  cursor_->SetCursor(BitmapCursor::FromPlatformCursor(cursor));
+ }
+ 
+ void NexusWindow::MoveCursorTo(const gfx::Point& location) {
+   BS_DEBUG( "%s\n", __PRETTY_FUNCTION__);
++  BS_DEBUG2( "%s location:%d,%d\n", __PRETTY_FUNCTION__, location.x(), location.y());
++  event_factory_->WarpCursorTo(widget_, gfx::PointF(location));
+ }
+ 
+ void NexusWindow::ConfineCursorToBounds(const gfx::Rect& bounds) {
+   BS_DEBUG( "%s\n", __PRETTY_FUNCTION__);
+ }
+ 
++void NexusWindow::OnMouseEnter() {
++  BS_DEBUG2("%s\n", __PRETTY_FUNCTION__);
++  delegate_->OnMouseEnter();
++}
++
++bool NexusWindow::CanDispatchEvent(const PlatformEvent& ne) {
++  // If there is a grab, capture events here.
++  gfx::AcceleratedWidget grabber = window_manager_->event_grabber();
++  BS_DEBUG2("%s: %d\n", __PRETTY_FUNCTION__, grabber == widget_);
++  if (grabber != gfx::kNullAcceleratedWidget)
++    return grabber == widget_;
++  return true;
++}
++
++uint32_t NexusWindow::DispatchEvent(const PlatformEvent& event) {
++  BS_DEBUG2("%s\n", __PRETTY_FUNCTION__);
++  if (event->IsLocatedEvent()) {
++    // Make the event location relative to this window's origin.
++    LocatedEvent* located_event = event->AsLocatedEvent();
++
++    if (event->IsMouseEvent()) {
++      NexusWindow* window_on_mouse =
++          window_manager_->GetWindowAt(located_event->location());
++      if (window_on_mouse)
++        window_manager_->MouseOnWindow(window_on_mouse);
++    }
++
++    gfx::PointF location = located_event->location_f();
++    location -= gfx::Vector2dF(bounds_.OffsetFromOrigin());
++    located_event->set_location_f(location);
++    located_event->set_root_location_f(location);
++    BS_DEBUG2("%s location:%f, %f\n", __PRETTY_FUNCTION__, location.x(), location.y());
++  }
++
++  DispatchEventFromNativeUiEvent(
++      event, base::BindOnce(&PlatformWindowDelegate::DispatchEvent,
++                                   base::Unretained(delegate_)));
++  return ui::POST_DISPATCH_STOP_PROPAGATION;
++}
++
+ void NexusWindow::SetRestoredBoundsInDIP(const gfx::Rect& bounds) {
+   BS_DEBUG( "%s\n", __PRETTY_FUNCTION__);
+ }
+diff --git a/ui/ozone/platform/nexus/nexus_window.h b/ui/ozone/platform/nexus/nexus_window.h
+index 300b21b121685556fdfb98f1cb02715882a2eb0b..4a4be18b02928d1339b434e4415bc75258c9770e 100644
+--- a/ui/ozone/platform/nexus/nexus_window.h
++++ b/ui/ozone/platform/nexus/nexus_window.h
+@@ -7,6 +7,8 @@
+ 
+ #include "base/memory/raw_ptr.h"
+ #include "base/memory/scoped_refptr.h"
++#include "ui/base/cursor/platform_cursor.h"
++#include "ui/events/platform/platform_event_dispatcher.h"
+ #include "ui/gfx/geometry/rect.h"
+ #include "ui/gfx/native_widget_types.h"
+ #include "ui/platform_window/platform_window_delegate.h"
+@@ -15,13 +17,17 @@
+ 
+ namespace ui {
+ 
++class EventFactoryEvdev;
++class BrightsignCursorDelegateEvdev;
+ class NexusWindowManager;
+ 
+-class NexusWindow : public PlatformWindow {
++class NexusWindow : public PlatformWindow, public PlatformEventDispatcher {
+  public:
+   NexusWindow(PlatformWindowDelegate* delegate,
+               NexusWindowManager* window_manager,
+-              const gfx::Rect& bounds);
++              const gfx::Rect& bounds,
++              EventFactoryEvdev* event_factory,
++              BrightsignCursorDelegateEvdev* cursor);
+   ~NexusWindow() override;
+ 
+   virtual void Show(bool inactive = false) override;
+@@ -69,11 +75,18 @@ class NexusWindow : public PlatformWindow {
+   virtual void SizeConstraintsChanged() override;
+ 
+   void UpdateBounds(const gfx::Rect& bounds);
++  void OnMouseEnter();
+   void* GetNative() {return native_window_;}
+ 
++  // PlatformEventDispatcher implementation:
++  bool CanDispatchEvent(const PlatformEvent& event) override;
++  uint32_t DispatchEvent(const PlatformEvent& event) override;
++
+  private:
+-  gfx::Rect bounds_;
+   raw_ptr<PlatformWindowDelegate> delegate_ = nullptr;
++  gfx::Rect bounds_;
++  EventFactoryEvdev* event_factory_;
++  BrightsignCursorDelegateEvdev* cursor_;
+   raw_ptr<NexusWindowManager> window_manager_;
+   gfx::AcceleratedWidget widget_;
+   void* native_window_;
+diff --git a/ui/ozone/platform/nexus/nexus_window_manager.cc b/ui/ozone/platform/nexus/nexus_window_manager.cc
+index ac00ed92707691bfab17209e44a580a86efe05f2..729e7de8130dd19cc940cd80bad4783160268ca0 100644
+--- a/ui/ozone/platform/nexus/nexus_window_manager.cc
++++ b/ui/ozone/platform/nexus/nexus_window_manager.cc
+@@ -2,8 +2,12 @@
+ // Use of this source code is governed by a BSD-style license that can be
+ // found in the LICENSE file.
+ 
++#include "ui/ozone/platform/nexus/nexus_window.h"
+ #include "ui/ozone/platform/nexus/nexus_window_manager.h"
+ 
++#define BS_DEBUG(...) \
++              do { if (0) fprintf(stderr, ##__VA_ARGS__); } while (0)
++
+ namespace ui {
+ 
+ NexusWindowManager::NexusWindowManager() {
+@@ -13,18 +17,66 @@ NexusWindowManager::~NexusWindowManager() {
+   DCHECK(thread_checker_.CalledOnValidThread());
+ }
+ 
+-int32_t NexusWindowManager::AddWindow(NexusWindow* window) {
++gfx::AcceleratedWidget NexusWindowManager::AddWindow(NexusWindow* window) {
++  BS_DEBUG("%s:%d\n", __PRETTY_FUNCTION__, __LINE__);
+   return windows_.Add(window);
+ }
+ 
+-void NexusWindowManager::RemoveWindow(int32_t window_id,
+-                                         NexusWindow* window) {
++void NexusWindowManager::RemoveWindow(gfx::AcceleratedWidget window_id,
++                                      NexusWindow* window) {
++  BS_DEBUG("%s:%d\n", __PRETTY_FUNCTION__, __LINE__);
+   DCHECK_EQ(window, windows_.Lookup(window_id));
++  if (window == window_mouse_currently_on_)
++    window_mouse_currently_on_ = nullptr;
+   windows_.Remove(window_id);
+ }
+ 
+-NexusWindow* NexusWindowManager::GetWindow(int32_t window_id) {
++NexusWindow* NexusWindowManager::GetWindow(gfx::AcceleratedWidget window_id) {
++  BS_DEBUG("%s:%d\n", __PRETTY_FUNCTION__, __LINE__);
+   return windows_.Lookup(window_id);
+ }
+ 
++NexusWindow* NexusWindowManager::GetWindowAt(const gfx::Point& location) {
++  BS_DEBUG("%s:%d location x:%d y:%d\n", __PRETTY_FUNCTION__, __LINE__, location.x(), location.y());
++  for (base::IDMap<NexusWindow*>::iterator iter(&windows_);
++      !iter.IsAtEnd();
++      iter.Advance()) {
++    if (iter.GetCurrentValue()->GetBoundsInPixels().Contains(location)) {
++      BS_DEBUG("%s:%d\n", __PRETTY_FUNCTION__, __LINE__);
++      return iter.GetCurrentValue();
++    }
++  }
++  BS_DEBUG("%s:%d\n", __PRETTY_FUNCTION__, __LINE__);
++
++  return NULL;
++}
++
++NexusWindow* NexusWindowManager::GetPrimaryWindow() {
++  BS_DEBUG("%s:%d\n", __PRETTY_FUNCTION__, __LINE__);
++  base::IDMap<NexusWindow*>::iterator iter(&windows_);
++  return iter.IsAtEnd() ? nullptr : iter.GetCurrentValue();
++}
++
++void NexusWindowManager::GrabEvents(gfx::AcceleratedWidget widget) {
++  BS_DEBUG("%s:%d\n", __PRETTY_FUNCTION__, __LINE__);
++  if (event_grabber_ != gfx::kNullAcceleratedWidget)
++    return;
++  event_grabber_ = widget;
++}
++
++void NexusWindowManager::UngrabEvents(gfx::AcceleratedWidget widget) {
++  BS_DEBUG("%s:%d\n", __PRETTY_FUNCTION__, __LINE__);
++  if (event_grabber_ != widget)
++    return;
++  event_grabber_ = gfx::kNullAcceleratedWidget;
++}
++
++void NexusWindowManager::MouseOnWindow(NexusWindow* window) {
++  BS_DEBUG("%s:%d\n", __PRETTY_FUNCTION__, __LINE__);
++  if (window_mouse_currently_on_ == window)
++    return;
++  window_mouse_currently_on_ = window;
++  window->OnMouseEnter();
++}
++
+ }  // namespace ui
+diff --git a/ui/ozone/platform/nexus/nexus_window_manager.h b/ui/ozone/platform/nexus/nexus_window_manager.h
+index 5b3fb735bff38c70a74072a62b93881cda320187..39494730304cfd2be6a1ddc0552d7b40f7b77afc 100644
+--- a/ui/ozone/platform/nexus/nexus_window_manager.h
++++ b/ui/ozone/platform/nexus/nexus_window_manager.h
+@@ -25,17 +25,39 @@ class NexusWindowManager {
+   ~NexusWindowManager();
+ 
+   // Register a new window. Returns the window id.
+-  int32_t AddWindow(NexusWindow* window);
++  gfx::AcceleratedWidget AddWindow(NexusWindow* window);
+ 
+   // Remove a window.
+-  void RemoveWindow(int32_t window_id, NexusWindow* window);
++  void RemoveWindow(gfx::AcceleratedWidget window_id, NexusWindow* window);
+ 
+   // Find a window object by id;
+-  NexusWindow* GetWindow(int32_t window_id);
++  NexusWindow* GetWindow(gfx::AcceleratedWidget window_id);
++
++  // Returns the window containing the specified screen location, or NULL.
++  NexusWindow* GetWindowAt(const gfx::Point& location);
++
++  // Returns a window. Probably the first one created.
++  NexusWindow* GetPrimaryWindow();
++
++  // Tries to set a given widget as the recipient for events. It will
++  // fail if there is already another widget as recipient.
++  void GrabEvents(gfx::AcceleratedWidget widget);
++
++  // Unsets a given widget as the recipient for events.
++  void UngrabEvents(gfx::AcceleratedWidget widget);
++
++  // Called when a mouse physicall moved into the |window|.
++  void MouseOnWindow(NexusWindow* window);
++
++  // Gets the current widget recipient of mouse events.
++  gfx::AcceleratedWidget event_grabber() const { return event_grabber_; }
+ 
+  private:
+   base::IDMap<NexusWindow*> windows_;
+   base::ThreadChecker thread_checker_;
++
++  NexusWindow* window_mouse_currently_on_ = nullptr;
++  gfx::AcceleratedWidget event_grabber_ = gfx::kNullAcceleratedWidget;
+ };
+ 
+ }  // namespace ui
+diff --git a/ui/ozone/platform/nexus/ozone_platform_nexus.cc b/ui/ozone/platform/nexus/ozone_platform_nexus.cc
+index c28972b0ee71ca6b1a54405fa5f3dfa5ca02059e..c8f109365ddf9379b458d852cc053172fd71795d 100644
+--- a/ui/ozone/platform/nexus/ozone_platform_nexus.cc
++++ b/ui/ozone/platform/nexus/ozone_platform_nexus.cc
+@@ -9,12 +9,15 @@
+ #include "base/command_line.h"
+ #include "base/files/file_path.h"
+ #include "build/build_config.h"
++#include "ui/base/buildflags.h"
+ #include "ui/base/ime/input_method_minimal.h"
+ #include "ui/display/types/native_display_delegate.h"
++#include "ui/events/ozone/device/device_manager.h"
++#include "ui/events/ozone/evdev/event_factory_evdev.h"
+ #include "ui/events/ozone/layout/keyboard_layout_engine_manager.h"
+-#include "ui/events/ozone/layout/stub/stub_keyboard_layout_engine.h"
+ #include "ui/events/platform/platform_event_source.h"
+ #include "ui/ozone/common/stub_overlay_manager.h"
++#include "ui/ozone/platform/nexus/nexus_cursor.h"
+ #include "ui/ozone/platform/nexus/nexus_screen.h"
+ #include "ui/ozone/platform/nexus/nexus_surface_factory.h"
+ #include "ui/ozone/platform/nexus/nexus_window.h"
+@@ -27,21 +30,19 @@
+ #include "ui/ozone/public/system_input_injector.h"
+ #include "ui/platform_window/platform_window_init_properties.h"
+ 
++#if BUILDFLAG(USE_XKBCOMMON)
++#include "ui/events/ozone/layout/xkb/xkb_evdev_codes.h"
++#include "ui/events/ozone/layout/xkb/xkb_keyboard_layout_engine.h"
++#else
++#include "ui/events/ozone/layout/stub/stub_keyboard_layout_engine.h"
++#endif
++
+ #include "nxclient.h"
+ 
+ namespace ui {
+ 
+ namespace {
+ 
+-// A nexus implementation of PlatformEventSource that we can instantiate to
+-// make
+-// sure that the PlatformEventSource has an instance while in unit tests.
+-class NexusPlatformEventSource : public PlatformEventSource {
+- public:
+-  NexusPlatformEventSource() = default;
+-  ~NexusPlatformEventSource() override = default;
+-};
+-
+ // OzonePlatform for nexus mode
+ class OzonePlatformNexus : public OzonePlatform {
+  public:
+@@ -60,18 +61,18 @@ class OzonePlatformNexus : public OzonePlatform {
+   }
+   CursorFactory* GetCursorFactory() override { return cursor_factory_.get(); }
+   InputController* GetInputController() override {
+-    return input_controller_.get();
++    return event_factory_ozone_->input_controller();
+   }
+   GpuPlatformSupportHost* GetGpuPlatformSupportHost() override {
+     return gpu_platform_support_host_.get();
+   }
+   std::unique_ptr<SystemInputInjector> CreateSystemInputInjector() override {
+-    return nullptr;  // no input injection support.
++    return event_factory_ozone_->CreateSystemInputInjector();
+   }
+   std::unique_ptr<PlatformWindow> CreatePlatformWindow(
+       PlatformWindowDelegate* delegate,
+       PlatformWindowInitProperties properties) override {
+-    return std::make_unique<NexusWindow>(delegate, window_manager_.get(), properties.bounds);
++    return std::make_unique<NexusWindow>(delegate, window_manager_.get(), properties.bounds, event_factory_ozone_.get(), cursor_.get());
+   }
+   std::unique_ptr<display::NativeDisplayDelegate> CreateNativeDisplayDelegate()
+       override {
+@@ -89,17 +90,28 @@ class OzonePlatformNexus : public OzonePlatform {
+ 
+ 
+   bool InitializeUI(const InitParams& params) override {
++    device_manager_ = CreateDeviceManager();
+     window_manager_ = std::make_unique<NexusWindowManager>();
+     surface_factory_ = std::make_unique<NexusSurfaceFactory>(window_manager_.get());
+-    // This unbreaks tests that create their own.
+-    if (!PlatformEventSource::GetInstance())
+-      platform_event_source_ = std::make_unique<NexusPlatformEventSource>();
++    cursor_ = std::make_unique<BrightsignCursorDelegateEvdev>();
++
++#if BUILDFLAG(USE_XKBCOMMON)
++    keyboard_layout_engine_ =
++        std::make_unique<XkbKeyboardLayoutEngine>(xkb_evdev_code_converter_);
++#else
+     keyboard_layout_engine_ = std::make_unique<StubKeyboardLayoutEngine>();
++#endif
+     KeyboardLayoutEngineManager::SetKeyboardLayoutEngine(
+         keyboard_layout_engine_.get());
+ 
++    event_factory_ozone_ = std::make_unique<EventFactoryEvdev>(
++        cursor_.get(), device_manager_.get(),
++        KeyboardLayoutEngineManager::GetKeyboardLayoutEngine());
++
++    // TODO: Figure out how to set this correctly.
++    keyboard_layout_engine_->SetCurrentLayoutByName("us");
++
+     overlay_manager_ = std::make_unique<StubOverlayManager>();
+-    input_controller_ = CreateStubInputController();
+     cursor_factory_ = std::make_unique<BitmapCursorFactory>();
+     gpu_platform_support_host_.reset(CreateStubGpuPlatformSupportHost());
+ 
+@@ -114,15 +126,26 @@ class OzonePlatformNexus : public OzonePlatform {
+       surface_factory_ = std::make_unique<NexusSurfaceFactory>(window_manager_.get());
+   }
+ 
++  void PostCreateMainMessageLoop(base::OnceCallback<void()> shutdown_cb,
++                                 scoped_refptr<base::SingleThreadTaskRunner>
++                                     user_input_task_runner) override {
++    event_factory_ozone_->SetUserInputTaskRunner(
++        std::move(user_input_task_runner));
++  }
++
+  private:
++#if BUILDFLAG(USE_XKBCOMMON)
++  XkbEvdevCodes xkb_evdev_code_converter_;
++#endif
+   std::unique_ptr<NexusWindowManager> window_manager_;
+   std::unique_ptr<KeyboardLayoutEngine> keyboard_layout_engine_;
+   std::unique_ptr<NexusSurfaceFactory> surface_factory_;
+-  std::unique_ptr<PlatformEventSource> platform_event_source_;
++  std::unique_ptr<EventFactoryEvdev> event_factory_ozone_;
++  std::unique_ptr<DeviceManager> device_manager_;
+   std::unique_ptr<CursorFactory> cursor_factory_;
+-  std::unique_ptr<InputController> input_controller_;
+   std::unique_ptr<GpuPlatformSupportHost> gpu_platform_support_host_;
+   std::unique_ptr<OverlayManagerOzone> overlay_manager_;
++  std::unique_ptr<BrightsignCursorDelegateEvdev> cursor_;
+ };
+ 
+ }  // namespace
