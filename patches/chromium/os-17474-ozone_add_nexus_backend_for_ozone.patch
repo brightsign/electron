@@ -31,6 +31,19 @@ index 9c92cdc022d56448a787c3ab11cd706c1b66a520..9578fc2a0c2bed418a1a65eb426e38e3
        "Must set use_ozone to select ozone platforms")
  }
  
+diff --git a/components/viz/service/display/overlay_processor_interface.cc b/components/viz/service/display/overlay_processor_interface.cc
+index bec01bb1b3338f9d9ce74044c39f8554703fa2c3..7bfd8fab0a7bcc040854c1b223c691b2a6fc838c 100644
+--- a/components/viz/service/display/overlay_processor_interface.cc
++++ b/components/viz/service/display/overlay_processor_interface.cc
+@@ -141,7 +141,7 @@ OverlayProcessorInterface::CreateOverlayProcessor(
+               .disable_video_overlay_if_moving));
+ 
+ #elif BUILDFLAG(IS_OZONE)
+-#if !BUILDFLAG(IS_CASTOS)
++#if !BUILDFLAG(IS_CASTOS) && !BUILDFLAG(ENABLE_BRIGHTSIGN_OVERLAY_STRATEGY)
+   // In tests and Ozone/X11, we do not expect surfaceless surface support.
+   // For CastOS, we always need OverlayProcessorOzone.
+   if (!capabilities.supports_surfaceless)
 diff --git a/ui/ozone/BUILD.gn b/ui/ozone/BUILD.gn
 index a1c589b979561285c895fddedc2bd6649b659c30..f43d0bcd33ecc7b3ec384daf21654f67630af4d6 100644
 --- a/ui/ozone/BUILD.gn
@@ -307,7 +320,7 @@ index 0000000000000000000000000000000000000000..dcb254e19b818d6e806805fb6715bd20
 +#endif  // UI_OZONE_PLATFORM_NEXUS_GL_OZONE_EGL_NEXUS_H_
 diff --git a/ui/ozone/platform/nexus/nexus_screen.cc b/ui/ozone/platform/nexus/nexus_screen.cc
 new file mode 100644
-index 0000000000000000000000000000000000000000..9dc7f3aa9404a8f2799731d4927b4c486a14766a
+index 0000000000000000000000000000000000000000..cc9d42f71652ba0c753d9c52bcdb9ac835d505a8
 --- /dev/null
 +++ b/ui/ozone/platform/nexus/nexus_screen.cc
 @@ -0,0 +1,62 @@
@@ -322,7 +335,7 @@ index 0000000000000000000000000000000000000000..9dc7f3aa9404a8f2799731d4927b4c48
 +NexusScreen::NexusScreen() {
 +  static constexpr int64_t kNexusDisplayId = 1;
 +  static constexpr float kNexusDisplayScale = 1.0f;
-+  static constexpr gfx::Rect kNexusDisplayBounds(gfx::Size(INT_MAX, INT_MAX));
++  static constexpr gfx::Rect kNexusDisplayBounds(gfx::Size(1, 1));
 +  display::Display display(kNexusDisplayId);
 +  display.SetScaleAndBounds(kNexusDisplayScale, kNexusDisplayBounds);
 +  display_list_.AddDisplay(display, display::DisplayList::Type::PRIMARY);
