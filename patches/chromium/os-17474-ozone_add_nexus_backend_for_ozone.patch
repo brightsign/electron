@@ -525,10 +525,10 @@ index 0000000000000000000000000000000000000000..e30b6dd2cedee5b64369e1efefdae16c
 +#endif  // UI_OZONE_PLATFORM_NEXUS_NEXUS_SURFACE_FACTORY_H_
 diff --git a/ui/ozone/platform/nexus/nexus_window.cc b/ui/ozone/platform/nexus/nexus_window.cc
 new file mode 100644
-index 0000000000000000000000000000000000000000..460c1ca8e39696891fccf8f263db598b931168e2
+index 0000000000000000000000000000000000000000..5d4201f2f1a92ce0d992476f6b406cc6da6c8806
 --- /dev/null
 +++ b/ui/ozone/platform/nexus/nexus_window.cc
-@@ -0,0 +1,200 @@
+@@ -0,0 +1,199 @@
 +// Copyright 2014 The Chromium Authors. All rights reserved.
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
@@ -631,12 +631,11 @@ index 0000000000000000000000000000000000000000..460c1ca8e39696891fccf8f263db598b
 +
 +void NexusWindow::SetBoundsInDIP(const gfx::Rect& bounds) {
 +  BS_DEBUG( "%s %dx%d\n", __PRETTY_FUNCTION__, bounds.width(), bounds.height());
-+  SetBoundsInPixels(delegate_->ConvertRectToPixels(bounds));
 +}
 +
 +gfx::Rect NexusWindow::GetBoundsInDIP() const {
 +  BS_DEBUG( "%s\n", __PRETTY_FUNCTION__);
-+  return delegate_->ConvertRectToDIP(bounds_);
++  return bounds_;
 +}
 +
 +void NexusWindow::SetTitle(const std::u16string& title) {
