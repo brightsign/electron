@@ -31,6 +31,19 @@ index e85db6b332d9af86f85378b809f28b3a70ad3749..aa1d52a65e187193db1f250f8f3ac5e9
        "Must set use_ozone to select ozone platforms")
  }
  
+diff --git a/components/viz/service/display/overlay_processor_interface.cc b/components/viz/service/display/overlay_processor_interface.cc
+index ddcf3d52cc651366f5f8ad326ff907645e0d020c..e5b35b409e752b20abd7dc87a96e187b36c9ce59 100644
+--- a/components/viz/service/display/overlay_processor_interface.cc
++++ b/components/viz/service/display/overlay_processor_interface.cc
+@@ -117,7 +117,7 @@ OverlayProcessorInterface::CreateOverlayProcessor(
+               ? 2
+               : 1));
+ #elif BUILDFLAG(IS_OZONE)
+-#if !BUILDFLAG(IS_CASTOS)
++#if !BUILDFLAG(IS_CASTOS) && !BUILDFLAG(ENABLE_BRIGHTSIGN_OVERLAY_STRATEGY)
+   // In tests and Ozone/X11, we do not expect surfaceless surface support.
+   // For CastOS, we always need OverlayProcessorOzone.
+   if (!capabilities.supports_surfaceless)
 diff --git a/ui/ozone/BUILD.gn b/ui/ozone/BUILD.gn
 index 03398e253d303ab61eb82d1e82505443868b1167..f670df642b6024a1958c4bf11e16893b8c3f1eae 100644
 --- a/ui/ozone/BUILD.gn
