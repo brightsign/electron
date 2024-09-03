@@ -320,7 +320,7 @@ index 0000000000000000000000000000000000000000..dcb254e19b818d6e806805fb6715bd20
 +#endif  // UI_OZONE_PLATFORM_NEXUS_GL_OZONE_EGL_NEXUS_H_
 diff --git a/ui/ozone/platform/nexus/nexus_screen.cc b/ui/ozone/platform/nexus/nexus_screen.cc
 new file mode 100644
-index 0000000000000000000000000000000000000000..9dc7f3aa9404a8f2799731d4927b4c486a14766a
+index 0000000000000000000000000000000000000000..cc9d42f71652ba0c753d9c52bcdb9ac835d505a8
 --- /dev/null
 +++ b/ui/ozone/platform/nexus/nexus_screen.cc
 @@ -0,0 +1,62 @@
@@ -335,7 +335,7 @@ index 0000000000000000000000000000000000000000..9dc7f3aa9404a8f2799731d4927b4c48
 +NexusScreen::NexusScreen() {
 +  static constexpr int64_t kNexusDisplayId = 1;
 +  static constexpr float kNexusDisplayScale = 1.0f;
-+  static constexpr gfx::Rect kNexusDisplayBounds(gfx::Size(INT_MAX, INT_MAX));
++  static constexpr gfx::Rect kNexusDisplayBounds(gfx::Size(1, 1));
 +  display::Display display(kNexusDisplayId);
 +  display.SetScaleAndBounds(kNexusDisplayScale, kNexusDisplayBounds);
 +  display_list_.AddDisplay(display, display::DisplayList::Type::PRIMARY);
@@ -538,10 +538,10 @@ index 0000000000000000000000000000000000000000..e30b6dd2cedee5b64369e1efefdae16c
 +#endif  // UI_OZONE_PLATFORM_NEXUS_NEXUS_SURFACE_FACTORY_H_
 diff --git a/ui/ozone/platform/nexus/nexus_window.cc b/ui/ozone/platform/nexus/nexus_window.cc
 new file mode 100644
-index 0000000000000000000000000000000000000000..5d4201f2f1a92ce0d992476f6b406cc6da6c8806
+index 0000000000000000000000000000000000000000..460c1ca8e39696891fccf8f263db598b931168e2
 --- /dev/null
 +++ b/ui/ozone/platform/nexus/nexus_window.cc
-@@ -0,0 +1,199 @@
+@@ -0,0 +1,200 @@
 +// Copyright 2014 The Chromium Authors. All rights reserved.
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
@@ -644,11 +644,12 @@ index 0000000000000000000000000000000000000000..5d4201f2f1a92ce0d992476f6b406cc6
 +
 +void NexusWindow::SetBoundsInDIP(const gfx::Rect& bounds) {
 +  BS_DEBUG( "%s %dx%d\n", __PRETTY_FUNCTION__, bounds.width(), bounds.height());
++  SetBoundsInPixels(delegate_->ConvertRectToPixels(bounds));
 +}
 +
 +gfx::Rect NexusWindow::GetBoundsInDIP() const {
 +  BS_DEBUG( "%s\n", __PRETTY_FUNCTION__);
-+  return bounds_;
++  return delegate_->ConvertRectToDIP(bounds_);
 +}
 +
 +void NexusWindow::SetTitle(const std::u16string& title) {
