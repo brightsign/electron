@@ -215,7 +215,7 @@ index 0000000000000000000000000000000000000000..9b00520881ac5259bbba53591418ce80
 +
 +#endif  //  UI_OZONE_PLATFORM_NEXUS_NEXUS_CURSOR_H
 diff --git a/ui/ozone/platform/nexus/nexus_window.cc b/ui/ozone/platform/nexus/nexus_window.cc
-index 5d4201f2f1a92ce0d992476f6b406cc6da6c8806..e4160a3b8c5d6d19d42d8195bfb10e4f57b08f0c 100644
+index 460c1ca8e39696891fccf8f263db598b931168e2..3d85eb06048dc94f3b77c951608a8bcfebe5cdb4 100644
 --- a/ui/ozone/platform/nexus/nexus_window.cc
 +++ b/ui/ozone/platform/nexus/nexus_window.cc
 @@ -4,22 +4,33 @@
@@ -271,7 +271,7 @@ index 5d4201f2f1a92ce0d992476f6b406cc6da6c8806..e4160a3b8c5d6d19d42d8195bfb10e4f
  }
  
  
-@@ -113,15 +129,17 @@ void NexusWindow::SetTitle(const std::u16string& title) {
+@@ -114,15 +130,17 @@ void NexusWindow::SetTitle(const std::u16string& title) {
  
  void NexusWindow::SetCapture() {
    BS_DEBUG( "%s\n", __PRETTY_FUNCTION__);
@@ -290,7 +290,7 @@ index 5d4201f2f1a92ce0d992476f6b406cc6da6c8806..e4160a3b8c5d6d19d42d8195bfb10e4f
  }
  
  void NexusWindow::SetFullscreen(bool fullscreen, int64_t target_display_id) {
-@@ -142,17 +160,17 @@ void NexusWindow::Restore() {
+@@ -143,17 +161,17 @@ void NexusWindow::Restore() {
  
  PlatformWindowState NexusWindow::GetPlatformWindowState() const {
    BS_DEBUG( "%s\n", __PRETTY_FUNCTION__);
@@ -311,7 +311,7 @@ index 5d4201f2f1a92ce0d992476f6b406cc6da6c8806..e4160a3b8c5d6d19d42d8195bfb10e4f
  }
  
  void NexusWindow::SetUseNativeFrame(bool use_native_frame) {
-@@ -166,17 +184,60 @@ bool NexusWindow::ShouldUseNativeFrame() const {
+@@ -167,17 +185,60 @@ bool NexusWindow::ShouldUseNativeFrame() const {
  }
  
  void NexusWindow::SetCursor(scoped_refptr<PlatformCursor> cursor) {
