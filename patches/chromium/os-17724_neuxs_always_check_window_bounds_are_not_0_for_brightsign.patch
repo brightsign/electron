@@ -1,0 +1,54 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Tariq Bashir <120014322+t-bashir-bs@users.noreply.github.com>
+Date: Thu, 5 Sep 2024 13:02:17 +0100
+Subject: OS-17724: Neuxs Always check window bounds are not 0 for BrightSign
+ apps
+
+Some BrightSign customers create windows with zero width and height bounds.
+This change ensures that the bounds are always at least 1 pixel in size.
+
+diff --git a/ui/ozone/platform/nexus/nexus_window.cc b/ui/ozone/platform/nexus/nexus_window.cc
+index 3d85eb06048dc94f3b77c951608a8bcfebe5cdb4..108136f8e70da0f030abac38b42763eb34df54a0 100644
+--- a/ui/ozone/platform/nexus/nexus_window.cc
++++ b/ui/ozone/platform/nexus/nexus_window.cc
+@@ -84,20 +84,33 @@ void NexusWindow::PrepareForShutdown() {
+ 
+ void NexusWindow::SetBoundsInPixels(const gfx::Rect& bounds) {
+   BS_DEBUG( "%s %dx%d\n", __PRETTY_FUNCTION__, bounds.width(), bounds.height());
+-  if (bounds != bounds_)
++
++  gfx::Rect adjusted_bounds(bounds);
++
++  // Always check if the bounds are zero, this can happen for certain BrightSign
++  // customer scenarios where the window is created with zero width or height
++  // bounds. Passing a window size of 0 will cause eglCreateWindowSurface to fail.
++  if (adjusted_bounds.width() == 0) {
++    adjusted_bounds.set_width(1);
++  }
++  if (adjusted_bounds.height() == 0) {
++    adjusted_bounds.set_height(1);
++  }
++
++  if (adjusted_bounds != bounds_)
+   {
+     NXPL_NativeWindowInfoEXT   win_info;
+     NXPL_GetDefaultNativeWindowInfoEXT(&win_info);
+-    win_info.x = bounds.x();
+-    win_info.y = bounds.y();
+-    win_info.width = bounds.width();
+-    win_info.height = bounds.height();
++    win_info.x = adjusted_bounds.x();
++    win_info.y = adjusted_bounds.y();
++    win_info.width = adjusted_bounds.width();
++    win_info.height = adjusted_bounds.height();
+     win_info.zOrder = 100;
+     NXPL_UpdateNativeWindowEXT(native_window_, &win_info);
+ 
+-    bounds_ = bounds;
++    bounds_ = adjusted_bounds;
+   }
+-  UpdateBounds(bounds);
++  UpdateBounds(adjusted_bounds);
+ }
+ 
+ void NexusWindow::UpdateBounds(const gfx::Rect& bounds) {
