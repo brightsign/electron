@@ -1,0 +1,392 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Tariq Bashir <120014322+t-bashir-bs@users.noreply.github.com>
+Date: Tue, 24 Sep 2024 13:44:25 +0100
+Subject: OS-17652: Add support for window rotation
+
+This patch introduces a new WebPreference and browser window API method
+setWindowTransform to control window rotation
+(90, 180, or 270 degrees) in BrightSign. The preference is set in
+WebContentsImpl and passed to RenderWidgetHostViewAura, which then
+applies the display transform hint on WindowTreeHost if rotation is
+requested. Method setWindowTransform also applies the display transform
+hint on WindowTreeHost if rotation is requested.
+Method WindowTreeHost::GetTransformedWindowBounds was added to
+compute the transformed bounds when Window::SetBoundsInternal and
+WindowTreeHost::UpdateCompositorScaleAndSize are invoked.
+This method ensures bounds are transposed only once by checking the aspect
+ratio of the current and new bounds, avoiding multiple transpositions.
+This aspect ratio comparison approach is more robust than relying on the
+original bounds, as Window::SetBoundsInternal may receive bounds adjusted
+for padding or insets.
+When GetTransformedWindowBounds is invoked, it also computes an input
+transform based on the display transform hint, which is subsequently
+applied to mouse and touch events in WindowEventDispatcher::PreDispatchEvent.
+The non_transformed_bounds method, added to Window, stores the original bounds,
+enabling WindowTargeter to align hit-test rectangles with screen resolution,
+thus ensuring consistent mouse and touch input alignment.
+
+diff --git a/components/viz/service/display/output_surface.h b/components/viz/service/display/output_surface.h
+index 47191a5184ab97cd7a946986df64e2b427e3e270..bedf4f6a388b98da5cfd5be795403b0c864f9f97 100644
+--- a/components/viz/service/display/output_surface.h
++++ b/components/viz/service/display/output_surface.h
+@@ -83,7 +83,7 @@ class VIZ_SERVICE_EXPORT OutputSurface {
+     // Whether this OutputSurface supports gpu vsync callbacks.
+     bool supports_gpu_vsync = false;
+     // OutputSurface's orientation mode.
+-    OrientationMode orientation_mode = OrientationMode::kLogic;
++    OrientationMode orientation_mode = OrientationMode::kHardware;
+     // Whether this OutputSurface supports direct composition layers.
+     bool supports_dc_layers = false;
+     // Whether this OutputSurface should skip DrawAndSwap(). This is true for
+diff --git a/content/browser/renderer_host/render_widget_host_view_aura.cc b/content/browser/renderer_host/render_widget_host_view_aura.cc
+index 3eafab6894af54f25fcf92a829e8fd46eef6db98..24bc08f8dd59203ea797ef901e363e4c457d3ce0 100644
+--- a/content/browser/renderer_host/render_widget_host_view_aura.cc
++++ b/content/browser/renderer_host/render_widget_host_view_aura.cc
+@@ -302,8 +302,23 @@ RenderWidgetHostViewAura::RenderWidgetHostViewAura(
+             .double_tap_to_zoom_enabled;
+ 
+     event_handler_->SetPinchZoomEnabled(owner_delegate->GetWebkitPreferencesForWidget().enable_pinch_zoom);
+-  }
+ 
++    switch (owner_delegate->GetWebkitPreferencesForWidget().window_transform_type)
++    {
++      case blink::mojom::WindowTransformType::kWindowTransformTypeRotate90:
++        window_transform_ = gfx::OVERLAY_TRANSFORM_ROTATE_90;
++        break;
++      case blink::mojom::WindowTransformType::kWindowTransformTypeRotate180:
++        window_transform_ = gfx::OVERLAY_TRANSFORM_ROTATE_180;
++        break;
++      case blink::mojom::WindowTransformType::kWindowTransformTypeRotate270:
++        window_transform_ = gfx::OVERLAY_TRANSFORM_ROTATE_270;
++        break;
++      default:
++        window_transform_ = gfx::OVERLAY_TRANSFORM_NONE;
++        break;
++    }
++  }
+   host()->render_frame_metadata_provider()->AddObserver(this);
+ }
+ 
+@@ -326,6 +341,11 @@ void RenderWidgetHostViewAura::InitAsChild(gfx::NativeView parent_view) {
+       UpdateSystemCursorSize(cursor_client->GetSystemCursorSize());
+   }
+ 
++  aura::WindowTreeHost* host = window_->GetHost();
++  if (host && window_transform_ != gfx::OVERLAY_TRANSFORM_NONE) {
++    host->SetDisplayTransformHint(window_transform_);
++  }
++
+ #if BUILDFLAG(IS_WIN)
+   // This will fetch and set the display features.
+   EnsureDevicePostureServiceConnection();
+diff --git a/content/browser/renderer_host/render_widget_host_view_aura.h b/content/browser/renderer_host/render_widget_host_view_aura.h
+index f8a8894f2daddcc6e3c1df6c48645fe8fadeb4b2..1392cc1b7f01c00b93f9d15dec96efabc58232cc 100644
+--- a/content/browser/renderer_host/render_widget_host_view_aura.h
++++ b/content/browser/renderer_host/render_widget_host_view_aura.h
+@@ -47,6 +47,7 @@
+ #include "ui/display/display_observer.h"
+ #include "ui/gfx/geometry/insets.h"
+ #include "ui/gfx/geometry/rect.h"
++#include "ui/gfx/overlay_transform.h"
+ #include "ui/gfx/selection_bound.h"
+ #include "ui/wm/public/activation_delegate.h"
+ 
+@@ -837,6 +838,8 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
+ 
+   bool allocate_local_surface_id_on_next_show_ = false;
+ 
++  gfx::OverlayTransform window_transform_ = gfx::OVERLAY_TRANSFORM_NONE;
++
+   base::WeakPtrFactory<RenderWidgetHostViewAura> weak_ptr_factory_{this};
+ };
+ 
+diff --git a/third_party/blink/public/common/web_preferences/web_preferences.h b/third_party/blink/public/common/web_preferences/web_preferences.h
+index 7716f7333c12eab5910ac68dc02e829553da06c8..ae2d304d164fb3a82624ca590201050c4d53aab5 100644
+--- a/third_party/blink/public/common/web_preferences/web_preferences.h
++++ b/third_party/blink/public/common/web_preferences/web_preferences.h
+@@ -387,6 +387,8 @@ struct BLINK_COMMON_EXPORT WebPreferences {
+   // blocking user's access to the background web content.
+   bool modal_context_menu = true;
+ 
++  blink::mojom::WindowTransformType window_transform_type = blink::mojom::WindowTransformType::kWindowTransformTypeNone;
++
+   // We try to keep the default values the same as the default values in
+   // chrome, except for the cases where it would require lots of extra work for
+   // the embedder to use the same default value.
+diff --git a/third_party/blink/public/common/web_preferences/web_preferences_mojom_traits.h b/third_party/blink/public/common/web_preferences/web_preferences_mojom_traits.h
+index c1ffebd09f2547454bd1551cf5fc576dd384fac2..0a0393e7f53f911bdea7c77ef84a238fb0bcf83d 100644
+--- a/third_party/blink/public/common/web_preferences/web_preferences_mojom_traits.h
++++ b/third_party/blink/public/common/web_preferences/web_preferences_mojom_traits.h
+@@ -824,6 +824,11 @@ struct BLINK_COMMON_EXPORT StructTraits<blink::mojom::WebPreferencesDataView,
+     return r.modal_context_menu;
+   }
+ 
++  static blink::mojom::WindowTransformType window_transform_type(
++      const blink::web_pref::WebPreferences& r) {
++    return r.window_transform_type;
++  }
++
+   static bool Read(blink::mojom::WebPreferencesDataView r,
+                    blink::web_pref::WebPreferences* out);
+ };
+diff --git a/third_party/blink/public/mojom/webpreferences/web_preferences.mojom b/third_party/blink/public/mojom/webpreferences/web_preferences.mojom
+index ca35e4d6cf8fc49b8275a4b49bc4da8019282c3d..13fe8c8640bc896a76f9e5e0eba0d95fa025275a 100644
+--- a/third_party/blink/public/mojom/webpreferences/web_preferences.mojom
++++ b/third_party/blink/public/mojom/webpreferences/web_preferences.mojom
+@@ -107,6 +107,13 @@ enum EffectiveConnectionType {
+   kEffectiveConnectionTypeLast,
+ };
+ 
++enum WindowTransformType {
++  kWindowTransformTypeNone,
++  kWindowTransformTypeRotate90,
++  kWindowTransformTypeRotate180,
++  kWindowTransformTypeRotate270,
++};
++
+ struct WebPreferences {
+   map<string, mojo_base.mojom.String16> standard_font_family_map;
+   map<string, mojo_base.mojom.String16> fixed_font_family_map;
+@@ -479,4 +486,7 @@ struct WebPreferences {
+   // Whether modal context menu is used. A modal context menu meaning it is
+   // blocking user's access to the background web content.
+   bool modal_context_menu = true;
++
++  // Whether the window should be transformed.
++  WindowTransformType window_transform_type = kWindowTransformTypeNone;
+ };
+diff --git a/ui/aura/window.cc b/ui/aura/window.cc
+index 1e4ffa69feb73a04b8675bd60068163e288177c6..2c51e30c90c7fa9e2f517683dc7156de16dba879 100644
+--- a/ui/aura/window.cc
++++ b/ui/aura/window.cc
+@@ -966,10 +966,15 @@ bool Window::HitTest(const gfx::Point& local_point) {
+ 
+ void Window::SetBoundsInternal(const gfx::Rect& new_bounds) {
+   gfx::Rect old_bounds = GetTargetBounds();
++  gfx::Rect final_bounds(new_bounds);
++  WindowTreeHost* host = GetHost();
++  if (host) {
++    final_bounds = host->GetTransformedWindowBounds(new_bounds);
++  }
+ 
+   // Always need to set the layer's bounds -- even if it is to the same thing.
+   // This may cause important side effects such as stopping animation.
+-  layer()->SetBounds(new_bounds);
++  layer()->SetBounds(final_bounds);
+ 
+   // If we are currently not the layer's delegate, we will not get bounds
+   // changed notification from the layer (this typically happens after animating
+@@ -1415,6 +1420,11 @@ void Window::OnLayerBoundsChanged(const gfx::Rect& old_bounds,
+   WindowOcclusionTracker::ScopedPause pause_occlusion_tracking;
+ 
+   bounds_ = layer()->bounds();
++  non_transformed_bounds_ = bounds_;
++  WindowTreeHost* host = GetHost();
++  if (host) {
++    non_transformed_bounds_ = host->GetNonTransformedWindowBounds(bounds_);
++  }
+ 
+   if (!IsRootWindow() && old_bounds.size() != bounds_.size() &&
+       IsEmbeddingExternalContent()) {
+diff --git a/ui/aura/window.h b/ui/aura/window.h
+index 244a0a62fe8688002e00c6fa4ab3af5017fd1c23..02f657e0635da148e217d20dde698ba66b0b21b2 100644
+--- a/ui/aura/window.h
++++ b/ui/aura/window.h
+@@ -199,6 +199,7 @@ class AURA_EXPORT Window : public ui::LayerDelegate,
+   const WindowDelegate* delegate() const { return delegate_; }
+ 
+   const gfx::Rect& bounds() const { return bounds_; }
++  const gfx::Rect& non_transformed_bounds() const { return non_transformed_bounds_; }
+ 
+   Window* parent() { return parent_; }
+   const Window* parent() const { return parent_; }
+@@ -722,6 +723,11 @@ class AURA_EXPORT Window : public ui::LayerDelegate,
+   // is relative to the parent Window.
+   gfx::Rect bounds_;
+ 
++  // The bounds_ of the layer will be transformed by the target transform. However,
++  // certain operations, such as hit testing, require the bounds_ to be in the
++  // non-transformed state. This is the non-transformed bounds_.
++  gfx::Rect non_transformed_bounds_;
++
+   raw_ptr<WindowTreeHost> host_ = nullptr;
+ 
+   client::WindowType type_;
+diff --git a/ui/aura/window_event_dispatcher.cc b/ui/aura/window_event_dispatcher.cc
+index a63e34b66c740ce4534a5d94a682da830168b4c0..d7bab950057f3fbc2c4c76813820c2d55e0df7ad 100644
+--- a/ui/aura/window_event_dispatcher.cc
++++ b/ui/aura/window_event_dispatcher.cc
+@@ -551,6 +551,14 @@ ui::EventDispatchDetails WindowEventDispatcher::PreDispatchEvent(
+     return details;
+   }
+ 
++  // Only convert the location for mouse and touch events as other events, such as gesture, scroll and pinch,
++  // are derived from these and so don't need their locations transformed.
++  if (event->IsMouseEvent() || event->IsTouchEvent()) {
++    ui::LocatedEvent* located_event = event->AsLocatedEvent();
++    located_event->set_location(host_->GetTransformedPoint(located_event->location()));
++    located_event->set_root_location(host_->GetTransformedPoint(located_event->root_location()));
++  }
++
+   DispatchDetails details;
+   if (event->IsMouseEvent()) {
+     details = PreDispatchMouseEvent(target_window, event->AsMouseEvent());
+diff --git a/ui/aura/window_targeter.cc b/ui/aura/window_targeter.cc
+index 055c4ad18ba0a7c8175ec8ef5ad39837776e4d13..49555a5608382c4e3d0575f814e434e77d608854 100644
+--- a/ui/aura/window_targeter.cc
++++ b/ui/aura/window_targeter.cc
+@@ -40,7 +40,7 @@ bool WindowTargeter::GetHitTestRects(Window* window,
+                                      gfx::Rect* hit_test_rect_touch) const {
+   DCHECK(hit_test_rect_mouse);
+   DCHECK(hit_test_rect_touch);
+-  *hit_test_rect_mouse = *hit_test_rect_touch = window->bounds();
++  *hit_test_rect_mouse = *hit_test_rect_touch = window->non_transformed_bounds();
+ 
+   if (ShouldUseExtendedBounds(window)) {
+     hit_test_rect_mouse->Inset(mouse_extend_);
+diff --git a/ui/aura/window_tree_host.cc b/ui/aura/window_tree_host.cc
+index 70906e64b4b7849aa42421b17caf16d08c922112..700f361a35c6ae0b1b71c706883828c8b85e99e6 100644
+--- a/ui/aura/window_tree_host.cc
++++ b/ui/aura/window_tree_host.cc
+@@ -230,11 +230,81 @@ gfx::Transform WindowTreeHost::GetInverseRootTransform() const {
+ }
+ 
+ void WindowTreeHost::SetDisplayTransformHint(gfx::OverlayTransform transform) {
++  transform_hint_ = transform;
+   if (compositor()->display_transform_hint() == transform)
+     return;
+ 
+   compositor()->SetDisplayTransformHint(transform);
+-  UpdateCompositorScaleAndSize(GetBoundsInPixels().size());
++  OnHostResizedInPixels(GetBoundsInPixels().size());
++  CalculateInputTransform(transform);
++}
++
++gfx::Point WindowTreeHost::GetTransformedPoint(const gfx::Point& point) {
++  return input_transform_.MapPoint(point);
++}
++
++gfx::Rect WindowTreeHost::GetTransformedWindowBounds(const gfx::Rect& new_bounds) {
++  gfx::Rect transformed_bounds(new_bounds);
++  gfx::Rect window_bounds = GetBoundsInPixels();
++
++  if ((transform_hint_ == gfx::OVERLAY_TRANSFORM_ROTATE_90 ||
++       transform_hint_ == gfx::OVERLAY_TRANSFORM_ROTATE_270) &&
++       window_bounds.height() && window_bounds.width()) {
++    float window_aspect_ratio = (float)window_bounds.width() / (float)window_bounds.height();
++    float new_aspect_ratio = (float)new_bounds.width() / (float)new_bounds.height();
++
++    // If the aspect ratio of the window and new bounds are the same it means that new_bounds
++    // has not already been transposed.
++    if ((window_aspect_ratio > 1.0 && new_aspect_ratio > 1.0) ||
++        (window_aspect_ratio < 1.0 && new_aspect_ratio < 1.0)) {
++      transformed_bounds.Transpose();
++    }
++  }
++  return transformed_bounds;
++}
++
++gfx::Rect WindowTreeHost::GetNonTransformedWindowBounds(const gfx::Rect& new_bounds) {
++  gfx::Rect non_transformed_bounds(new_bounds);
++  gfx::Rect window_bounds = GetBoundsInPixels();
++
++  if ((transform_hint_ == gfx::OVERLAY_TRANSFORM_ROTATE_90 ||
++       transform_hint_ == gfx::OVERLAY_TRANSFORM_ROTATE_270) &&
++       window_bounds.height() && window_bounds.width()) {
++    float window_aspect_ratio = (float)window_bounds.width() / (float)window_bounds.height();
++    float new_aspect_ratio = (float)new_bounds.width() / (float)new_bounds.height();
++
++    // If the aspect ratio of the window and new bounds are different it means that new_bounds
++    // has already been transposed, so we need to transpose it back.
++    if ((window_aspect_ratio > 1.0 && new_aspect_ratio < 1.0) ||
++        (window_aspect_ratio < 1.0 && new_aspect_ratio > 1.0)) {
++      non_transformed_bounds.Transpose();
++    }
++  }
++  return non_transformed_bounds;
++}
++
++void WindowTreeHost::CalculateInputTransform(gfx::OverlayTransform transform) {
++  input_transform_.MakeIdentity();
++
++  switch (transform) {
++    case gfx::OVERLAY_TRANSFORM_ROTATE_90:
++      input_transform_.Translate(0, GetBoundsInPixels().width());
++      input_transform_.Rotate(-90);
++      break;
++
++    case gfx::OVERLAY_TRANSFORM_ROTATE_180:
++      input_transform_.Translate(GetBoundsInPixels().width(), GetBoundsInPixels().height());
++      input_transform_.Rotate(180);
++      break;
++
++    case gfx::OVERLAY_TRANSFORM_ROTATE_270:
++      input_transform_.Translate(GetBoundsInPixels().height(), 0);
++      input_transform_.Rotate(90);
++      break;
++
++    default:
++      break;
++  }
+ }
+ 
+ gfx::Transform WindowTreeHost::GetRootTransformForLocalEventCoordinates()
+@@ -253,13 +323,8 @@ gfx::Transform WindowTreeHost::GetInverseRootTransformForLocalEventCoordinates()
+ 
+ void WindowTreeHost::UpdateCompositorScaleAndSize(
+     const gfx::Size& new_size_in_pixels) {
+-  gfx::Rect new_bounds(new_size_in_pixels);
+-  if (compositor_->display_transform_hint() ==
+-          gfx::OVERLAY_TRANSFORM_ROTATE_90 ||
+-      compositor_->display_transform_hint() ==
+-          gfx::OVERLAY_TRANSFORM_ROTATE_270) {
+-    new_bounds.Transpose();
+-  }
++  gfx::Rect orig_bounds(new_size_in_pixels);
++  gfx::Rect new_bounds = GetTransformedWindowBounds(orig_bounds);
+ 
+   // Allocate a new LocalSurfaceId for the new size or scale factor.
+   window_->AllocateLocalSurfaceId();
+diff --git a/ui/aura/window_tree_host.h b/ui/aura/window_tree_host.h
+index 6a5146097d058802985480e2a2fadb9001246dfd..6ad03d30d45eee96bb661f62c1eb1a8cdcc975bd 100644
+--- a/ui/aura/window_tree_host.h
++++ b/ui/aura/window_tree_host.h
+@@ -29,6 +29,7 @@
+ #include "ui/events/platform_event.h"
+ #include "ui/gfx/native_widget_types.h"
+ #include "ui/gfx/overlay_transform.h"
++#include "ui/gfx/geometry/transform.h"
+ 
+ namespace gfx {
+ class Point;
+@@ -124,6 +125,10 @@ class AURA_EXPORT WindowTreeHost : public ui::ImeKeyEventDispatcher,
+ 
+   void SetDisplayTransformHint(gfx::OverlayTransform transform);
+ 
++  gfx::Point GetTransformedPoint(const gfx::Point& point);
++  gfx::Rect GetTransformedWindowBounds(const gfx::Rect& new_bounds);
++  gfx::Rect GetNonTransformedWindowBounds(const gfx::Rect& new_bounds);
++
+   // These functions are used in event translation for translating the local
+   // coordinates of LocatedEvents. Default implementation calls to non-local
+   // ones (e.g. GetRootTransform()).
+@@ -444,6 +449,8 @@ class AURA_EXPORT WindowTreeHost : public ui::ImeKeyEventDispatcher,
+   void OnFrameSinksToThrottleUpdated(
+       const base::flat_set<viz::FrameSinkId>& ids) final;
+ 
++  void CalculateInputTransform(gfx::OverlayTransform transform);
++
+   // We don't use a std::unique_ptr for |window_| since we need this ptr to be
+   // valid during its deletion. (Window's dtor notifies observers that may
+   // attempt to reach back up to access this object which will be valid until
+@@ -506,6 +513,10 @@ class AURA_EXPORT WindowTreeHost : public ui::ImeKeyEventDispatcher,
+   // hiding. Non-null while waiting for state to be released (transitioning).
+   std::unique_ptr<HideHelper> hide_helper_;
+ 
++  gfx::OverlayTransform transform_hint_ = gfx::OVERLAY_TRANSFORM_NONE;
++
++  gfx::Transform input_transform_;
++
+   base::WeakPtrFactory<WindowTreeHost> weak_factory_{this};
+ };
+ 
