@@ -485,6 +485,33 @@ void NativeWindowViews::SetGTKDarkThemeEnabled(bool use_dark_theme) {
 #endif
 }
 
+#if BUILDFLAG(IS_LINUX)
+void NativeWindowViews::SetWindowTransform(
+    blink::mojom::WindowTransformType transform_type) {
+  const gfx::AcceleratedWidget accelerated_widget = GetAcceleratedWidget();
+  aura::WindowTreeHost* const host =
+      aura::WindowTreeHost::GetForAcceleratedWidget(accelerated_widget);
+
+  gfx::OverlayTransform window_transform = gfx::OVERLAY_TRANSFORM_NONE;
+
+  switch (transform_type) {
+    case blink::mojom::WindowTransformType::kWindowTransformTypeRotate90:
+      window_transform = gfx::OVERLAY_TRANSFORM_ROTATE_90;
+      break;
+    case blink::mojom::WindowTransformType::kWindowTransformTypeRotate180:
+      window_transform = gfx::OVERLAY_TRANSFORM_ROTATE_180;
+      break;
+    case blink::mojom::WindowTransformType::kWindowTransformTypeRotate270:
+      window_transform = gfx::OVERLAY_TRANSFORM_ROTATE_270;
+      break;
+    default:
+      window_transform = gfx::OVERLAY_TRANSFORM_NONE;
+      break;
+  }
+  host->SetDisplayTransformHint(window_transform);
+}
+#endif
+
 void NativeWindowViews::SetContentView(views::View* view) {
   if (content_view()) {
     root_view_.RemoveChildView(content_view());
