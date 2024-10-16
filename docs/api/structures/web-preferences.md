@@ -146,7 +146,7 @@
 * `hideScrollBars` boolean (optional) - Sets the Chromium WebPreferences
    hide_scrollbars field. Default is `false`.
 * `enablePinchZoom` boolean (optional) - Sets whether to enable pinch to zoom in Chromium. Default is `true`.
-* `windowTransform` string (optional) - Specifies whether to apply a transform to the window. Default is `none`. Accepted values are
+* `windowTransform` string (optional) _Linux_ - Specifies whether to apply a transform to the window. Default is `none`. Accepted values are
   * `none` - There is no transform (i.e. the widget content is oriented as landscape).
   * `rot90` - The widget content is rotated to portrait at 90 degrees (clockwise).
   * `rot180` - The widget content is rotated to portrait at 180 degrees (clockwise).
