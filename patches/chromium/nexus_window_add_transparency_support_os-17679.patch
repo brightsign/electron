@@ -1,0 +1,42 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Caner Altinbasak <caltinbasak@brightsign.biz>
+Date: Wed, 16 Oct 2024 13:06:18 +0100
+Subject: nexus_window: Add transparency support OS-17679
+
+Chromium calls back to these two methods to check if transparency is
+supported on our platform. If it is supported, Chromium does the right
+thing.
+
+diff --git a/ui/ozone/platform/nexus/nexus_window.cc b/ui/ozone/platform/nexus/nexus_window.cc
+index b65dfb891af4129cc824d29f33684c6c290ba8f3..f246f1f64f6099fb01e444981f426b0a47f98a04 100644
+--- a/ui/ozone/platform/nexus/nexus_window.cc
++++ b/ui/ozone/platform/nexus/nexus_window.cc
+@@ -321,5 +321,14 @@ void NexusWindow::SizeConstraintsChanged() {
+   BS_DEBUG( "%s\n", __PRETTY_FUNCTION__);
+ }
+ 
++bool NexusWindow::IsTranslucentWindowOpacitySupported() const {
++  BS_DEBUG( "%s\n", __PRETTY_FUNCTION__);
++  return true;
++}
++
++bool NexusWindow::ShouldWindowContentsBeTransparent() const {
++  BS_DEBUG( "%s\n", __PRETTY_FUNCTION__);
++  return true;
++}
+ 
+ }  // namespace ui
+diff --git a/ui/ozone/platform/nexus/nexus_window.h b/ui/ozone/platform/nexus/nexus_window.h
+index 87532626ad3fd80b8d40bd8c961bae1b16f95e5e..6a6abd286348454ad0efeefe9cbc795fbbf2432d 100644
+--- a/ui/ozone/platform/nexus/nexus_window.h
++++ b/ui/ozone/platform/nexus/nexus_window.h
+@@ -74,6 +74,9 @@ class NexusWindow : public PlatformWindow, public PlatformEventDispatcher {
+ 
+   virtual void SizeConstraintsChanged() override;
+ 
++  virtual bool IsTranslucentWindowOpacitySupported() const override;
++  virtual bool ShouldWindowContentsBeTransparent() const override;
++
+   void UpdateBounds(const gfx::Rect& bounds);
+   void OnMouseEnter();
+   void* GetNative() {return native_window_;}
