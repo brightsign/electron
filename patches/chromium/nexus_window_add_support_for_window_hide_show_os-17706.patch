@@ -1,0 +1,113 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Caner Altinbasak <caltinbasak@brightsign.biz>
+Date: Wed, 16 Oct 2024 11:07:38 +0100
+Subject: nexus_window: Add support for window hide/show OS-17706
+
+Added hide/show support for Nexus windows. It uses the blend equations
+and hides the window from view by ignoring it in the blend equation.
+
+The default blend equation makes it blended as usual.
+
+diff --git a/ui/ozone/platform/nexus/nexus_window.cc b/ui/ozone/platform/nexus/nexus_window.cc
+index 108136f8e70da0f030abac38b42763eb34df54a0..b65dfb891af4129cc824d29f33684c6c290ba8f3 100644
+--- a/ui/ozone/platform/nexus/nexus_window.cc
++++ b/ui/ozone/platform/nexus/nexus_window.cc
+@@ -20,6 +20,31 @@
+               do { if (0) fprintf(stderr, ##__VA_ARGS__); } while (0)
+ #define BS_DEBUG2(...) \
+               do { if (0) fprintf(stderr, ##__VA_ARGS__); } while (0)
++
++
++const NEXUS_BlendEquation HideSourceColor = {
++    NEXUS_BlendFactor_eSourceColor,
++    NEXUS_BlendFactor_eZero,
++    false,
++    NEXUS_BlendFactor_eDestinationColor,
++    NEXUS_BlendFactor_eInverseSourceAlpha,
++    false,
++    NEXUS_BlendFactor_eZero
++};
++
++const NEXUS_BlendEquation HideSourceAlpha = {
++    NEXUS_BlendFactor_eSourceAlpha,
++    NEXUS_BlendFactor_eZero,
++    false,
++    NEXUS_BlendFactor_eDestinationAlpha,
++    NEXUS_BlendFactor_eInverseSourceAlpha,
++    false,
++    NEXUS_BlendFactor_eZero
++};
++
++// Define z-order as constant
++const int kZOrder = 100;
++
+ namespace ui {
+ 
+ NexusWindow::NexusWindow(PlatformWindowDelegate* delegate,
+@@ -40,7 +65,9 @@ NexusWindow::NexusWindow(PlatformWindowDelegate* delegate,
+   win_info.y = bounds.y();
+   win_info.width = bounds.width();
+   win_info.height = bounds.height();
+-  win_info.zOrder = 100;
++  win_info.zOrder = kZOrder;
++  win_info.colorBlend = HideSourceColor;
++  win_info.alphaBlend = HideSourceAlpha;
+   native_window_ = NXPL_CreateNativeWindowEXT(&win_info);
+ 
+   widget_ = window_manager_->AddWindow(this);
+@@ -58,10 +85,30 @@ NexusWindow::~NexusWindow() {
+ 
+ void NexusWindow::Show(bool inactive) {
+   BS_DEBUG( "%s\n", __PRETTY_FUNCTION__);
++  visible_ = true;
++  NXPL_NativeWindowInfoEXT   win_info;
++  NXPL_GetDefaultNativeWindowInfoEXT(&win_info);
++  win_info.x = bounds_.x();
++  win_info.y = bounds_.y();
++  win_info.width = bounds_.width();
++  win_info.height = bounds_.height();
++  win_info.zOrder = kZOrder;
++  NXPL_UpdateNativeWindowEXT(native_window_, &win_info);
+ }
+ 
+ void NexusWindow::Hide() {
+   BS_DEBUG( "%s\n", __PRETTY_FUNCTION__);
++  visible_ = false;
++  NXPL_NativeWindowInfoEXT   win_info;
++  NXPL_GetDefaultNativeWindowInfoEXT(&win_info);
++  win_info.x = bounds_.x();
++  win_info.y = bounds_.y();
++  win_info.width = bounds_.width();
++  win_info.height = bounds_.height();
++  win_info.zOrder = kZOrder;
++  win_info.colorBlend = HideSourceColor;
++  win_info.alphaBlend = HideSourceAlpha;
++  NXPL_UpdateNativeWindowEXT(native_window_, &win_info);
+ }
+ 
+ void NexusWindow::Close() {
+@@ -105,7 +152,11 @@ void NexusWindow::SetBoundsInPixels(const gfx::Rect& bounds) {
+     win_info.y = adjusted_bounds.y();
+     win_info.width = adjusted_bounds.width();
+     win_info.height = adjusted_bounds.height();
+-    win_info.zOrder = 100;
++    win_info.zOrder = kZOrder;
++    if (!visible_ ) {
++      win_info.colorBlend = HideSourceColor;
++      win_info.alphaBlend = HideSourceAlpha;
++    }
+     NXPL_UpdateNativeWindowEXT(native_window_, &win_info);
+ 
+     bounds_ = adjusted_bounds;
+diff --git a/ui/ozone/platform/nexus/nexus_window.h b/ui/ozone/platform/nexus/nexus_window.h
+index 4a4be18b02928d1339b434e4415bc75258c9770e..87532626ad3fd80b8d40bd8c961bae1b16f95e5e 100644
+--- a/ui/ozone/platform/nexus/nexus_window.h
++++ b/ui/ozone/platform/nexus/nexus_window.h
+@@ -90,6 +90,7 @@ class NexusWindow : public PlatformWindow, public PlatformEventDispatcher {
+   raw_ptr<NexusWindowManager> window_manager_;
+   gfx::AcceleratedWidget widget_;
+   void* native_window_;
++  bool visible_ = false;
+ };
+ 
+ }  // namespace ui
