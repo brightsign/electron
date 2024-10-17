@@ -1616,6 +1616,16 @@ with `addBrowserView` or `setBrowserView`. The top-most BrowserView is the last 
 **Note:** The BrowserView API is currently experimental and may change or be
 removed in future Electron releases.
 
+#### `win.setWindowTransform(windowTransform)` _Linux_
+
+* `windowTransform` string
+  * `none` - There is no transform (i.e. the widget content is oriented as landscape).
+  * `rot90` - The widget content is rotated to portrait at 90 degrees (clockwise).
+  * `rot180` - The widget content is rotated to portrait at 180 degrees (clockwise).
+  * `rot270` - The widget content is rotated to portrait at 270 degrees (clockwise).
+
+This method sets the browser window's transform.
+
 #### `win.setTitleBarOverlay(options)` _Windows_
 
 * `options` Object

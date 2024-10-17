@@ -23,6 +23,7 @@
 #include "shell/browser/native_window_observer.h"
 #include "shell/browser/ui/inspectable_web_contents_view.h"
 #include "third_party/abseil-cpp/absl/types/optional.h"
+#include "third_party/blink/public/mojom/webpreferences/web_preferences.mojom-shared.h"
 #include "ui/views/widget/widget_delegate.h"
 
 class SkRegion;
@@ -189,6 +190,10 @@ class NativeWindow : public base::SupportsUserData,
   virtual void AddBrowserView(NativeBrowserView* browser_view) = 0;
   virtual void RemoveBrowserView(NativeBrowserView* browser_view) = 0;
   virtual void SetTopBrowserView(NativeBrowserView* browser_view) = 0;
+#if BUILDFLAG(IS_LINUX)
+  virtual void SetWindowTransform(
+      blink::mojom::WindowTransformType transform_type) = 0;
+#endif
   virtual content::DesktopMediaID GetDesktopMediaID() const = 0;
   virtual gfx::NativeView GetNativeView() const = 0;
   virtual gfx::NativeWindow GetNativeWindow() const = 0;

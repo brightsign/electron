@@ -6614,4 +6614,126 @@ describe('BrowserWindow module', () => {
       expect(scrollHeight).to.be.equal(0);
     });
   });
+
+  ifdescribe(process.platform === 'linux')('window rotation', () => {
+    const fixturesPath = path.resolve(__dirname, '..', 'spec', 'fixtures');
+    const url = `file://${fixturesPath}/blank.html`;
+    const landscapeBounds = { x: 0, y: 0, width: 600, height: 400 };
+    const portraitBounds = { x: 0, y: 0, width: 500, height: 900 };
+    const squareBounds = { x: 0, y: 0, width: 350, height: 350 };
+    const offsetBounds = { x: 100, y: 200, width: 1920, height: 1080 };
+    const negativeOffsetBounds = { x: -100, y: -200, width: 1920, height: 1080 };
+    let w: BrowserWindow;
+
+    afterEach(closeAllWindows);
+
+    [{ name: 'landscape', bounds: landscapeBounds }, { name: 'portrait', bounds: portraitBounds }, { name: 'square', bounds: squareBounds },
+      { name: 'x,y offset', bounds: offsetBounds }, { name: 'x,y negative offset', bounds: negativeOffsetBounds }].forEach((item) => {
+      it(`webpreference: identity: ${item.name}`, async () => {
+        w = new BrowserWindow({ ...item.bounds, frame: false, webPreferences: { windowTransform: 'none' } });
+        await w.loadURL(url);
+        const { windowWidth, windowHeight } = await w.webContents.executeJavaScript('({windowWidth: window.innerWidth, windowHeight: window.innerHeight})');
+        expect(windowWidth).to.be.equal(item.bounds.width);
+        expect(windowHeight).to.be.equal(item.bounds.height);
+        expectBoundsEqual(w.getBounds(), item.bounds);
+      });
+
+      it(`webpreference: rot90: ${item.name}`, async () => {
+        w = new BrowserWindow({ ...item.bounds, frame: false, webPreferences: { windowTransform: 'rot90' } });
+        await w.loadURL(url);
+        const { windowWidth, windowHeight } = await w.webContents.executeJavaScript('({windowWidth: window.innerWidth, windowHeight: window.innerHeight})');
+        expect(windowWidth).to.be.equal(item.bounds.height);
+        expect(windowHeight).to.be.equal(item.bounds.width);
+        expectBoundsEqual(w.getBounds(), item.bounds);
+      });
+
+      it(`webpreference: rot180: ${item.name}`, async () => {
+        w = new BrowserWindow({ ...item.bounds, frame: false, webPreferences: { windowTransform: 'rot180' } });
+        await w.loadURL(url);
+        const { windowWidth, windowHeight } = await w.webContents.executeJavaScript('({windowWidth: window.innerWidth, windowHeight: window.innerHeight})');
+        expect(windowWidth).to.be.equal(item.bounds.width);
+        expect(windowHeight).to.be.equal(item.bounds.height);
+        expectBoundsEqual(w.getBounds(), item.bounds);
+      });
+
+      it(`webpreference: rot270: ${item.name}`, async () => {
+        w = new BrowserWindow({ ...item.bounds, frame: false, webPreferences: { windowTransform: 'rot270' } });
+        await w.loadURL(url);
+        const { windowWidth, windowHeight } = await w.webContents.executeJavaScript('({windowWidth: window.innerWidth, windowHeight: window.innerHeight})');
+        expect(windowWidth).to.be.equal(item.bounds.height);
+        expect(windowHeight).to.be.equal(item.bounds.width);
+        expectBoundsEqual(w.getBounds(), item.bounds);
+      });
+    });
+
+    it('webpreference: SetWindowTransform', async () => {
+      w = new BrowserWindow({ ...landscapeBounds, frame: false, webPreferences: { windowTransform: 'none' } });
+      await w.loadURL(url);
+      let { windowWidth, windowHeight } = await w.webContents.executeJavaScript('({windowWidth: window.innerWidth, windowHeight: window.innerHeight})');
+      expect(windowWidth).to.be.equal(landscapeBounds.width);
+      expect(windowHeight).to.be.equal(landscapeBounds.height);
+      expectBoundsEqual(w.getBounds(), landscapeBounds);
+
+      w.setWindowTransform('rot90');
+      await setTimeout(500);
+      ({ windowWidth, windowHeight } = await w.webContents.executeJavaScript('({windowWidth: window.innerWidth, windowHeight: window.innerHeight})'));
+      expect(windowWidth).to.be.equal(landscapeBounds.height);
+      expect(windowHeight).to.be.equal(landscapeBounds.width);
+      expectBoundsEqual(w.getBounds(), landscapeBounds);
+
+      w.setWindowTransform('rot180');
+      await setTimeout(500);
+      ({ windowWidth, windowHeight } = await w.webContents.executeJavaScript('({windowWidth: window.innerWidth, windowHeight: window.innerHeight})'));
+      expect(windowWidth).to.be.equal(landscapeBounds.width);
+      expect(windowHeight).to.be.equal(landscapeBounds.height);
+      expectBoundsEqual(w.getBounds(), landscapeBounds);
+
+      w.setWindowTransform('rot270');
+      await setTimeout(500);
+      ({ windowWidth, windowHeight } = await w.webContents.executeJavaScript('({windowWidth: window.innerWidth, windowHeight: window.innerHeight})'));
+      expect(windowWidth).to.be.equal(landscapeBounds.height);
+      expect(windowHeight).to.be.equal(landscapeBounds.width);
+      expectBoundsEqual(w.getBounds(), landscapeBounds);
+
+      // Resize to portrait sized bounds
+      w.setBounds(portraitBounds);
+      await setTimeout(500);
+      ({ windowWidth, windowHeight } = await w.webContents.executeJavaScript('({windowWidth: window.innerWidth, windowHeight: window.innerHeight})'));
+      expect(windowWidth).to.be.equal(portraitBounds.height);
+      expect(windowHeight).to.be.equal(portraitBounds.width);
+      expectBoundsEqual(w.getBounds(), portraitBounds);
+
+      // Resize to square sized bounds
+      w.setBounds(squareBounds);
+      await setTimeout(500);
+      ({ windowWidth, windowHeight } = await w.webContents.executeJavaScript('({windowWidth: window.innerWidth, windowHeight: window.innerHeight})'));
+      expect(windowWidth).to.be.equal(squareBounds.height);
+      expect(windowHeight).to.be.equal(squareBounds.width);
+      expectBoundsEqual(w.getBounds(), squareBounds);
+
+      // Resize to bounds with x and y offset
+      w.setBounds(offsetBounds);
+      await setTimeout(500);
+      ({ windowWidth, windowHeight } = await w.webContents.executeJavaScript('({windowWidth: window.innerWidth, windowHeight: window.innerHeight})'));
+      expect(windowWidth).to.be.equal(offsetBounds.height);
+      expect(windowHeight).to.be.equal(offsetBounds.width);
+      expectBoundsEqual(w.getBounds(), offsetBounds);
+
+      // Resize to bounds with x and y negative offset
+      w.setBounds(negativeOffsetBounds);
+      await setTimeout(500);
+      ({ windowWidth, windowHeight } = await w.webContents.executeJavaScript('({windowWidth: window.innerWidth, windowHeight: window.innerHeight})'));
+      expect(windowWidth).to.be.equal(negativeOffsetBounds.height);
+      expect(windowHeight).to.be.equal(negativeOffsetBounds.width);
+      expectBoundsEqual(w.getBounds(), negativeOffsetBounds);
+
+      // Finally set transform back to identity
+      w.setWindowTransform('none');
+      await setTimeout(500);
+      ({ windowWidth, windowHeight } = await w.webContents.executeJavaScript('({windowWidth: window.innerWidth, windowHeight: window.innerHeight})'));
+      expect(windowWidth).to.be.equal(negativeOffsetBounds.width);
+      expect(windowHeight).to.be.equal(negativeOffsetBounds.height);
+      expectBoundsEqual(w.getBounds(), negativeOffsetBounds);
+    });
+  });
 });

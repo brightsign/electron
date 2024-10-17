@@ -146,7 +146,10 @@ class NativeWindowViews : public NativeWindow,
   bool IsVisibleOnAllWorkspaces() override;
 
   void SetGTKDarkThemeEnabled(bool use_dark_theme) override;
-
+#if BUILDFLAG(IS_LINUX)
+  void SetWindowTransform(
+      blink::mojom::WindowTransformType transform_type) override;
+#endif
   content::DesktopMediaID GetDesktopMediaID() const override;
   gfx::AcceleratedWidget GetAcceleratedWidget() const override;
   NativeWindowHandle GetNativeWindowHandle() const override;
