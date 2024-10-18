@@ -73,6 +73,23 @@ struct Converter<blink::mojom::V8CacheOptions> {
   }
 };
 
+template <>
+struct Converter<blink::mojom::WindowTransformType> {
+  static bool FromV8(v8::Isolate* isolate,
+                     v8::Local<v8::Value> val,
+                     blink::mojom::WindowTransformType* out) {
+    using Val = blink::mojom::WindowTransformType;
+    static constexpr auto Lookup =
+        base::MakeFixedFlatMapSorted<base::StringPiece, Val>({
+            {"none", Val::kWindowTransformTypeNone},
+            {"rot180", Val::kWindowTransformTypeRotate180},
+            {"rot270", Val::kWindowTransformTypeRotate270},
+            {"rot90", Val::kWindowTransformTypeRotate90},
+        });
+    return FromV8WithLookup(isolate, val, Lookup, out);
+  }
+};
+
 }  // namespace gin
 
 namespace electron {
@@ -161,6 +178,9 @@ void WebContentsPreferences::Clear() {
 #if BUILDFLAG(ENABLE_BUILTIN_SPELLCHECKER)
   spellcheck_ = true;
 #endif
+
+  window_transform_type_ =
+      blink::mojom::WindowTransformType::kWindowTransformTypeNone;
 }
 
 void WebContentsPreferences::SetFromDictionary(
@@ -261,6 +281,8 @@ void WebContentsPreferences::SetFromDictionary(
 #if BUILDFLAG(ENABLE_BUILTIN_SPELLCHECKER)
   web_preferences.Get(options::kSpellcheck, &spellcheck_);
 #endif
+
+  web_preferences.Get("windowTransform", &window_transform_type_);
 
   SaveLastPreferences();
 }
@@ -499,6 +521,7 @@ void WebContentsPreferences::OverrideWebkitPrefs(
   prefs->v8_cache_options = v8_cache_options_;
   prefs->hide_scrollbars = hide_scroll_bars_;
   prefs->enable_pinch_zoom = enable_pinch_zoom_;
+  prefs->window_transform_type = window_transform_type_;
 }
 
 WEB_CONTENTS_USER_DATA_KEY_IMPL(WebContentsPreferences);

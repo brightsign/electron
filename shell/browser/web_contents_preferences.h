@@ -146,6 +146,8 @@ class WebContentsPreferences
   bool spellcheck_;
 #endif
 
+  blink::mojom::WindowTransformType window_transform_type_;
+
   // This is a snapshot of some relevant preferences at the time the renderer
   // was launched.
   base::Value last_web_preferences_;

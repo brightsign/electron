@@ -1136,6 +1136,25 @@ void BaseWindow::SetAppDetails(const gin_helper::Dictionary& options) {
 }
 #endif
 
+#if BUILDFLAG(IS_LINUX)
+void BaseWindow::SetWindowTransform(const std::string& transform) {
+  blink::mojom::WindowTransformType transform_type =
+      blink::mojom::WindowTransformType::kWindowTransformTypeNone;
+
+  if (transform == "rot180") {
+    transform_type =
+        blink::mojom::WindowTransformType::kWindowTransformTypeRotate180;
+  } else if (transform == "rot270") {
+    transform_type =
+        blink::mojom::WindowTransformType::kWindowTransformTypeRotate270;
+  } else if (transform == "rot90") {
+    transform_type =
+        blink::mojom::WindowTransformType::kWindowTransformTypeRotate90;
+  }
+  window_->SetWindowTransform(transform_type);
+}
+#endif
+
 int32_t BaseWindow::GetID() const {
   return weak_map_id();
 }
@@ -1351,6 +1370,9 @@ void BaseWindow::BuildPrototype(v8::Isolate* isolate,
       .SetMethod("setThumbnailClip", &BaseWindow::SetThumbnailClip)
       .SetMethod("setThumbnailToolTip", &BaseWindow::SetThumbnailToolTip)
       .SetMethod("setAppDetails", &BaseWindow::SetAppDetails)
+#endif
+#if BUILDFLAG(IS_LINUX)
+      .SetMethod("setWindowTransform", &BaseWindow::SetWindowTransform)
 #endif
       .SetProperty("id", &BaseWindow::GetID);
 }

@@ -222,6 +222,9 @@ class BaseWindow : public gin_helper::TrackableObject<BaseWindow>,
   void PreviewFile(const std::string& path, gin_helper::Arguments* args);
   void CloseFilePreview();
   void SetGTKDarkThemeEnabled(bool use_dark_theme);
+#if BUILDFLAG(IS_LINUX)
+  void SetWindowTransform(const std::string& transform);
+#endif
 
   // Public getters of NativeWindow.
   v8::Local<v8::Value> GetContentView() const;
