@@ -1,0 +1,365 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Caner Altinbasak <caltinbasak@brightsign.biz>
+Date: Mon, 21 Oct 2024 14:57:01 +0100
+Subject: gl: Add support for eglGetPlatformDisplayExt extension
+
+This change is needed for Thor platform which requires eglGetPlatformDisplayExt
+for wayland backend
+
+diff --git a/ui/gl/egl_bindings_autogen_mock.cc b/ui/gl/egl_bindings_autogen_mock.cc
+index 8c56ef8caf0c99c92168351f7c54ce5756470ba4..4917a5a9e5541849a9137749b834fd018f3350e0 100644
+--- a/ui/gl/egl_bindings_autogen_mock.cc
++++ b/ui/gl/egl_bindings_autogen_mock.cc
+@@ -416,6 +416,15 @@ MockEGLInterface::Mock_eglGetPlatformDisplay(EGLenum platform,
+   return interface_->GetPlatformDisplay(platform, native_display, attrib_list);
+ }
+ 
++EGLDisplay GL_BINDING_CALL
++MockEGLInterface::Mock_eglGetPlatformDisplayExt(EGLenum platform,
++                                                void* native_display,
++                                                const EGLAttrib* attrib_list) {
++  MakeEglMockFunctionUnique("eglGetPlatformDisplayExt");
++  return interface_->GetPlatformDisplayExt(platform, native_display,
++                                           attrib_list);
++}
++
+ __eglMustCastToProperFunctionPointerType GL_BINDING_CALL
+ MockEGLInterface::Mock_eglGetProcAddress(const char* procname) {
+   MakeEglMockFunctionUnique("eglGetProcAddress");
+@@ -799,10 +808,9 @@ static void MockEglInvalidFunction() {
+ 
+ GLFunctionPointerType GL_BINDING_CALL
+ MockEGLInterface::GetGLProcAddress(const char* name) {
+-  if (strcmp(name, "eglAcquireExternalContextANGLE") == 0) {
++  if (strcmp(name, "eglAcquireExternalContextANGLE") == 0)
+     return reinterpret_cast<GLFunctionPointerType>(
+         Mock_eglAcquireExternalContextANGLE);
+-  }
+   if (strcmp(name, "eglBindAPI") == 0)
+     return reinterpret_cast<GLFunctionPointerType>(Mock_eglBindAPI);
+   if (strcmp(name, "eglBindTexImage") == 0)
+@@ -913,6 +921,9 @@ MockEGLInterface::GetGLProcAddress(const char* name) {
+         Mock_eglGetNextFrameIdANDROID);
+   if (strcmp(name, "eglGetPlatformDisplay") == 0)
+     return reinterpret_cast<GLFunctionPointerType>(Mock_eglGetPlatformDisplay);
++  if (strcmp(name, "eglGetPlatformDisplayExt") == 0)
++    return reinterpret_cast<GLFunctionPointerType>(
++        Mock_eglGetPlatformDisplayExt);
+   if (strcmp(name, "eglGetProcAddress") == 0)
+     return reinterpret_cast<GLFunctionPointerType>(Mock_eglGetProcAddress);
+   if (strcmp(name, "eglGetSyncAttrib") == 0)
+@@ -978,10 +989,9 @@ MockEGLInterface::GetGLProcAddress(const char* name) {
+   if (strcmp(name, "eglReacquireHighPowerGPUANGLE") == 0)
+     return reinterpret_cast<GLFunctionPointerType>(
+         Mock_eglReacquireHighPowerGPUANGLE);
+-  if (strcmp(name, "eglReleaseExternalContextANGLE") == 0) {
++  if (strcmp(name, "eglReleaseExternalContextANGLE") == 0)
+     return reinterpret_cast<GLFunctionPointerType>(
+         Mock_eglReleaseExternalContextANGLE);
+-  }
+   if (strcmp(name, "eglReleaseHighPowerGPUANGLE") == 0)
+     return reinterpret_cast<GLFunctionPointerType>(
+         Mock_eglReleaseHighPowerGPUANGLE);
+diff --git a/ui/gl/egl_bindings_autogen_mock.h b/ui/gl/egl_bindings_autogen_mock.h
+index c831999b418c2c97f9c06eef43901b2c11de8ce4..813879e904ba0ef5e5fe9b8e15be1e7f8a34d323 100644
+--- a/ui/gl/egl_bindings_autogen_mock.h
++++ b/ui/gl/egl_bindings_autogen_mock.h
+@@ -181,6 +181,10 @@ static EGLDisplay GL_BINDING_CALL
+ Mock_eglGetPlatformDisplay(EGLenum platform,
+                            void* native_display,
+                            const EGLAttrib* attrib_list);
++static EGLDisplay GL_BINDING_CALL
++Mock_eglGetPlatformDisplayExt(EGLenum platform,
++                              void* native_display,
++                              const EGLAttrib* attrib_list);
+ static __eglMustCastToProperFunctionPointerType GL_BINDING_CALL
+ Mock_eglGetProcAddress(const char* procname);
+ static EGLBoolean GL_BINDING_CALL Mock_eglGetSyncAttrib(EGLDisplay dpy,
+diff --git a/ui/gl/generate_bindings.py b/ui/gl/generate_bindings.py
+index 45de9bc437b3d476c9c15f002ce95dae6f37bbfb..2b3005129f43be7c05f5264927e037c0bae36c0c 100755
+--- a/ui/gl/generate_bindings.py
++++ b/ui/gl/generate_bindings.py
+@@ -2687,6 +2687,13 @@ EGL_FUNCTIONS = [
+   'names': ['eglGetPlatformDisplay'],
+   'arguments': 'EGLenum platform, void* native_display, '
+                'const EGLAttrib* attrib_list', },
++{ 'return_type': 'EGLDisplay',
++  'versions': [{'name': 'eglGetPlatformDisplayExt',
++                'extensions': [
++                  'EGL_EXT_platform_wayland',
++                  'EGL_KHR_platform_wayland']}],
++  'arguments': 'EGLenum platform, void* native_display, '
++               'const EGLAttrib* attrib_list', },
+ { 'return_type': '__eglMustCastToProperFunctionPointerType',
+   'names': ['eglGetProcAddress'],
+   'arguments': 'const char* procname',
+diff --git a/ui/gl/gl_bindings_api_autogen_egl.h b/ui/gl/gl_bindings_api_autogen_egl.h
+index ef0ec5e93898b2c9975b3a27a6d259e1e3b5fab9..1bb705dd483c5ea1a22f6d729807177255c1e269 100644
+--- a/ui/gl/gl_bindings_api_autogen_egl.h
++++ b/ui/gl/gl_bindings_api_autogen_egl.h
+@@ -154,6 +154,9 @@ EGLBoolean eglGetNextFrameIdANDROIDFn(EGLDisplay dpy,
+ EGLDisplay eglGetPlatformDisplayFn(EGLenum platform,
+                                    void* native_display,
+                                    const EGLAttrib* attrib_list) override;
++EGLDisplay eglGetPlatformDisplayExtFn(EGLenum platform,
++                                      void* native_display,
++                                      const EGLAttrib* attrib_list) override;
+ __eglMustCastToProperFunctionPointerType eglGetProcAddressFn(
+     const char* procname) override;
+ EGLBoolean eglGetSyncAttribFn(EGLDisplay dpy,
+diff --git a/ui/gl/gl_bindings_autogen_egl.cc b/ui/gl/gl_bindings_autogen_egl.cc
+index 29d2777b2cc7f5b4c46a49783d11fcc1c7744867..0a1f014a46dc8f1ad2ceb6f78128ed17947f01d0 100644
+--- a/ui/gl/gl_bindings_autogen_egl.cc
++++ b/ui/gl/gl_bindings_autogen_egl.cc
+@@ -140,6 +140,9 @@ void DriverEGL::InitializeStaticBindings() {
+           GetGLProcAddress("eglGetNextFrameIdANDROID"));
+   fn.eglGetPlatformDisplayFn = reinterpret_cast<eglGetPlatformDisplayProc>(
+       GetGLProcAddress("eglGetPlatformDisplay"));
++  fn.eglGetPlatformDisplayExtFn =
++      reinterpret_cast<eglGetPlatformDisplayExtProc>(
++          GetGLProcAddress("eglGetPlatformDisplayExt"));
+   fn.eglGetProcAddressFn = reinterpret_cast<eglGetProcAddressProc>(
+       GetGLProcAddress("eglGetProcAddress"));
+   fn.eglGetSyncAttribFn = reinterpret_cast<eglGetSyncAttribProc>(
+@@ -376,6 +379,8 @@ void DisplayExtensionsEGL::InitializeExtensionSettings(EGLDisplay display) {
+       gfx::HasExtension(extensions, "EGL_EXT_image_flush_external");
+   b_EGL_EXT_pixel_format_float =
+       gfx::HasExtension(extensions, "EGL_EXT_pixel_format_float");
++  b_EGL_EXT_platform_wayland =
++      gfx::HasExtension(extensions, "EGL_EXT_platform_wayland");
+   b_EGL_IMG_context_priority =
+       gfx::HasExtension(extensions, "EGL_IMG_context_priority");
+   b_EGL_KHR_create_context =
+@@ -389,6 +394,8 @@ void DisplayExtensionsEGL::InitializeExtensionSettings(EGLDisplay display) {
+   b_EGL_KHR_image_base = gfx::HasExtension(extensions, "EGL_KHR_image_base");
+   b_EGL_KHR_no_config_context =
+       gfx::HasExtension(extensions, "EGL_KHR_no_config_context");
++  b_EGL_KHR_platform_wayland =
++      gfx::HasExtension(extensions, "EGL_KHR_platform_wayland");
+   b_EGL_KHR_stream = gfx::HasExtension(extensions, "EGL_KHR_stream");
+   b_EGL_KHR_stream_consumer_gltexture =
+       gfx::HasExtension(extensions, "EGL_KHR_stream_consumer_gltexture");
+@@ -723,6 +730,14 @@ EGLDisplay EGLApiBase::eglGetPlatformDisplayFn(EGLenum platform,
+                                              attrib_list);
+ }
+ 
++EGLDisplay EGLApiBase::eglGetPlatformDisplayExtFn(
++    EGLenum platform,
++    void* native_display,
++    const EGLAttrib* attrib_list) {
++  return driver_->fn.eglGetPlatformDisplayExtFn(platform, native_display,
++                                                attrib_list);
++}
++
+ __eglMustCastToProperFunctionPointerType EGLApiBase::eglGetProcAddressFn(
+     const char* procname) {
+   return driver_->fn.eglGetProcAddressFn(procname);
+@@ -1384,6 +1399,15 @@ EGLDisplay TraceEGLApi::eglGetPlatformDisplayFn(EGLenum platform,
+                                            attrib_list);
+ }
+ 
++EGLDisplay TraceEGLApi::eglGetPlatformDisplayExtFn(
++    EGLenum platform,
++    void* native_display,
++    const EGLAttrib* attrib_list) {
++  TRACE_EVENT_BINARY_EFFICIENT0("gpu", "TraceEGLAPI::eglGetPlatformDisplayExt");
++  return egl_api_->eglGetPlatformDisplayExtFn(platform, native_display,
++                                              attrib_list);
++}
++
+ __eglMustCastToProperFunctionPointerType TraceEGLApi::eglGetProcAddressFn(
+     const char* procname) {
+   TRACE_EVENT_BINARY_EFFICIENT0("gpu", "TraceEGLAPI::eglGetProcAddress");
+@@ -2288,6 +2312,19 @@ EGLDisplay LogEGLApi::eglGetPlatformDisplayFn(EGLenum platform,
+   return result;
+ }
+ 
++EGLDisplay LogEGLApi::eglGetPlatformDisplayExtFn(EGLenum platform,
++                                                 void* native_display,
++                                                 const EGLAttrib* attrib_list) {
++  GL_SERVICE_LOG("eglGetPlatformDisplayExt"
++                 << "(" << platform << ", "
++                 << static_cast<const void*>(native_display) << ", "
++                 << static_cast<const void*>(attrib_list) << ")");
++  EGLDisplay result = egl_api_->eglGetPlatformDisplayExtFn(
++      platform, native_display, attrib_list);
++  GL_SERVICE_LOG("GL_RESULT: " << result);
++  return result;
++}
++
+ __eglMustCastToProperFunctionPointerType LogEGLApi::eglGetProcAddressFn(
+     const char* procname) {
+   GL_SERVICE_LOG("eglGetProcAddress"
+diff --git a/ui/gl/gl_bindings_autogen_egl.h b/ui/gl/gl_bindings_autogen_egl.h
+index c43fc0c61b0ca1c7230fb3508a961148e0ef6ee1..afd55016482bf01ffbc7eb8e0325a2172c39f58e 100644
+--- a/ui/gl/gl_bindings_autogen_egl.h
++++ b/ui/gl/gl_bindings_autogen_egl.h
+@@ -194,6 +194,10 @@ typedef EGLDisplay(GL_BINDING_CALL* eglGetPlatformDisplayProc)(
+     EGLenum platform,
+     void* native_display,
+     const EGLAttrib* attrib_list);
++typedef EGLDisplay(GL_BINDING_CALL* eglGetPlatformDisplayExtProc)(
++    EGLenum platform,
++    void* native_display,
++    const EGLAttrib* attrib_list);
+ typedef __eglMustCastToProperFunctionPointerType(
+     GL_BINDING_CALL* eglGetProcAddressProc)(const char* procname);
+ typedef EGLBoolean(GL_BINDING_CALL* eglGetSyncAttribProc)(EGLDisplay dpy,
+@@ -420,6 +424,7 @@ struct GL_EXPORT DisplayExtensionsEGL {
+   bool b_EGL_EXT_image_dma_buf_import_modifiers;
+   bool b_EGL_EXT_image_flush_external;
+   bool b_EGL_EXT_pixel_format_float;
++  bool b_EGL_EXT_platform_wayland;
+   bool b_EGL_IMG_context_priority;
+   bool b_EGL_KHR_create_context;
+   bool b_EGL_KHR_fence_sync;
+@@ -428,6 +433,7 @@ struct GL_EXPORT DisplayExtensionsEGL {
+   bool b_EGL_KHR_image;
+   bool b_EGL_KHR_image_base;
+   bool b_EGL_KHR_no_config_context;
++  bool b_EGL_KHR_platform_wayland;
+   bool b_EGL_KHR_stream;
+   bool b_EGL_KHR_stream_consumer_gltexture;
+   bool b_EGL_KHR_surfaceless_context;
+@@ -499,6 +505,7 @@ struct ProcsEGL {
+   eglGetNativeClientBufferANDROIDProc eglGetNativeClientBufferANDROIDFn;
+   eglGetNextFrameIdANDROIDProc eglGetNextFrameIdANDROIDFn;
+   eglGetPlatformDisplayProc eglGetPlatformDisplayFn;
++  eglGetPlatformDisplayExtProc eglGetPlatformDisplayExtFn;
+   eglGetProcAddressProc eglGetProcAddressFn;
+   eglGetSyncAttribProc eglGetSyncAttribFn;
+   eglGetSyncAttribKHRProc eglGetSyncAttribKHRFn;
+@@ -711,6 +718,10 @@ class GL_EXPORT EGLApi {
+   virtual EGLDisplay eglGetPlatformDisplayFn(EGLenum platform,
+                                              void* native_display,
+                                              const EGLAttrib* attrib_list) = 0;
++  virtual EGLDisplay eglGetPlatformDisplayExtFn(
++      EGLenum platform,
++      void* native_display,
++      const EGLAttrib* attrib_list) = 0;
+   virtual __eglMustCastToProperFunctionPointerType eglGetProcAddressFn(
+       const char* procname) = 0;
+   virtual EGLBoolean eglGetSyncAttribFn(EGLDisplay dpy,
+@@ -922,6 +933,8 @@ class GL_EXPORT EGLApi {
+   ::gl::g_current_egl_context->eglGetNextFrameIdANDROIDFn
+ #define eglGetPlatformDisplay \
+   ::gl::g_current_egl_context->eglGetPlatformDisplayFn
++#define eglGetPlatformDisplayExt \
++  ::gl::g_current_egl_context->eglGetPlatformDisplayExtFn
+ #define eglGetProcAddress ::gl::g_current_egl_context->eglGetProcAddressFn
+ #define eglGetSyncAttrib ::gl::g_current_egl_context->eglGetSyncAttribFn
+ #define eglGetSyncAttribKHR ::gl::g_current_egl_context->eglGetSyncAttribKHRFn
+diff --git a/ui/gl/gl_bindings_autogen_mock.cc b/ui/gl/gl_bindings_autogen_mock.cc
+index 7ab5160ec4646d88a1993ee8b5be9966f6a957c5..6064e5d6c59532cfd6ba0b69ed3305a036971817 100644
+--- a/ui/gl/gl_bindings_autogen_mock.cc
++++ b/ui/gl/gl_bindings_autogen_mock.cc
+@@ -5708,9 +5708,8 @@ MockGLInterface::GetGLProcAddress(const char* name) {
+     return reinterpret_cast<GLFunctionPointerType>(Mock_glClientWaitSync);
+   if (strcmp(name, "glClientWaitSyncAPPLE") == 0)
+     return reinterpret_cast<GLFunctionPointerType>(Mock_glClientWaitSyncAPPLE);
+-  if (strcmp(name, "glClipControlEXT") == 0) {
++  if (strcmp(name, "glClipControlEXT") == 0)
+     return reinterpret_cast<GLFunctionPointerType>(Mock_glClipControlEXT);
+-  }
+   if (strcmp(name, "glColorMask") == 0)
+     return reinterpret_cast<GLFunctionPointerType>(Mock_glColorMask);
+   if (strcmp(name, "glColorMaski") == 0)
+@@ -6631,15 +6630,13 @@ MockGLInterface::GetGLProcAddress(const char* name) {
+     return reinterpret_cast<GLFunctionPointerType>(Mock_glPointParameteri);
+   if (strcmp(name, "glPolygonMode") == 0)
+     return reinterpret_cast<GLFunctionPointerType>(Mock_glPolygonMode);
+-  if (strcmp(name, "glPolygonModeANGLE") == 0) {
++  if (strcmp(name, "glPolygonModeANGLE") == 0)
+     return reinterpret_cast<GLFunctionPointerType>(Mock_glPolygonModeANGLE);
+-  }
+   if (strcmp(name, "glPolygonOffset") == 0)
+     return reinterpret_cast<GLFunctionPointerType>(Mock_glPolygonOffset);
+-  if (strcmp(name, "glPolygonOffsetClampEXT") == 0) {
++  if (strcmp(name, "glPolygonOffsetClampEXT") == 0)
+     return reinterpret_cast<GLFunctionPointerType>(
+         Mock_glPolygonOffsetClampEXT);
+-  }
+   if (strcmp(name, "glPopDebugGroup") == 0)
+     return reinterpret_cast<GLFunctionPointerType>(Mock_glPopDebugGroup);
+   if (strcmp(name, "glPopDebugGroupKHR") == 0)
+diff --git a/ui/gl/gl_display.cc b/ui/gl/gl_display.cc
+index dd34dcbe0e39754b40cba5bf4cd273a40ab31c47..4d90ca8548c04c34fbe71fe560831274819949f8 100644
+--- a/ui/gl/gl_display.cc
++++ b/ui/gl/gl_display.cc
+@@ -268,7 +268,8 @@ EGLDisplay GetDisplayFromType(
+     const std::vector<std::string>& enabled_angle_features,
+     const std::vector<std::string>& disabled_angle_features,
+     uint64_t system_device_id,
+-    DisplayKey display_key) {
++    DisplayKey display_key,
++    DisplayExtensionsEGL* ext) {
+   std::vector<EGLAttrib> extra_display_attribs;
+   if (system_device_id != 0 &&
+       g_driver_egl.client_ext.b_EGL_ANGLE_platform_angle_device_id) {
+@@ -288,7 +289,10 @@ EGLDisplay GetDisplayFromType(
+   switch (display_type) {
+     case DEFAULT:
+     case SWIFT_SHADER: {
+-      if (native_display.GetPlatform() != 0) {
++      if (ext->b_EGL_EXT_platform_wayland || ext->b_EGL_KHR_platform_wayland)
++	return eglGetPlatformDisplayExt(EGL_PLATFORM_WAYLAND_KHR,
++                                     reinterpret_cast<void*>(display), nullptr);
++      else if (native_display.GetPlatform() != 0) {
+         return eglGetPlatformDisplay(native_display.GetPlatform(),
+                                      reinterpret_cast<void*>(display), nullptr);
+       }
+@@ -753,7 +757,7 @@ bool GLDisplayEGL::InitializeDisplay(bool supports_angle,
+     DisplayType display_type = init_displays[disp_index];
+     EGLDisplay display = GetDisplayFromType(
+         display_type, native_display, enabled_angle_features,
+-        disabled_angle_features, system_device_id_, display_key_);
++        disabled_angle_features, system_device_id_, display_key_, ext.get());
+     if (display == EGL_NO_DISPLAY) {
+       // Assume this is not an error, so don't verbosely report it;
+       // simply try the next display type.
+diff --git a/ui/gl/gl_enums_implementation_autogen.h b/ui/gl/gl_enums_implementation_autogen.h
+index 040a74152e34e63656fe4ef5d47c6cf2272d29f4..f0cb5372a745f59927e447954c7b46c3662f0413 100644
+--- a/ui/gl/gl_enums_implementation_autogen.h
++++ b/ui/gl/gl_enums_implementation_autogen.h
+@@ -4890,7 +4890,7 @@ static const GLEnums::EnumToString enum_to_string_table[] = {
+     },
+     {
+         0x90EA,
+-        "GL_DEPTH_STENCIL_TEXTURE_MODE",
++        "GL_DEPTH_STENCIL_TEXTURE_MODE_ANGLE",
+     },
+     {
+         0x90EB,
+@@ -6892,4 +6892,4 @@ const GLEnums::EnumToString* const GLEnums::enum_to_string_table_ =
+ const size_t GLEnums::enum_to_string_table_len_ =
+     sizeof(enum_to_string_table) / sizeof(enum_to_string_table[0]);
+ 
+-#endif  //  UI_GL_GL_ENUMS_IMPLEMENTATION_AUTOGEN_H_
++#endif  //  UI_GL_GL_ENUMS_IMPLEMENTATION_AUTOGEN_H_
+\ No newline at end of file
+diff --git a/ui/gl/gl_mock_autogen_egl.h b/ui/gl/gl_mock_autogen_egl.h
+index 7ff69593cabe9ce997b9b85c7a1919d6c3b0fbdb..da2781dec73337c2e8f4c9d8d5251ef7ddf5b059 100644
+--- a/ui/gl/gl_mock_autogen_egl.h
++++ b/ui/gl/gl_mock_autogen_egl.h
+@@ -169,6 +169,10 @@ MOCK_METHOD3(GetPlatformDisplay,
+              EGLDisplay(EGLenum platform,
+                         void* native_display,
+                         const EGLAttrib* attrib_list));
++MOCK_METHOD3(GetPlatformDisplayExt,
++             EGLDisplay(EGLenum platform,
++                        void* native_display,
++                        const EGLAttrib* attrib_list));
+ MOCK_METHOD1(GetProcAddress,
+              __eglMustCastToProperFunctionPointerType(const char* procname));
+ MOCK_METHOD4(GetSyncAttrib,
+diff --git a/ui/gl/gl_stub_autogen_gl.h b/ui/gl/gl_stub_autogen_gl.h
+index 910edbc61d2543566db4b07905eefac4d8f1ed77..dc0118323282d837b3cf89c59898821d454503f5 100644
+--- a/ui/gl/gl_stub_autogen_gl.h
++++ b/ui/gl/gl_stub_autogen_gl.h
+@@ -1718,4 +1718,4 @@ void glWindowRectanglesEXTFn(GLenum mode,
+                              GLsizei n,
+                              const GLint* box) override {}
+ 
+-#endif  //  UI_GL_GL_STUB_AUTOGEN_GL_H_
++#endif  //  UI_GL_GL_STUB_AUTOGEN_GL_H_
+\ No newline at end of file
