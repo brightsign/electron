@@ -8,10 +8,10 @@ supported on our platform. If it is supported, Chromium does the right
 thing.
 
 diff --git a/ui/ozone/platform/nexus/nexus_window.cc b/ui/ozone/platform/nexus/nexus_window.cc
-index b65dfb891af4129cc824d29f33684c6c290ba8f3..f246f1f64f6099fb01e444981f426b0a47f98a04 100644
+index 5ba6fc13f551faeb0838b97a8fcdeefd06408aa9..4e6835d5146dfadc7983c319aad377b84b7ca53d 100644
 --- a/ui/ozone/platform/nexus/nexus_window.cc
 +++ b/ui/ozone/platform/nexus/nexus_window.cc
-@@ -321,5 +321,14 @@ void NexusWindow::SizeConstraintsChanged() {
+@@ -335,5 +335,14 @@ void NexusWindow::SizeConstraintsChanged() {
    BS_DEBUG( "%s\n", __PRETTY_FUNCTION__);
  }
  
