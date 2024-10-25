@@ -9,10 +9,10 @@ and hides the window from view by ignoring it in the blend equation.
 The default blend equation makes it blended as usual.
 
 diff --git a/ui/ozone/platform/nexus/nexus_window.cc b/ui/ozone/platform/nexus/nexus_window.cc
-index 108136f8e70da0f030abac38b42763eb34df54a0..b65dfb891af4129cc824d29f33684c6c290ba8f3 100644
+index 108136f8e70da0f030abac38b42763eb34df54a0..5ba6fc13f551faeb0838b97a8fcdeefd06408aa9 100644
 --- a/ui/ozone/platform/nexus/nexus_window.cc
 +++ b/ui/ozone/platform/nexus/nexus_window.cc
-@@ -20,6 +20,31 @@
+@@ -20,6 +20,41 @@
                do { if (0) fprintf(stderr, ##__VA_ARGS__); } while (0)
  #define BS_DEBUG2(...) \
                do { if (0) fprintf(stderr, ##__VA_ARGS__); } while (0)
@@ -38,13 +38,23 @@ index 108136f8e70da0f030abac38b42763eb34df54a0..b65dfb891af4129cc824d29f33684c6c
 +    NEXUS_BlendFactor_eZero
 +};
 +
++const NEXUS_BlendEquation ShowSourceColor = {
++    NEXUS_BlendFactor_eSourceColor,
++    NEXUS_BlendFactor_eOne,
++    false,
++    NEXUS_BlendFactor_eDestinationColor,
++    NEXUS_BlendFactor_eInverseSourceAlpha,
++    false,
++    NEXUS_BlendFactor_eZero
++};
++
 +// Define z-order as constant
 +const int kZOrder = 100;
 +
  namespace ui {
  
  NexusWindow::NexusWindow(PlatformWindowDelegate* delegate,
-@@ -40,7 +65,9 @@ NexusWindow::NexusWindow(PlatformWindowDelegate* delegate,
+@@ -40,7 +75,9 @@ NexusWindow::NexusWindow(PlatformWindowDelegate* delegate,
    win_info.y = bounds.y();
    win_info.width = bounds.width();
    win_info.height = bounds.height();
@@ -55,7 +65,7 @@ index 108136f8e70da0f030abac38b42763eb34df54a0..b65dfb891af4129cc824d29f33684c6c
    native_window_ = NXPL_CreateNativeWindowEXT(&win_info);
  
    widget_ = window_manager_->AddWindow(this);
-@@ -58,10 +85,30 @@ NexusWindow::~NexusWindow() {
+@@ -58,10 +95,31 @@ NexusWindow::~NexusWindow() {
  
  void NexusWindow::Show(bool inactive) {
    BS_DEBUG( "%s\n", __PRETTY_FUNCTION__);
@@ -67,6 +77,7 @@ index 108136f8e70da0f030abac38b42763eb34df54a0..b65dfb891af4129cc824d29f33684c6c
 +  win_info.width = bounds_.width();
 +  win_info.height = bounds_.height();
 +  win_info.zOrder = kZOrder;
++  win_info.colorBlend = ShowSourceColor;
 +  NXPL_UpdateNativeWindowEXT(native_window_, &win_info);
  }
  
@@ -86,7 +97,7 @@ index 108136f8e70da0f030abac38b42763eb34df54a0..b65dfb891af4129cc824d29f33684c6c
  }
  
  void NexusWindow::Close() {
-@@ -105,7 +152,11 @@ void NexusWindow::SetBoundsInPixels(const gfx::Rect& bounds) {
+@@ -105,7 +163,14 @@ void NexusWindow::SetBoundsInPixels(const gfx::Rect& bounds) {
      win_info.y = adjusted_bounds.y();
      win_info.width = adjusted_bounds.width();
      win_info.height = adjusted_bounds.height();
@@ -95,6 +106,9 @@ index 108136f8e70da0f030abac38b42763eb34df54a0..b65dfb891af4129cc824d29f33684c6c
 +    if (!visible_ ) {
 +      win_info.colorBlend = HideSourceColor;
 +      win_info.alphaBlend = HideSourceAlpha;
++    }
++    else {
++      win_info.colorBlend = ShowSourceColor;
 +    }
      NXPL_UpdateNativeWindowEXT(native_window_, &win_info);
  
