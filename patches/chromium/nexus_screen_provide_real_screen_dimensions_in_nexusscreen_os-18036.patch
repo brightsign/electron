@@ -1,0 +1,80 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Tariq Bashir <120014322+t-bashir-bs@users.noreply.github.com>
+Date: Mon, 4 Nov 2024 17:55:48 +0000
+Subject: nexus_screen: Provide real screen dimensions in NexusScreen OS-18036
+
+This patch is a cherry pick of https://cam-gerrit.brightsign.info/c/electron/+/12881
+
+It fixes the issue where the screen dimensions were hardcoded to 1x1 in NexusScreen.
+This patch provides the real screen dimensions to Chromium.
+
+diff --git a/ui/ozone/platform/nexus/gl_ozone_egl_nexus.cc b/ui/ozone/platform/nexus/gl_ozone_egl_nexus.cc
+index acc678de28d061df02739ded16dfe43a9b7adffe..ba204dc0fbf05cc50a5bc2aee75bd4037863999c 100644
+--- a/ui/ozone/platform/nexus/gl_ozone_egl_nexus.cc
++++ b/ui/ozone/platform/nexus/gl_ozone_egl_nexus.cc
+@@ -32,7 +32,6 @@ void GLOzoneEglNexus::InitializeHardwareIfNeeded() {
+   if (hardware_initialized_)
+     return;
+ 
+-  NxClient_Join(nullptr);
+   NXPL_RegisterNexusDisplayPlatform(&nxpl_handle_, nullptr);
+   hardware_initialized_ = true;
+ }
+diff --git a/ui/ozone/platform/nexus/nexus_screen.cc b/ui/ozone/platform/nexus/nexus_screen.cc
+index cc9d42f71652ba0c753d9c52bcdb9ac835d505a8..56757c0a039aceff9800120286d6391d081a7d01 100644
+--- a/ui/ozone/platform/nexus/nexus_screen.cc
++++ b/ui/ozone/platform/nexus/nexus_screen.cc
+@@ -3,19 +3,29 @@
+ // found in the LICENSE file.
+ 
+ #include "ui/ozone/platform/nexus/nexus_screen.h"
++#include "nexus_core_utils.h"
++#include "nxclient.h"
+ 
+ namespace ui {
+ 
+ NexusScreen::NexusScreen() {
++  NxClient_Join(nullptr);
+   static constexpr int64_t kNexusDisplayId = 1;
+   static constexpr float kNexusDisplayScale = 1.0f;
+-  static constexpr gfx::Rect kNexusDisplayBounds(gfx::Size(1, 1));
++  NxClient_DisplaySettings settings;
++  NxClient_GetDisplaySettings(&settings);
++  NEXUS_VideoFormatInfo format_info;
++  NEXUS_VideoFormat_GetInfo(settings.format, &format_info);
++  gfx::Rect kNexusDisplayBounds(gfx::Size(format_info.width, format_info.height));
+   display::Display display(kNexusDisplayId);
+   display.SetScaleAndBounds(kNexusDisplayScale, kNexusDisplayBounds);
+   display_list_.AddDisplay(display, display::DisplayList::Type::PRIMARY);
+ }
+ 
+-NexusScreen::~NexusScreen() = default;
++NexusScreen::~NexusScreen()
++{
++  NxClient_Uninit();
++}
+ 
+ const std::vector<display::Display>& NexusScreen::GetAllDisplays() const {
+   return display_list_.displays();
+diff --git a/ui/ozone/platform/nexus/nexus_window.cc b/ui/ozone/platform/nexus/nexus_window.cc
+index 5ba6fc13f551faeb0838b97a8fcdeefd06408aa9..63f8841e05b96fdaa6f331d55aeafa9dcbfc56fc 100644
+--- a/ui/ozone/platform/nexus/nexus_window.cc
++++ b/ui/ozone/platform/nexus/nexus_window.cc
+@@ -68,7 +68,7 @@ NexusWindow::NexusWindow(PlatformWindowDelegate* delegate,
+     cursor_(cursor),
+     window_manager_(window_manager) {
+ 
+-  BS_DEBUG( "%s %dx%d\n", __PRETTY_FUNCTION__, bounds.width(), bounds.height());
++  BS_DEBUG( "%s (%d, %d), %dx%d\n", __PRETTY_FUNCTION__, bounds.x(), bounds.y(), bounds.width(), bounds.height());
+   NXPL_NativeWindowInfoEXT   win_info;
+   NXPL_GetDefaultNativeWindowInfoEXT(&win_info);
+   win_info.x = bounds.x();
+@@ -141,7 +141,7 @@ void NexusWindow::PrepareForShutdown() {
+ }
+ 
+ void NexusWindow::SetBoundsInPixels(const gfx::Rect& bounds) {
+-  BS_DEBUG( "%s %dx%d\n", __PRETTY_FUNCTION__, bounds.width(), bounds.height());
++  BS_DEBUG( "%s (%d, %d), %dx%d\n", __PRETTY_FUNCTION__, bounds.x(), bounds.y(), bounds.width(), bounds.height());
+ 
+   gfx::Rect adjusted_bounds(bounds);
+ 
