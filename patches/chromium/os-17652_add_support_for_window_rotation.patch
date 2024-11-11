@@ -10,14 +10,34 @@ WebContentsImpl and passed to RenderWidgetHostViewAura, which then
 applies the display transform hint on WindowTreeHost if rotation is
 requested. Method setWindowTransform also applies the display transform
 hint on WindowTreeHost if rotation is requested.
-Method WindowTreeHost::GetTransformedWindowBounds was added to
-compute the transformed bounds when Window::SetBoundsInternal and
-WindowTreeHost::UpdateCompositorScaleAndSize are invoked.
-This method ensures bounds are transposed only once by checking the aspect
-ratio of the current and new bounds, avoiding multiple transpositions.
-This aspect ratio comparison approach is more robust than relying on the
-original bounds, as Window::SetBoundsInternal may receive bounds adjusted
-for padding or insets.
+
+Method WindowTreeHost::GetTransformedWindowBounds was added to compute the
+transformed bounds when DesktopNativeWidgetAura::SetBounds is invoked.
+
+Method WindowTreeHost::GetTransformedCompositorBounds was added to compute
+the transformed bounds when Window::SetBoundsInternal and
+WindowTreeHost::GetTransformedCompositorBounds are invoked. This method
+handles the transformed bounds for both popups and windows. Since window
+transforms have the same functionality for both compositor and window bounds,
+the method uses GetTransformedWindowBounds to compute the transformed bounds
+for windows.
+
+For windows these transform methods ensure bounds are transposed only once
+by checking the aspect ratio of the current and new bounds, avoiding
+multiple transpositions. This aspect ratio comparison approach is more robust
+than relying on the original bounds, as Window::SetBoundsInternal may receive
+bounds adjusted for padding or insets.
+For popups we get the initial physical bounds during the initialisation of
+the popup and so use this directly to calculate the transformed bounds, rather
+than comparing aspect ratios.
+
+Method GetTransformedPopupBounds is used to compute the transformed bounds
+of the physical popup window. This method is called in
+RenderWidgetHostViewAura::InitAsPopup and RenderWidgetHostViewAura::SetBounds.
+The transform used by this method is fetched from the parent RenderWidgetHostView
+as this transform is based on the parent screen dimensions.
+
+For input event transforms:
 When GetTransformedWindowBounds is invoked, it also computes an input
 transform based on the display transform hint, which is subsequently
 applied to mouse and touch events in WindowEventDispatcher::PreDispatchEvent.
@@ -80,10 +100,18 @@ index cae377976b7c3b365675eec1b90e39dda2a31441..752eb25084876fa0ddf6b0f0875f6fc9
  };
  
 diff --git a/content/browser/renderer_host/render_widget_host_view_aura.cc b/content/browser/renderer_host/render_widget_host_view_aura.cc
-index 3eafab6894af54f25fcf92a829e8fd46eef6db98..24bc08f8dd59203ea797ef901e363e4c457d3ce0 100644
+index 3eafab6894af54f25fcf92a829e8fd46eef6db98..395be305b02e20a9112d5eabb2e6fabab6788596 100644
 --- a/content/browser/renderer_host/render_widget_host_view_aura.cc
 +++ b/content/browser/renderer_host/render_widget_host_view_aura.cc
-@@ -302,8 +302,23 @@ RenderWidgetHostViewAura::RenderWidgetHostViewAura(
+@@ -126,6 +126,7 @@
+ #include "ui/base/ime/linux/text_edit_command_auralinux.h"
+ #include "ui/base/ime/text_input_flags.h"
+ #include "ui/linux/linux_ui.h"
++#include "ui/ozone/platform_selection.h"
+ #endif
+ 
+ #if BUILDFLAG(IS_CHROMEOS_ASH)
+@@ -302,8 +303,23 @@ RenderWidgetHostViewAura::RenderWidgetHostViewAura(
              .double_tap_to_zoom_enabled;
  
      event_handler_->SetPinchZoomEnabled(owner_delegate->GetWebkitPreferencesForWidget().enable_pinch_zoom);
@@ -108,7 +136,7 @@ index 3eafab6894af54f25fcf92a829e8fd46eef6db98..24bc08f8dd59203ea797ef901e363e4c
    host()->render_frame_metadata_provider()->AddObserver(this);
  }
  
-@@ -326,6 +341,11 @@ void RenderWidgetHostViewAura::InitAsChild(gfx::NativeView parent_view) {
+@@ -326,6 +342,11 @@ void RenderWidgetHostViewAura::InitAsChild(gfx::NativeView parent_view) {
        UpdateSystemCursorSize(cursor_client->GetSystemCursorSize());
    }
  
@@ -120,8 +148,128 @@ index 3eafab6894af54f25fcf92a829e8fd46eef6db98..24bc08f8dd59203ea797ef901e363e4c
  #if BUILDFLAG(IS_WIN)
    // This will fetch and set the display features.
    EnsureDevicePostureServiceConnection();
+@@ -374,14 +395,31 @@ void RenderWidgetHostViewAura::InitAsPopup(
+         popup_parent_host_view_->window_, window_);
+   }
+ 
++  window_transform_ = popup_parent_host_view_->GetDisplayTransform();
++  gfx::Rect final_bounds_in_screen(bounds_in_screen);
++  aura::WindowTreeHost* parent_host = popup_parent_host_view_->window_->GetHost();
++  if (parent_host) {
++    original_popup_bounds_ = bounds_in_screen;
++    final_bounds_in_screen = GetTransformedPopupBounds(
++         bounds_in_screen, parent_host->GetBoundsInPixels(), parent_host->GetPopupTransform());
++  }
++
++  // Disable using anchor rect for all platforms as when using it with Wayland it is
++  // not positioning pop ups in the right place when they are near to edges of the
++  // screen (they will get clipped). Also, Nexus doesn't use it.
++  // This will result in us having the same behavior as when using Nexus and also
++  // mean we don't have to add additional functionality to transform the anchor rect
++  // when the html window is rotated.
++#if 0
+   ui::OwnedWindowAnchor owned_window_anchor = {
+       anchor_rect, ui::OwnedWindowAnchorPosition::kBottomLeft,
+       ui::OwnedWindowAnchorGravity::kBottomRight,
+       ui::OwnedWindowConstraintAdjustment::kAdjustmentFlipY};
+   window_->SetProperty(aura::client::kOwnedWindowAnchor, owned_window_anchor);
++#endif
+ 
+   aura::Window* root = popup_parent_host_view_->window_->GetRootWindow();
+-  aura::client::ParentWindowWithContext(window_, root, bounds_in_screen,
++  aura::client::ParentWindowWithContext(window_, root, final_bounds_in_screen,
+                                         display::kInvalidDisplayId);
+ 
+   SetBounds(bounds_in_screen);
+@@ -405,6 +443,11 @@ void RenderWidgetHostViewAura::InitAsPopup(
+   if (cursor_client)
+     UpdateSystemCursorSize(cursor_client->GetSystemCursorSize());
+ 
++  aura::WindowTreeHost* host = window_->GetHost();
++  if (host) {
++    host->SetPopupBounds(bounds_in_screen);
++    host->SetDisplayTransformHint(window_transform_);
++  }
+ #if BUILDFLAG(IS_WIN)
+   // This will fetch and set the display features.
+   EnsureDevicePostureServiceConnection();
+@@ -425,7 +468,14 @@ void RenderWidgetHostViewAura::SetSize(const gfx::Size& size) {
+ }
+ 
+ void RenderWidgetHostViewAura::SetBounds(const gfx::Rect& rect) {
+-  gfx::Point relative_origin(rect.origin());
++  gfx::Rect transformed_rect(rect);
++  aura::WindowTreeHost* parent_host = popup_parent_host_view_->window_->GetHost();;
++  if (parent_host) {
++    transformed_rect = GetTransformedPopupBounds(
++        rect, parent_host->GetBoundsInPixels(), parent_host->GetPopupTransform());
++  }
++
++  gfx::Point relative_origin(transformed_rect.origin());
+ 
+   // RenderWidgetHostViewAura::SetBounds() takes screen coordinates, but
+   // Window::SetBounds() takes parent coordinates, so do the conversion here.
+@@ -439,7 +489,7 @@ void RenderWidgetHostViewAura::SetBounds(const gfx::Rect& rect) {
+     }
+   }
+ 
+-  InternalSetBounds(gfx::Rect(relative_origin, rect.size()));
++  InternalSetBounds(gfx::Rect(relative_origin, transformed_rect.size()));
+ }
+ 
+ gfx::NativeView RenderWidgetHostViewAura::GetNativeView() {
+@@ -3086,4 +3136,49 @@ ui::Compositor* RenderWidgetHostViewAura::GetCompositor() {
+   return window_->GetHost()->compositor();
+ }
+ 
++gfx::Rect RenderWidgetHostViewAura::GetTransformedPopupBounds(const gfx::Rect& new_bounds, const gfx::Rect& parent_bounds, const gfx::Transform& parent_popup_transform) {
++  gfx::Rect transformed_bounds(new_bounds);
++
++  // Wayland draws the popup window in the parent window's coordinate space. However, X11 (for CI)
++  // and Nexus draw the popup window in the root window's coordinate space.
++  // This means we need to remove the parent window offset, then apply the parent_popup_transform,
++  // and then add the parent window offset back for platforms other than wayland.
++  transformed_bounds.Offset(-parent_bounds.OffsetFromOrigin());
++  transformed_bounds.set_origin(parent_popup_transform.MapPoint(transformed_bounds.origin()));
++#if BUILDFLAG(IS_LINUX)
++  if (std::string("wayland") != ui::GetOzonePlatformName())
++#endif
++    transformed_bounds.Offset(parent_bounds.OffsetFromOrigin());
++
++  switch (window_transform_) {
++    case gfx::OVERLAY_TRANSFORM_ROTATE_90:
++      transformed_bounds.set_size(gfx::Size(original_popup_bounds_.height(), original_popup_bounds_.width()));
++      transformed_bounds.Offset(-original_popup_bounds_.height(), 0);
++      break;
++
++    case gfx::OVERLAY_TRANSFORM_ROTATE_180:
++      transformed_bounds.Offset(-original_popup_bounds_.width(), -original_popup_bounds_.height());
++      break;
++
++    case gfx::OVERLAY_TRANSFORM_ROTATE_270:
++      transformed_bounds.set_size(gfx::Size(original_popup_bounds_.height(), original_popup_bounds_.width()));
++      transformed_bounds.Offset(0, -original_popup_bounds_.width());
++      break;
++
++    default:
++      break;
++  }
++  return transformed_bounds;
++}
++
++gfx::OverlayTransform RenderWidgetHostViewAura::GetDisplayTransform() {
++  gfx::OverlayTransform transform = gfx::OVERLAY_TRANSFORM_NONE;
++
++  aura::WindowTreeHost* host = window_->GetHost();
++  if (host) {
++    transform = host->GetDisplayTransformHint();
++  }
++  return transform;
++}
++
+ }  // namespace content
 diff --git a/content/browser/renderer_host/render_widget_host_view_aura.h b/content/browser/renderer_host/render_widget_host_view_aura.h
-index f8a8894f2daddcc6e3c1df6c48645fe8fadeb4b2..1392cc1b7f01c00b93f9d15dec96efabc58232cc 100644
+index f8a8894f2daddcc6e3c1df6c48645fe8fadeb4b2..39e5610e4ca6587ab2a9faaa8d0b5c703a34bc73 100644
 --- a/content/browser/renderer_host/render_widget_host_view_aura.h
 +++ b/content/browser/renderer_host/render_widget_host_view_aura.h
 @@ -47,6 +47,7 @@
@@ -132,11 +280,23 @@ index f8a8894f2daddcc6e3c1df6c48645fe8fadeb4b2..1392cc1b7f01c00b93f9d15dec96efab
  #include "ui/gfx/selection_bound.h"
  #include "ui/wm/public/activation_delegate.h"
  
-@@ -837,6 +838,8 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
+@@ -418,6 +419,10 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
+ 
+   ui::Compositor* GetCompositor() override;
+ 
++  gfx::Rect GetTransformedPopupBounds(
++      const gfx::Rect& new_bounds, const gfx::Rect& parent_bounds, const gfx::Transform& parent_popup_transform);
++  gfx::OverlayTransform GetDisplayTransform();
++
+   void AllocateLocalSurfaceIdOnNextShow() {
+     allocate_local_surface_id_on_next_show_ = true;
+   }
+@@ -837,6 +842,9 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
  
    bool allocate_local_surface_id_on_next_show_ = false;
  
 +  gfx::OverlayTransform window_transform_ = gfx::OVERLAY_TRANSFORM_NONE;
++  gfx::Rect original_popup_bounds_;
 +
    base::WeakPtrFactory<RenderWidgetHostViewAura> weak_ptr_factory_{this};
  };
@@ -197,17 +357,18 @@ index ca35e4d6cf8fc49b8275a4b49bc4da8019282c3d..13fe8c8640bc896a76f9e5e0eba0d95f
 +  WindowTransformType window_transform_type = kWindowTransformTypeNone;
  };
 diff --git a/ui/aura/window.cc b/ui/aura/window.cc
-index 1e4ffa69feb73a04b8675bd60068163e288177c6..2c51e30c90c7fa9e2f517683dc7156de16dba879 100644
+index 1e4ffa69feb73a04b8675bd60068163e288177c6..a71f6651a16c61e5f17601a88bf1d0de86d91194 100644
 --- a/ui/aura/window.cc
 +++ b/ui/aura/window.cc
-@@ -966,10 +966,15 @@ bool Window::HitTest(const gfx::Point& local_point) {
+@@ -966,10 +966,16 @@ bool Window::HitTest(const gfx::Point& local_point) {
  
  void Window::SetBoundsInternal(const gfx::Rect& new_bounds) {
    gfx::Rect old_bounds = GetTargetBounds();
 +  gfx::Rect final_bounds(new_bounds);
 +  WindowTreeHost* host = GetHost();
 +  if (host) {
-+    final_bounds = host->GetTransformedWindowBounds(new_bounds);
++    // The ui:Layer bounds that we will be setting should match the compositor bounds.
++    final_bounds = host->GetTransformedCompositorBounds(new_bounds);
 +  }
  
    // Always need to set the layer's bounds -- even if it is to the same thing.
@@ -217,7 +378,7 @@ index 1e4ffa69feb73a04b8675bd60068163e288177c6..2c51e30c90c7fa9e2f517683dc7156de
  
    // If we are currently not the layer's delegate, we will not get bounds
    // changed notification from the layer (this typically happens after animating
-@@ -1415,6 +1420,11 @@ void Window::OnLayerBoundsChanged(const gfx::Rect& old_bounds,
+@@ -1415,6 +1421,11 @@ void Window::OnLayerBoundsChanged(const gfx::Rect& old_bounds,
    WindowOcclusionTracker::ScopedPause pause_occlusion_tracking;
  
    bounds_ = layer()->bounds();
@@ -286,10 +447,10 @@ index 055c4ad18ba0a7c8175ec8ef5ad39837776e4d13..49555a5608382c4e3d0575f814e434e7
    if (ShouldUseExtendedBounds(window)) {
      hit_test_rect_mouse->Inset(mouse_extend_);
 diff --git a/ui/aura/window_tree_host.cc b/ui/aura/window_tree_host.cc
-index 70906e64b4b7849aa42421b17caf16d08c922112..700f361a35c6ae0b1b71c706883828c8b85e99e6 100644
+index 70906e64b4b7849aa42421b17caf16d08c922112..6527d15683c7055baa358fb5e2b90e198d5fc9bc 100644
 --- a/ui/aura/window_tree_host.cc
 +++ b/ui/aura/window_tree_host.cc
-@@ -230,11 +230,81 @@ gfx::Transform WindowTreeHost::GetInverseRootTransform() const {
+@@ -230,11 +230,109 @@ gfx::Transform WindowTreeHost::GetInverseRootTransform() const {
  }
  
  void WindowTreeHost::SetDisplayTransformHint(gfx::OverlayTransform transform) {
@@ -307,21 +468,39 @@ index 70906e64b4b7849aa42421b17caf16d08c922112..700f361a35c6ae0b1b71c706883828c8
 +  return input_transform_.MapPoint(point);
 +}
 +
++gfx::Rect WindowTreeHost::GetTransformedCompositorBounds(const gfx::Rect& new_bounds) {
++  if (IsPopup()) {
++    // Ensure that the compositor size is always the same as the original popup bounds.
++    return gfx::Rect(new_bounds.origin(), gfx::Size(original_popup_bounds_.width(), original_popup_bounds_.height()));
++  }
++
++  return GetTransformedWindowBounds(new_bounds);
++}
++
 +gfx::Rect WindowTreeHost::GetTransformedWindowBounds(const gfx::Rect& new_bounds) {
 +  gfx::Rect transformed_bounds(new_bounds);
-+  gfx::Rect window_bounds = GetBoundsInPixels();
 +
-+  if ((transform_hint_ == gfx::OVERLAY_TRANSFORM_ROTATE_90 ||
-+       transform_hint_ == gfx::OVERLAY_TRANSFORM_ROTATE_270) &&
-+       window_bounds.height() && window_bounds.width()) {
-+    float window_aspect_ratio = (float)window_bounds.width() / (float)window_bounds.height();
-+    float new_aspect_ratio = (float)new_bounds.width() / (float)new_bounds.height();
++  if (IsPopup()) {
++    if (transform_hint_ == gfx::OVERLAY_TRANSFORM_ROTATE_90 ||
++        transform_hint_ == gfx::OVERLAY_TRANSFORM_ROTATE_270) {
++      // Make the window bounds equal the original popup bounds with the width and height swapped.
++      transformed_bounds.set_size(gfx::Size(original_popup_bounds_.height(), original_popup_bounds_.width()));
++    }
++  }
++  else {
++    gfx::Rect window_bounds = GetBoundsInPixels();
++    if ((transform_hint_ == gfx::OVERLAY_TRANSFORM_ROTATE_90 ||
++         transform_hint_ == gfx::OVERLAY_TRANSFORM_ROTATE_270) &&
++        window_bounds.height() && window_bounds.width()) {
++      float window_aspect_ratio = (float)window_bounds.width() / (float)window_bounds.height();
++      float new_aspect_ratio = (float)new_bounds.width() / (float)new_bounds.height();
 +
-+    // If the aspect ratio of the window and new bounds are the same it means that new_bounds
-+    // has not already been transposed.
-+    if ((window_aspect_ratio > 1.0 && new_aspect_ratio > 1.0) ||
-+        (window_aspect_ratio < 1.0 && new_aspect_ratio < 1.0)) {
-+      transformed_bounds.Transpose();
++      // If the aspect ratio of the window and new bounds are the same it means that new_bounds
++      // has not already been transposed.
++      if ((window_aspect_ratio > 1.0 && new_aspect_ratio > 1.0) ||
++          (window_aspect_ratio < 1.0 && new_aspect_ratio < 1.0)) {
++        transformed_bounds.Transpose();
++      }
 +    }
 +  }
 +  return transformed_bounds;
@@ -349,21 +528,31 @@ index 70906e64b4b7849aa42421b17caf16d08c922112..700f361a35c6ae0b1b71c706883828c8
 +
 +void WindowTreeHost::CalculateInputTransform(gfx::OverlayTransform transform) {
 +  input_transform_.MakeIdentity();
++  popup_transform_.MakeIdentity();
 +
 +  switch (transform) {
 +    case gfx::OVERLAY_TRANSFORM_ROTATE_90:
 +      input_transform_.Translate(0, GetBoundsInPixels().width());
 +      input_transform_.Rotate(-90);
++
++      popup_transform_.Translate(GetBoundsInPixels().width(), 0);
++      popup_transform_.Rotate(90);
 +      break;
 +
 +    case gfx::OVERLAY_TRANSFORM_ROTATE_180:
 +      input_transform_.Translate(GetBoundsInPixels().width(), GetBoundsInPixels().height());
 +      input_transform_.Rotate(180);
++
++      popup_transform_.Translate(GetBoundsInPixels().width(), GetBoundsInPixels().height());
++      popup_transform_.Rotate(180);
 +      break;
 +
 +    case gfx::OVERLAY_TRANSFORM_ROTATE_270:
 +      input_transform_.Translate(GetBoundsInPixels().height(), 0);
 +      input_transform_.Rotate(90);
++
++      popup_transform_.Translate(0, GetBoundsInPixels().height());
++      popup_transform_.Rotate(-90);
 +      break;
 +
 +    default:
@@ -372,7 +561,7 @@ index 70906e64b4b7849aa42421b17caf16d08c922112..700f361a35c6ae0b1b71c706883828c8
  }
  
  gfx::Transform WindowTreeHost::GetRootTransformForLocalEventCoordinates()
-@@ -253,13 +323,8 @@ gfx::Transform WindowTreeHost::GetInverseRootTransformForLocalEventCoordinates()
+@@ -253,19 +351,15 @@ gfx::Transform WindowTreeHost::GetInverseRootTransformForLocalEventCoordinates()
  
  void WindowTreeHost::UpdateCompositorScaleAndSize(
      const gfx::Size& new_size_in_pixels) {
@@ -384,12 +573,19 @@ index 70906e64b4b7849aa42421b17caf16d08c922112..700f361a35c6ae0b1b71c706883828c8
 -    new_bounds.Transpose();
 -  }
 +  gfx::Rect orig_bounds(new_size_in_pixels);
-+  gfx::Rect new_bounds = GetTransformedWindowBounds(orig_bounds);
++  gfx::Rect new_bounds = GetTransformedCompositorBounds(orig_bounds);
  
    // Allocate a new LocalSurfaceId for the new size or scale factor.
    window_->AllocateLocalSurfaceId();
+   ScopedLocalSurfaceIdValidator lsi_validator(window());
+   compositor_->SetScaleAndSize(device_scale_factor_, new_bounds.size(),
+                                window_->GetLocalSurfaceId());
++  CalculateInputTransform(transform_hint_);
+ }
+ 
+ void WindowTreeHost::ConvertDIPToScreenInPixels(gfx::Point* point) const {
 diff --git a/ui/aura/window_tree_host.h b/ui/aura/window_tree_host.h
-index 6a5146097d058802985480e2a2fadb9001246dfd..6ad03d30d45eee96bb661f62c1eb1a8cdcc975bd 100644
+index 6a5146097d058802985480e2a2fadb9001246dfd..6736b1c1e8aa22bdbb3c02f29a533d08e4f15708 100644
 --- a/ui/aura/window_tree_host.h
 +++ b/ui/aura/window_tree_host.h
 @@ -29,6 +29,7 @@
@@ -400,18 +596,23 @@ index 6a5146097d058802985480e2a2fadb9001246dfd..6ad03d30d45eee96bb661f62c1eb1a8c
  
  namespace gfx {
  class Point;
-@@ -124,6 +125,10 @@ class AURA_EXPORT WindowTreeHost : public ui::ImeKeyEventDispatcher,
+@@ -124,6 +125,15 @@ class AURA_EXPORT WindowTreeHost : public ui::ImeKeyEventDispatcher,
  
    void SetDisplayTransformHint(gfx::OverlayTransform transform);
  
 +  gfx::Point GetTransformedPoint(const gfx::Point& point);
++  gfx::Rect GetTransformedCompositorBounds(const gfx::Rect& new_bounds);
 +  gfx::Rect GetTransformedWindowBounds(const gfx::Rect& new_bounds);
 +  gfx::Rect GetNonTransformedWindowBounds(const gfx::Rect& new_bounds);
++  gfx::Transform GetPopupTransform() const { return popup_transform_; }
++  gfx::OverlayTransform GetDisplayTransformHint() const { return transform_hint_; }
++  bool IsPopup() const { return !original_popup_bounds_.IsEmpty(); }
++  void SetPopupBounds(const gfx::Rect& bounds) { original_popup_bounds_ = bounds; }
 +
    // These functions are used in event translation for translating the local
    // coordinates of LocatedEvents. Default implementation calls to non-local
    // ones (e.g. GetRootTransform()).
-@@ -444,6 +449,8 @@ class AURA_EXPORT WindowTreeHost : public ui::ImeKeyEventDispatcher,
+@@ -444,6 +454,8 @@ class AURA_EXPORT WindowTreeHost : public ui::ImeKeyEventDispatcher,
    void OnFrameSinksToThrottleUpdated(
        const base::flat_set<viz::FrameSinkId>& ids) final;
  
@@ -420,14 +621,33 @@ index 6a5146097d058802985480e2a2fadb9001246dfd..6ad03d30d45eee96bb661f62c1eb1a8c
    // We don't use a std::unique_ptr for |window_| since we need this ptr to be
    // valid during its deletion. (Window's dtor notifies observers that may
    // attempt to reach back up to access this object which will be valid until
-@@ -506,6 +513,10 @@ class AURA_EXPORT WindowTreeHost : public ui::ImeKeyEventDispatcher,
+@@ -506,6 +518,12 @@ class AURA_EXPORT WindowTreeHost : public ui::ImeKeyEventDispatcher,
    // hiding. Non-null while waiting for state to be released (transitioning).
    std::unique_ptr<HideHelper> hide_helper_;
  
 +  gfx::OverlayTransform transform_hint_ = gfx::OVERLAY_TRANSFORM_NONE;
 +
 +  gfx::Transform input_transform_;
++  gfx::Transform popup_transform_;
++  gfx::Rect original_popup_bounds_;
 +
    base::WeakPtrFactory<WindowTreeHost> weak_factory_{this};
  };
  
+diff --git a/ui/views/widget/desktop_aura/desktop_native_widget_aura.cc b/ui/views/widget/desktop_aura/desktop_native_widget_aura.cc
+index 42846c6773e2addf213dece2e8cc6817e74efd04..adc320b6776e553167eeefc9f546689b40baa9f3 100644
+--- a/ui/views/widget/desktop_aura/desktop_native_widget_aura.cc
++++ b/ui/views/widget/desktop_aura/desktop_native_widget_aura.cc
+@@ -864,7 +864,11 @@ std::string DesktopNativeWidgetAura::GetWorkspace() const {
+ void DesktopNativeWidgetAura::SetBounds(const gfx::Rect& bounds) {
+   if (!desktop_window_tree_host_)
+     return;
+-  desktop_window_tree_host_->SetBoundsInDIP(bounds);
++  gfx::Rect final_bounds(bounds);
++  if (host_ && host_->IsPopup()) {
++    final_bounds = host_->GetTransformedWindowBounds(bounds);
++  }
++  desktop_window_tree_host_->SetBoundsInDIP(final_bounds);
+ }
+ 
+ void DesktopNativeWidgetAura::SetBoundsConstrained(const gfx::Rect& bounds) {
