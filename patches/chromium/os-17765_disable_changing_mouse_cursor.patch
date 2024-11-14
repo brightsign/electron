@@ -1,0 +1,48 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Jon Dye <jdye@brightsign.biz>
+Date: Thu, 14 Nov 2024 10:22:18 +0000
+Subject: OS-17765: Disable changing mouse cursor
+
+We don't want chromium to set the mouse cursor as we're setting it from
+within the brightsign app. This patch disables calls to SetCursor in
+chromium so it doesn't override the cursor we've applied. We observed
+the cursor being overridden when the screen was rotated.
+
+diff --git a/ui/views/widget/desktop_aura/desktop_native_cursor_manager.cc b/ui/views/widget/desktop_aura/desktop_native_cursor_manager.cc
+index 8e43b394720a09fe815a5a11350061fb0a165c06..710a07137f4ecb5ae51b167fee070887f13042bd 100644
+--- a/ui/views/widget/desktop_aura/desktop_native_cursor_manager.cc
++++ b/ui/views/widget/desktop_aura/desktop_native_cursor_manager.cc
+@@ -40,14 +40,14 @@ void DesktopNativeCursorManager::SetDisplay(
+ void DesktopNativeCursorManager::SetCursor(
+     gfx::NativeCursor cursor,
+     wm::NativeCursorManagerDelegate* delegate) {
+-  gfx::NativeCursor new_cursor = cursor;
+-  cursor_loader_.SetPlatformCursor(&new_cursor);
+-  delegate->CommitCursor(new_cursor);
+-
+-  if (delegate->IsCursorVisible()) {
+-    for (auto* host : hosts_)
+-      host->SetCursor(new_cursor);
+-  }
++  gfx::NativeCursor invisible_cursor(ui::mojom::CursorType::kNone);
++  cursor_loader_.SetPlatformCursor(&invisible_cursor);
++  delegate->CommitCursor(invisible_cursor);
++
++  //if (delegate->IsCursorVisible()) {
++  //  for (auto* host : hosts_)
++  //    host->SetCursor(new_cursor);
++  //}
+ }
+ 
+ void DesktopNativeCursorManager::SetVisibility(
+@@ -62,8 +62,8 @@ void DesktopNativeCursorManager::SetVisibility(
+   } else {
+     gfx::NativeCursor invisible_cursor(ui::mojom::CursorType::kNone);
+     cursor_loader_.SetPlatformCursor(&invisible_cursor);
+-    for (auto* host : hosts_)
+-      host->SetCursor(invisible_cursor);
++    //for (auto* host : hosts_)
++    //  host->SetCursor(invisible_cursor);
+   }
+ 
+   for (auto* host : hosts_)
