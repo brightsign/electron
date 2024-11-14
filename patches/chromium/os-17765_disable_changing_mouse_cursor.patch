@@ -1,0 +1,51 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Jon Dye <jdye@brightsign.biz>
+Date: Thu, 14 Nov 2024 10:22:18 +0000
+Subject: OS-17765: Disable changing mouse cursor
+
+We don't want chromium to set the mouse cursor as we're setting it from
+within the brightsign app. This patch disables calls to SetCursor in
+chromium so it doesn't override the cursor we've applied. We observed
+the cursor being overridden when the screen was rotated.
+
+diff --git a/ui/views/widget/desktop_aura/desktop_native_cursor_manager.cc b/ui/views/widget/desktop_aura/desktop_native_cursor_manager.cc
+index 9e25f070df09b6c407aab52ac09da14fb69be8df..32c7883388ef22fc480597ef3129a4d8685c9c65 100644
+--- a/ui/views/widget/desktop_aura/desktop_native_cursor_manager.cc
++++ b/ui/views/widget/desktop_aura/desktop_native_cursor_manager.cc
+@@ -41,15 +41,14 @@ void DesktopNativeCursorManager::SetDisplay(
+ void DesktopNativeCursorManager::SetCursor(
+     gfx::NativeCursor cursor,
+     wm::NativeCursorManagerDelegate* delegate) {
+-  gfx::NativeCursor new_cursor = cursor;
+-  cursor_loader_.SetPlatformCursor(&new_cursor);
+-  delegate->CommitCursor(new_cursor);
+-
+-  if (delegate->IsCursorVisible()) {
+-    for (aura::WindowTreeHost* host : hosts_) {
+-      host->SetCursor(new_cursor);
+-    }
+-  }
++  gfx::NativeCursor invisible_cursor(ui::mojom::CursorType::kNone);
++  cursor_loader_.SetPlatformCursor(&invisible_cursor);
++  delegate->CommitCursor(invisible_cursor);
++
++  //if (delegate->IsCursorVisible()) {
++  //  for (auto* host : hosts_)
++  //    host->SetCursor(new_cursor);
++  //}
+ }
+ 
+ void DesktopNativeCursorManager::SetVisibility(
+@@ -64,9 +63,9 @@ void DesktopNativeCursorManager::SetVisibility(
+   } else {
+     gfx::NativeCursor invisible_cursor(ui::mojom::CursorType::kNone);
+     cursor_loader_.SetPlatformCursor(&invisible_cursor);
+-    for (aura::WindowTreeHost* host : hosts_) {
+-      host->SetCursor(invisible_cursor);
+-    }
++    // for (aura::WindowTreeHost* host : hosts_) {
++    //   host->SetCursor(invisible_cursor);
++    // }
+   }
+ 
+   for (aura::WindowTreeHost* host : hosts_) {
