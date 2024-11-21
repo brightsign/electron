@@ -6616,6 +6616,7 @@ describe('BrowserWindow module', () => {
   });
 
   ifdescribe(process.platform === 'linux')('window rotation', () => {
+    const screenSize = screen.getPrimaryDisplay().size;
     const fixturesPath = path.resolve(__dirname, '..', 'spec', 'fixtures');
     const url = `file://${fixturesPath}/pages/rotation-test.html`;
     const landscapeBounds = { x: 0, y: 0, width: 600, height: 400 };
@@ -6623,14 +6624,41 @@ describe('BrowserWindow module', () => {
     const squareBounds = { x: 0, y: 0, width: 350, height: 350 };
     const offsetBounds = { x: 100, y: 200, width: 600, height: 400 };
     const negativeOffsetBounds = { x: -5, y: -5, width: 600, height: 400 };
+    const fullScreenBounds = { x: 0, y: 0, width: screenSize.width - 1, height: screenSize.height - 1 };
+    const SELECT_HEIGHT = 10;
+    const SELECT_WIDTH = 20;
+    const SELECT_OPTION_HEIGHT = 18;
+
+    // Select popups and will have a border/shadow so want to pick a pixel in the middle when comparing the colour.
+    const SELECT_HEIGHT_OFFSET = SELECT_HEIGHT / 2;
+    const SELECT_WIDTH_OFFSET = SELECT_WIDTH / 2;
+
+    // The first option will be highlighted so we want to pick the second.
+    // Also, select popup options have a border/shadow so we want to pick a pixel in the middle when comparing the colour.
+    const SELECT_OPTION_HEIGHT_OFFSET = SELECT_HEIGHT + SELECT_OPTION_HEIGHT * 1.5;
+    const SELECT_OPTION_WIDTH_OFFSET = SELECT_WIDTH / 2;
+
+    const MOUSE_X_OFFSET = 10;
+    const MOUSE_Y_OFFSET = 5;
     let w: BrowserWindow;
+    const clickMouse = (w: BrowserWindow, pos: {x: number, y: number}) => {
+      w.webContents.sendInputEvent({ type: 'mouseDown', clickCount: 1, x: pos.x, y: pos.y });
+      w.webContents.sendInputEvent({ type: 'mouseUp', clickCount: 1, x: pos.x, y: pos.y });
+    };
+    // Enable to help debug problems.
+    // const dumpImageForDebug = async (filename: string) => {
+    //   const screen = await captureScreen();
+    //   const pngImage = screen.toPNG();
+    //   fs.writeFileSync(filename, pngImage);
+    // }
 
     describe('webpreference', () => {
       afterEach(closeAllWindows);
       after(() => { w = null as unknown as BrowserWindow; });
 
       [{ name: 'landscape', bounds: landscapeBounds }, { name: 'portrait', bounds: portraitBounds }, { name: 'square', bounds: squareBounds },
-        { name: 'x,y offset', bounds: offsetBounds }, { name: 'x,y negative offset', bounds: negativeOffsetBounds }].forEach((item) => {
+        { name: 'x,y offset', bounds: offsetBounds }, { name: 'x,y negative offset', bounds: negativeOffsetBounds },
+        { name: 'full screen', bounds: fullScreenBounds }].forEach((item) => {
         it(`identity: ${item.name}`, async () => {
           w = new BrowserWindow({ ...item.bounds, frame: false, webPreferences: { windowTransform: 'none' } });
           await w.loadURL(url);
@@ -6640,9 +6668,19 @@ describe('BrowserWindow module', () => {
           expectBoundsEqual(w.getBounds(), item.bounds);
 
           await setTimeout(500);
-          const screenCapture = await captureScreen();
-          const squareColor = getPixelColor(screenCapture, { x: Math.max(0, item.bounds.x), y: Math.max(0, item.bounds.y) });
-          expect(areColorsSimilar(squareColor, HexColors.RED)).to.be.true();
+          const selectColour = getPixelColor(await captureScreen(), {
+            x: item.bounds.x + SELECT_WIDTH_OFFSET,
+            y: item.bounds.y + SELECT_HEIGHT_OFFSET
+          });
+          expect(areColorsSimilar(selectColour, HexColors.RED)).to.be.true();
+
+          clickMouse(w, { x: MOUSE_X_OFFSET, y: MOUSE_Y_OFFSET });
+          await setTimeout(500);
+          const selectOptionColour = getPixelColor(await captureScreen(), {
+            x: item.bounds.x + SELECT_OPTION_WIDTH_OFFSET,
+            y: item.bounds.y + SELECT_OPTION_HEIGHT_OFFSET
+          });
+          expect(areColorsSimilar(selectOptionColour, HexColors.GREEN)).to.be.true();
         });
 
         it(`rot90: ${item.name}`, async () => {
@@ -6654,9 +6692,19 @@ describe('BrowserWindow module', () => {
           expectBoundsEqual(w.getBounds(), item.bounds);
 
           await setTimeout(500);
-          const screenCapture = await captureScreen();
-          const squareColor = getPixelColor(screenCapture, { x: item.bounds.x + item.bounds.width - 5, y: item.bounds.y + 5 });
-          expect(areColorsSimilar(squareColor, HexColors.RED)).to.be.true();
+          const selectColour = getPixelColor(await captureScreen(), {
+            x: item.bounds.x + item.bounds.width - SELECT_HEIGHT_OFFSET,
+            y: item.bounds.y + SELECT_WIDTH_OFFSET
+          });
+          expect(areColorsSimilar(selectColour, HexColors.RED)).to.be.true();
+
+          clickMouse(w, { x: MOUSE_X_OFFSET, y: MOUSE_Y_OFFSET });
+          await setTimeout(500);
+          const selectOptionColour = getPixelColor(await captureScreen(), {
+            x: item.bounds.x + item.bounds.width - SELECT_OPTION_HEIGHT_OFFSET,
+            y: item.bounds.y + SELECT_OPTION_WIDTH_OFFSET
+          });
+          expect(areColorsSimilar(selectOptionColour, HexColors.GREEN)).to.be.true();
         });
 
         it(`rot180: ${item.name}`, async () => {
@@ -6668,9 +6716,19 @@ describe('BrowserWindow module', () => {
           expectBoundsEqual(w.getBounds(), item.bounds);
 
           await setTimeout(500);
-          const screenCapture = await captureScreen();
-          const squareColor = getPixelColor(screenCapture, { x: item.bounds.x + item.bounds.width - 5, y: item.bounds.y + item.bounds.height - 5 });
-          expect(areColorsSimilar(squareColor, HexColors.RED)).to.be.true();
+          const selectColour = getPixelColor(await captureScreen(), {
+            x: item.bounds.x + item.bounds.width - SELECT_WIDTH_OFFSET,
+            y: item.bounds.y + item.bounds.height - SELECT_HEIGHT_OFFSET
+          });
+          expect(areColorsSimilar(selectColour, HexColors.RED)).to.be.true();
+
+          clickMouse(w, { x: MOUSE_X_OFFSET, y: MOUSE_Y_OFFSET });
+          await setTimeout(500);
+          const selectOptionColour = getPixelColor(await captureScreen(), {
+            x: item.bounds.x + item.bounds.width - SELECT_OPTION_WIDTH_OFFSET,
+            y: item.bounds.y + item.bounds.height - SELECT_OPTION_HEIGHT_OFFSET
+          });
+          expect(areColorsSimilar(selectOptionColour, HexColors.GREEN)).to.be.true();
         });
 
         it(`rot270: ${item.name}`, async () => {
@@ -6682,9 +6740,19 @@ describe('BrowserWindow module', () => {
           expectBoundsEqual(w.getBounds(), item.bounds);
 
           await setTimeout(500);
-          const screenCapture = await captureScreen();
-          const squareColor = getPixelColor(screenCapture, { x: item.bounds.x + 5, y: item.bounds.y + item.bounds.height - 5 });
-          expect(areColorsSimilar(squareColor, HexColors.RED)).to.be.true();
+          const selectColour = getPixelColor(await captureScreen(), {
+            x: item.bounds.x + SELECT_HEIGHT_OFFSET,
+            y: item.bounds.y + item.bounds.height - SELECT_WIDTH_OFFSET
+          });
+          expect(areColorsSimilar(selectColour, HexColors.RED)).to.be.true();
+
+          clickMouse(w, { x: MOUSE_X_OFFSET, y: MOUSE_Y_OFFSET });
+          await setTimeout(500);
+          const selectOptionColour = getPixelColor(await captureScreen(), {
+            x: item.bounds.x + SELECT_OPTION_HEIGHT_OFFSET,
+            y: item.bounds.y + item.bounds.height - SELECT_OPTION_WIDTH_OFFSET
+          });
+          expect(areColorsSimilar(selectOptionColour, HexColors.GREEN)).to.be.true();
         });
       });
     });
@@ -6698,6 +6766,7 @@ describe('BrowserWindow module', () => {
         await closeWindow(w);
         w = null as unknown as BrowserWindow;
       });
+      afterEach(() => { clickMouse(w, { x: 500, y: 500 }); });
 
       it('rot90', async () => {
         w.setWindowTransform('rot90');
@@ -6707,9 +6776,19 @@ describe('BrowserWindow module', () => {
         expect(windowHeight).to.be.equal(landscapeBounds.width);
         expectBoundsEqual(w.getBounds(), landscapeBounds);
 
-        const screenCapture = await captureScreen();
-        const squareColor = getPixelColor(screenCapture, { x: landscapeBounds.x + landscapeBounds.width - 5, y: landscapeBounds.y + 5 });
-        expect(areColorsSimilar(squareColor, HexColors.RED)).to.be.true();
+        const selectColour = getPixelColor(await captureScreen(), {
+          x: landscapeBounds.x + landscapeBounds.width - SELECT_HEIGHT_OFFSET,
+          y: landscapeBounds.y + SELECT_WIDTH_OFFSET
+        });
+        expect(areColorsSimilar(selectColour, HexColors.RED)).to.be.true();
+
+        clickMouse(w, { x: MOUSE_X_OFFSET, y: MOUSE_Y_OFFSET });
+        await setTimeout(500);
+        const selectOptionColour = getPixelColor(await captureScreen(), {
+          x: landscapeBounds.x + landscapeBounds.width - SELECT_OPTION_HEIGHT_OFFSET,
+          y: landscapeBounds.y + SELECT_OPTION_WIDTH_OFFSET
+        });
+        expect(areColorsSimilar(selectOptionColour, HexColors.GREEN)).to.be.true();
       });
 
       it('rot180', async () => {
@@ -6720,9 +6799,19 @@ describe('BrowserWindow module', () => {
         expect(windowHeight).to.be.equal(landscapeBounds.height);
         expectBoundsEqual(w.getBounds(), landscapeBounds);
 
-        const screenCapture = await captureScreen();
-        const squareColor = getPixelColor(screenCapture, { x: landscapeBounds.x + landscapeBounds.width - 5, y: landscapeBounds.y + landscapeBounds.height - 5 });
-        expect(areColorsSimilar(squareColor, HexColors.RED)).to.be.true();
+        const selectColour = getPixelColor(await captureScreen(), {
+          x: landscapeBounds.x + landscapeBounds.width - SELECT_WIDTH_OFFSET,
+          y: landscapeBounds.y + landscapeBounds.height - SELECT_HEIGHT_OFFSET
+        });
+        expect(areColorsSimilar(selectColour, HexColors.RED)).to.be.true();
+
+        clickMouse(w, { x: MOUSE_X_OFFSET, y: MOUSE_Y_OFFSET });
+        await setTimeout(500);
+        const selectOptionColour = getPixelColor(await captureScreen(), {
+          x: landscapeBounds.x + landscapeBounds.width - SELECT_OPTION_WIDTH_OFFSET,
+          y: landscapeBounds.y + landscapeBounds.height - SELECT_OPTION_HEIGHT_OFFSET
+        });
+        expect(areColorsSimilar(selectOptionColour, HexColors.GREEN)).to.be.true();
       });
 
       it('rot270', async () => {
@@ -6733,9 +6822,19 @@ describe('BrowserWindow module', () => {
         expect(windowHeight).to.be.equal(landscapeBounds.width);
         expectBoundsEqual(w.getBounds(), landscapeBounds);
 
-        const screenCapture = await captureScreen();
-        const squareColor = getPixelColor(screenCapture, { x: landscapeBounds.x + 5, y: landscapeBounds.y + landscapeBounds.height - 5 });
-        expect(areColorsSimilar(squareColor, HexColors.RED)).to.be.true();
+        const selectColour = getPixelColor(await captureScreen(), {
+          x: landscapeBounds.x + SELECT_HEIGHT_OFFSET,
+          y: landscapeBounds.y + landscapeBounds.height - SELECT_WIDTH_OFFSET
+        });
+        expect(areColorsSimilar(selectColour, HexColors.RED)).to.be.true();
+
+        clickMouse(w, { x: MOUSE_X_OFFSET, y: MOUSE_Y_OFFSET });
+        await setTimeout(500);
+        const selectOptionColour = getPixelColor(await captureScreen(), {
+          x: landscapeBounds.x + SELECT_OPTION_HEIGHT_OFFSET,
+          y: landscapeBounds.y + landscapeBounds.height - SELECT_OPTION_WIDTH_OFFSET
+        });
+        expect(areColorsSimilar(selectOptionColour, HexColors.GREEN)).to.be.true();
       });
 
       it('Resize while rotated to portraitBounds', async () => {
@@ -6746,9 +6845,19 @@ describe('BrowserWindow module', () => {
         expect(windowHeight).to.be.equal(portraitBounds.width);
         expectBoundsEqual(w.getBounds(), portraitBounds);
 
-        const screenCapture = await captureScreen();
-        const squareColor = getPixelColor(screenCapture, { x: portraitBounds.x + 5, y: portraitBounds.y + portraitBounds.height - 5 });
-        expect(areColorsSimilar(squareColor, HexColors.RED)).to.be.true();
+        const selectColour = getPixelColor(await captureScreen(), {
+          x: portraitBounds.x + SELECT_HEIGHT_OFFSET,
+          y: portraitBounds.y + portraitBounds.height - SELECT_WIDTH_OFFSET
+        });
+        expect(areColorsSimilar(selectColour, HexColors.RED)).to.be.true();
+
+        clickMouse(w, { x: MOUSE_X_OFFSET, y: MOUSE_Y_OFFSET });
+        await setTimeout(500);
+        const selectOptionColour = getPixelColor(await captureScreen(), {
+          x: portraitBounds.x + SELECT_OPTION_HEIGHT_OFFSET,
+          y: portraitBounds.y + portraitBounds.height - SELECT_OPTION_WIDTH_OFFSET
+        });
+        expect(areColorsSimilar(selectOptionColour, HexColors.GREEN)).to.be.true();
       });
 
       it('Resize while rotated to squareBounds', async () => {
@@ -6759,9 +6868,19 @@ describe('BrowserWindow module', () => {
         expect(windowHeight).to.be.equal(squareBounds.width);
         expectBoundsEqual(w.getBounds(), squareBounds);
 
-        const screenCapture = await captureScreen();
-        const squareColor = getPixelColor(screenCapture, { x: squareBounds.x + 5, y: squareBounds.y + squareBounds.height - 5 });
-        expect(areColorsSimilar(squareColor, HexColors.RED)).to.be.true();
+        const selectColour = getPixelColor(await captureScreen(), {
+          x: squareBounds.x + SELECT_HEIGHT_OFFSET,
+          y: squareBounds.y + squareBounds.height - SELECT_WIDTH_OFFSET
+        });
+        expect(areColorsSimilar(selectColour, HexColors.RED)).to.be.true();
+
+        clickMouse(w, { x: MOUSE_X_OFFSET, y: MOUSE_Y_OFFSET });
+        await setTimeout(500);
+        const selectOptionColour = getPixelColor(await captureScreen(), {
+          x: squareBounds.x + SELECT_OPTION_HEIGHT_OFFSET,
+          y: squareBounds.y + squareBounds.height - SELECT_OPTION_WIDTH_OFFSET
+        });
+        expect(areColorsSimilar(selectOptionColour, HexColors.GREEN)).to.be.true();
       });
 
       it('Resize while rotated to bounds with x,y offsets', async () => {
@@ -6772,9 +6891,19 @@ describe('BrowserWindow module', () => {
         expect(windowHeight).to.be.equal(offsetBounds.width);
         expectBoundsEqual(w.getBounds(), offsetBounds);
 
-        const screenCapture = await captureScreen();
-        const squareColor = getPixelColor(screenCapture, { x: offsetBounds.x + 5, y: offsetBounds.y + offsetBounds.height - 5 });
-        expect(areColorsSimilar(squareColor, HexColors.RED)).to.be.true();
+        const selectColour = getPixelColor(await captureScreen(), {
+          x: offsetBounds.x + SELECT_HEIGHT_OFFSET,
+          y: offsetBounds.y + offsetBounds.height - SELECT_WIDTH_OFFSET
+        });
+        expect(areColorsSimilar(selectColour, HexColors.RED)).to.be.true();
+
+        clickMouse(w, { x: MOUSE_X_OFFSET, y: MOUSE_Y_OFFSET });
+        await setTimeout(500);
+        const selectOptionColour = getPixelColor(await captureScreen(), {
+          x: offsetBounds.x + SELECT_OPTION_HEIGHT_OFFSET,
+          y: offsetBounds.y + offsetBounds.height - SELECT_OPTION_WIDTH_OFFSET
+        });
+        expect(areColorsSimilar(selectOptionColour, HexColors.GREEN)).to.be.true();
       });
 
       it('Resize while rotated to bounds with negative x,y offsets', async () => {
@@ -6785,9 +6914,19 @@ describe('BrowserWindow module', () => {
         expect(windowHeight).to.be.equal(negativeOffsetBounds.width);
         expectBoundsEqual(w.getBounds(), negativeOffsetBounds);
 
-        const screenCapture = await captureScreen();
-        const squareColor = getPixelColor(screenCapture, { x: negativeOffsetBounds.x + 5, y: negativeOffsetBounds.y + negativeOffsetBounds.height - 5 });
-        expect(areColorsSimilar(squareColor, HexColors.RED)).to.be.true();
+        const selectColour = getPixelColor(await captureScreen(), {
+          x: negativeOffsetBounds.x + SELECT_HEIGHT_OFFSET,
+          y: negativeOffsetBounds.y + negativeOffsetBounds.height - SELECT_WIDTH_OFFSET
+        });
+        expect(areColorsSimilar(selectColour, HexColors.RED)).to.be.true();
+
+        clickMouse(w, { x: MOUSE_X_OFFSET, y: MOUSE_Y_OFFSET });
+        await setTimeout(500);
+        const selectOptionColour = getPixelColor(await captureScreen(), {
+          x: negativeOffsetBounds.x + SELECT_OPTION_HEIGHT_OFFSET,
+          y: negativeOffsetBounds.y + negativeOffsetBounds.height - SELECT_OPTION_WIDTH_OFFSET
+        });
+        expect(areColorsSimilar(selectOptionColour, HexColors.GREEN)).to.be.true();
       });
 
       it('identity', async () => {
@@ -6798,9 +6937,43 @@ describe('BrowserWindow module', () => {
         expect(windowHeight).to.be.equal(negativeOffsetBounds.height);
         expectBoundsEqual(w.getBounds(), negativeOffsetBounds);
 
-        const screenCapture = await captureScreen();
-        const squareColor = getPixelColor(screenCapture, { x: Math.max(0, negativeOffsetBounds.x), y: Math.max(0, negativeOffsetBounds.y) });
-        expect(areColorsSimilar(squareColor, HexColors.RED)).to.be.true();
+        const selectColour = getPixelColor(await captureScreen(), {
+          x: negativeOffsetBounds.x + SELECT_WIDTH_OFFSET,
+          y: negativeOffsetBounds.y + SELECT_HEIGHT_OFFSET
+        });
+        expect(areColorsSimilar(selectColour, HexColors.RED)).to.be.true();
+
+        clickMouse(w, { x: MOUSE_X_OFFSET, y: MOUSE_Y_OFFSET });
+        await setTimeout(500);
+        const selectOptionColour = getPixelColor(await captureScreen(), {
+          x: negativeOffsetBounds.x + SELECT_OPTION_WIDTH_OFFSET,
+          y: negativeOffsetBounds.y + SELECT_OPTION_HEIGHT_OFFSET
+        });
+        expect(areColorsSimilar(selectOptionColour, HexColors.GREEN)).to.be.true();
+      });
+
+      it('Check fullscreen bottom right option in correct location', async () => {
+        w.setBounds(fullScreenBounds);
+        await setTimeout(500);
+        const { windowWidth, windowHeight } = await w.webContents.executeJavaScript('({windowWidth: window.innerWidth, windowHeight: window.innerHeight})');
+        expect(windowWidth).to.be.equal(fullScreenBounds.width);
+        expect(windowHeight).to.be.equal(fullScreenBounds.height);
+        expectBoundsEqual(w.getBounds(), fullScreenBounds);
+
+        const selectColour = getPixelColor(await captureScreen(), {
+          x: fullScreenBounds.width - SELECT_WIDTH_OFFSET,
+          y: fullScreenBounds.height - SELECT_HEIGHT_OFFSET
+        });
+        expect(areColorsSimilar(selectColour, HexColors.RED)).to.be.true();
+
+        clickMouse(w, { x: fullScreenBounds.width - MOUSE_X_OFFSET, y: fullScreenBounds.height - MOUSE_Y_OFFSET });
+        await setTimeout(500);
+        // Check when fullscreen the option for the bottom right select element is rendered above the element and inside the window
+        const selectOptionColour = getPixelColor(await captureScreen(), {
+          x: fullScreenBounds.width - SELECT_OPTION_WIDTH_OFFSET,
+          y: fullScreenBounds.height - SELECT_HEIGHT - SELECT_OPTION_HEIGHT / 2
+        });
+        expect(areColorsSimilar(selectOptionColour, HexColors.GREEN)).to.be.true();
       });
     });
   });
