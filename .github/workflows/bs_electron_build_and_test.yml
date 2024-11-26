@@ -118,6 +118,7 @@ jobs:
         echo 'OUTPUT_FOLDER=out/Testing' >> $GITHUB_ENV
         echo 'GN_IMPORT=//electron/build/args/testing.gn' >> $GITHUB_ENV
         echo 'SCCACHE_BUCKET=${{ env.SCCACHE_TEST_BUILD_BUCKET_NAME }}' >> $GITHUB_ENV
+        echo 'CI=true' >> $GITHUB_ENV
 
     - name: Setup build type Release
       if: inputs.build_type == 'release'
