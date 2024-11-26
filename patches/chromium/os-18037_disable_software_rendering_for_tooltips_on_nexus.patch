@@ -1,0 +1,58 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Tariq Bashir <120014322+t-bashir-bs@users.noreply.github.com>
+Date: Thu, 21 Nov 2024 13:46:18 +0000
+Subject: OS-18037: Disable software rendering for tooltips on Nexus
+
+Tooltips use software compositing to avoid using unnecessary hardware resources
+and as a workaround to an old bug. However, Nexus is missing implementation for
+software canvas surfaces and this causes a crash when creating a tooltip. This
+patch disables software compositing for tooltips on Nexus, as it works fine and
+we can take the small hit on performance, as this isn't a common use case.
+
+diff --git a/ui/ozone/BUILD.gn b/ui/ozone/BUILD.gn
+index f670df642b6024a1958c4bf11e16893b8c3f1eae..03edbda6c4c125eb2f21048a8c3411a285bda260 100644
+--- a/ui/ozone/BUILD.gn
++++ b/ui/ozone/BUILD.gn
+@@ -491,6 +491,7 @@ test("ozone_integration_tests") {
+ buildflag_header("buildflags") {
+   header = "buildflags.h"
+   flags = [
++    "OZONE_PLATFORM_NEXUS=$ozone_platform_nexus",
+     "OZONE_PLATFORM_WAYLAND=$ozone_platform_wayland",
+     "OZONE_PLATFORM_X11=$ozone_platform_x11",
+   ]
+diff --git a/ui/views/corewm/tooltip_aura.cc b/ui/views/corewm/tooltip_aura.cc
+index d40153b7893138b676428ec6ff9814220f67c580..104cf069058f8801698a3900c3e9c59e1337566f 100644
+--- a/ui/views/corewm/tooltip_aura.cc
++++ b/ui/views/corewm/tooltip_aura.cc
+@@ -177,9 +177,11 @@ void TooltipAura::CreateTooltipWidget(const gfx::Rect& bounds,
+   if (CanUseTranslucentTooltipWidget())
+     params.opacity = views::Widget::InitParams::WindowOpacity::kTranslucent;
+   params.shadow_type = views::Widget::InitParams::ShadowType::kNone;
++#if !BUILDFLAG(OZONE_PLATFORM_NEXUS)
+   // Use software compositing to avoid using unnecessary hardware resources
+   // which just amount to overkill for this UI.
+   params.force_software_compositing = true;
++#endif
+   params.name = kWidgetName;
+ 
+   params.init_properties_container.SetProperty(aura::client::kOwnedWindowAnchor,
+diff --git a/ui/views/widget/desktop_aura/desktop_window_tree_host_platform.cc b/ui/views/widget/desktop_aura/desktop_window_tree_host_platform.cc
+index 9092e91e37b7dc42ce58d97fe167636928d086cc..744c3cce9a65c75d2b802fb61c643c82018f0ab8 100644
+--- a/ui/views/widget/desktop_aura/desktop_window_tree_host_platform.cc
++++ b/ui/views/widget/desktop_aura/desktop_window_tree_host_platform.cc
+@@ -302,10 +302,14 @@ void DesktopWindowTreeHostPlatform::Init(const Widget::InitParams& params) {
+ 
+   CreateAndSetPlatformWindow(std::move(properties));
+ 
++#if BUILDFLAG(OZONE_PLATFORM_NEXUS)
++  CreateCompositor(params.force_software_compositing);
++#else
+   // Disable compositing on tooltips as a workaround for
+   // https://crbug.com/442111.
+   CreateCompositor(params.force_software_compositing ||
+                    params.type == Widget::InitParams::TYPE_TOOLTIP);
++#endif
+ 
+   WindowTreeHost::OnAcceleratedWidgetAvailable();
+   InitHost();
