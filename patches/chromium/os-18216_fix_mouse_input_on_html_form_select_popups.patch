@@ -1,0 +1,52 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Tariq Bashir <120014322+t-bashir-bs@users.noreply.github.com>
+Date: Fri, 29 Nov 2024 13:22:32 +0000
+Subject: OS-18216: fix mouse input on html form select popups
+
+Fix issue with HTML select elements not receiving input when selected
+
+HTML form <select> elements were found to not register input when selected.
+The root cause was traced to the logic in NexusWindowManager::GrabEvents,
+where the event_grabber_ is only updated after the current window calls
+UngrabEvents.
+
+This behavior works for some popups, like the calendar popup of an HTML
+date input, where Chromium triggers the popup after the mouse button is released.
+In such cases, GrabEvents for the new popup is called after UngrabEvents for
+the current window. However, for <select> elements, Chromium creates the popup
+immediately when the mouse button is pressed, reversing the order. This causes
+the select popup to never be set as the event_grabber_.
+
+Upon review, the logic for NexusWindowManager::GrabEvents and UngrabEvents appears
+to be copied from DrmWindowHostManager. The relevant Chromium ozone DRM code, added
+roughly a decade ago, has not been updated since. The original implementation addressed
+a now-obsolete bug involving windows being dragged across multiple displays, which
+does not apply to our use case.
+
+Given the outdated nature of this logic and the specific issue with <select> elements,
+a suitable fix is to update the event_grabber_ directly with the value passed to
+DrmWindowHostManager::GrabEvents.
+
+For reference, the original bug fix was introduced in Chromium
+https://codereview.chromium.org/763343002/ for issue https://issues.chromium.org/issues/40389119.
+
+diff --git a/ui/ozone/platform/nexus/nexus_window_manager.cc b/ui/ozone/platform/nexus/nexus_window_manager.cc
+index 729e7de8130dd19cc940cd80bad4783160268ca0..889db1954d90d56771d280c933c3966b8cb5a4cc 100644
+--- a/ui/ozone/platform/nexus/nexus_window_manager.cc
++++ b/ui/ozone/platform/nexus/nexus_window_manager.cc
+@@ -59,15 +59,11 @@ NexusWindow* NexusWindowManager::GetPrimaryWindow() {
+ 
+ void NexusWindowManager::GrabEvents(gfx::AcceleratedWidget widget) {
+   BS_DEBUG("%s:%d\n", __PRETTY_FUNCTION__, __LINE__);
+-  if (event_grabber_ != gfx::kNullAcceleratedWidget)
+-    return;
+   event_grabber_ = widget;
+ }
+ 
+ void NexusWindowManager::UngrabEvents(gfx::AcceleratedWidget widget) {
+   BS_DEBUG("%s:%d\n", __PRETTY_FUNCTION__, __LINE__);
+-  if (event_grabber_ != widget)
+-    return;
+   event_grabber_ = gfx::kNullAcceleratedWidget;
+ }
+ 
