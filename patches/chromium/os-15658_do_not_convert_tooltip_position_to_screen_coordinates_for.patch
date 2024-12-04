@@ -1,0 +1,27 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Tariq Bashir <120014322+t-bashir-bs@users.noreply.github.com>
+Date: Wed, 4 Dec 2024 15:43:31 +0000
+Subject: OS-15658: do not convert tooltip position to screen coordinates for
+ wayland
+
+Weston wayland draws popup windows and tooltips in the parent window's coordinate space
+and not in screen space. This patch ensures that the tooltip position is not converted to
+screen coordinates when running on wayland so its position is correct.
+
+diff --git a/ui/views/corewm/tooltip_aura.cc b/ui/views/corewm/tooltip_aura.cc
+index 104cf069058f8801698a3900c3e9c59e1337566f..289dab2b90ea3ea710f2980f6c9a592a8f78cf0a 100644
+--- a/ui/views/corewm/tooltip_aura.cc
++++ b/ui/views/corewm/tooltip_aura.cc
+@@ -218,9 +218,12 @@ void TooltipAura::Update(aura::Window* window,
+ 
+   // Convert `position` to screen coordinates.
+   gfx::Point anchor_point = position;
++  // Weston wayland compositor doesn't want tooltip co-ordinates in screen space.
++#if !BUILDFLAG(OZONE_PLATFORM_WAYLAND)
+   aura::client::ScreenPositionClient* screen_position_client =
+       aura::client::GetScreenPositionClient(window->GetRootWindow());
+   screen_position_client->ConvertPointToScreen(window, &anchor_point);
++#endif
+ 
+   new_tooltip_view->SetMaxWidth(GetMaxWidth(anchor_point));
+   new_tooltip_view->SetText(tooltip_text);
