@@ -168,3 +168,4 @@ os-17400_brightsign_increase_file_open_handle_for_all_processes.patch
 os-17652_add_support_for_window_rotation.patch
 os-17765_disable_changing_mouse_cursor.patch
 gl_add_support_for_eglgetplatformdisplayext_extension.patch
+os-18170_allow_mse_mediasource_to_be_disabled.patch
