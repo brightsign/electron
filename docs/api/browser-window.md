@@ -421,6 +421,15 @@ as `-webkit-app-region: drag` in a frameless window.
 
 Calling `event.preventDefault()` will prevent the menu from being displayed.
 
+#### Event: 'virtual-keyboard-visibility-changed'
+
+Returns:
+
+* `event` Event
+* `show` boolean
+
+Emitted when Browser requests to show or hide a virtual keyboard
+
 ### Static Methods
 
 The `BrowserWindow` class has the following static methods:
