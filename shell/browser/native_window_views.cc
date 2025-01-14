@@ -46,6 +46,7 @@
 #include "shell/common/options_switches.h"
 #include "ui/aura/window_tree_host.h"
 #include "ui/base/hit_test.h"
+#include "ui/base/ime/input_method_base.h"
 #include "ui/gfx/image/image.h"
 #include "ui/gfx/native_widget_types.h"
 #include "ui/views/background.h"
@@ -459,9 +460,16 @@ NativeWindowViews::NativeWindowViews(const gin_helper::Dictionary& options,
         window->NotifyWindowClosed();
       },
       this));
+  ui::InputMethod* input_method = widget()->GetInputMethod();
+  if (input_method)
+    input_method->AddObserver(this);
 }
 
 NativeWindowViews::~NativeWindowViews() {
+  // Remove observers.
+  ui::InputMethod* input_method = widget()->GetInputMethod();
+  if (input_method)
+    input_method->RemoveObserver(this);
   widget()->RemoveObserver(this);
 
 #if BUILDFLAG(IS_WIN)
@@ -1750,6 +1758,16 @@ void NativeWindowViews::OnWidgetBoundsChanged(views::Widget* changed_widget,
     NotifyWindowResize();
     widget_size_ = new_bounds.size();
   }
+}
+
+void NativeWindowViews::OnTextInputStateChanged(
+    const ui::TextInputClient* client) {
+  bool should_show = false;
+  if (client) {
+    // Check if virtual keyboard needs to be shown or hidden
+    should_show = client->GetTextInputType() != ui::TEXT_INPUT_TYPE_NONE;
+  }
+  NotifyVirtualKeyboardVisibilityChanged(should_show);
 }
 
 void NativeWindowViews::OnWidgetDestroying(views::Widget* widget) {

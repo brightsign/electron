@@ -338,6 +338,8 @@ class NativeWindow : public base::SupportsUserData,
   void NotifyWindowSystemContextMenu(int x, int y, bool* prevent_default);
   void NotifyLayoutWindowControlsOverlay();
 
+  void NotifyVirtualKeyboardVisibilityChanged(bool is_visible);
+
 #if BUILDFLAG(IS_WIN)
   void NotifyWindowMessage(UINT message, WPARAM w_param, LPARAM l_param);
 #endif
