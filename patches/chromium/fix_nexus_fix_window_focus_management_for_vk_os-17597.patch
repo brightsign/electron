@@ -1,0 +1,308 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Caner Altinbasak <cal@brightsign.biz>
+Date: Wed, 29 Jan 2025 15:23:05 +0000
+Subject: fix(nexus): Fix window focus management for VK OS-17597
+
+Virtual keyboard should receive mouse events,
+but it shouldn't take the focus. It will always
+be the last window created, and it should only
+get events when it is visible. Based on these
+assumptions I've made following changes:
+
+Converted window idMap to std::map to be able
+to use reverse iterator. We start from top
+of the window stack and go towards the bottom.
+
+If a window can handle the event, the propagation
+stops.
+
+Virtual keyboard handles the mouse events, when
+it is visible. If virtual keyboard is not visible,
+the next window under the cursor receives the event.
+
+diff --git a/ui/ozone/platform/nexus/nexus_window.cc b/ui/ozone/platform/nexus/nexus_window.cc
+index 63f8841e05b96fdaa6f331d55aeafa9dcbfc56fc..62b73163b67ccd28962a0437b5882f4074f16a3b 100644
+--- a/ui/ozone/platform/nexus/nexus_window.cc
++++ b/ui/ozone/platform/nexus/nexus_window.cc
+@@ -5,6 +5,8 @@
+ #include "ui/ozone/platform/nexus/nexus_window.h"
+ 
+ #include "base/functional/bind.h"
++#include "base/strings/string_util.h"
++#include "base/strings/utf_string_conversions.h"
+ #include "build/build_config.h"
+ #include "ui/events/event.h"
+ #include "ui/events/ozone/evdev/event_factory_evdev.h"
+@@ -90,6 +92,7 @@ NexusWindow::NexusWindow(PlatformWindowDelegate* delegate,
+ NexusWindow::~NexusWindow() {
+   if (PlatformEventSource::GetInstance())
+     PlatformEventSource::GetInstance()->RemovePlatformEventDispatcher(this);
++  window_manager_->RemoveWindow(widget_, this);
+ }
+ 
+ 
+@@ -133,7 +136,7 @@ void NexusWindow::Close() {
+ bool NexusWindow::IsVisible() const {
+   BS_DEBUG( "%s\n", __PRETTY_FUNCTION__);
+   NOTIMPLEMENTED_LOG_ONCE();
+-  return true;
++  return visible_;
+ }
+ 
+ void NexusWindow::PrepareForShutdown() {
+@@ -203,21 +206,22 @@ gfx::Rect NexusWindow::GetBoundsInDIP() const {
+ }
+ 
+ void NexusWindow::SetTitle(const std::u16string& title) {
+-  BS_DEBUG( "%s\n", __PRETTY_FUNCTION__);
++  BS_DEBUG2( "%s: old title:%s new title:%s\n", __PRETTY_FUNCTION__, title_.c_str(), base::UTF16ToUTF8(title).c_str());
++  title_ = base::UTF16ToUTF8(title);
+ }
+ 
+ void NexusWindow::SetCapture() {
+-  BS_DEBUG( "%s\n", __PRETTY_FUNCTION__);
++  BS_DEBUG2( "%s: title: %s\n", __PRETTY_FUNCTION__, title_.c_str());
+   window_manager_->GrabEvents(widget_);
+ }
+ 
+ void NexusWindow::ReleaseCapture() {
+-  BS_DEBUG( "%s\n", __PRETTY_FUNCTION__);
++  BS_DEBUG2( "%s: title: %s\n", __PRETTY_FUNCTION__, title_.c_str());
+   window_manager_->UngrabEvents(widget_);
+ }
+ 
+ bool NexusWindow::HasCapture() const {
+-  BS_DEBUG( "%s\n", __PRETTY_FUNCTION__);
++  BS_DEBUG2( "%s: title: %s\n", __PRETTY_FUNCTION__, title_.c_str());
+   return widget_ == window_manager_->event_grabber();
+ }
+ 
+@@ -239,16 +243,16 @@ void NexusWindow::Restore() {
+ 
+ PlatformWindowState NexusWindow::GetPlatformWindowState() const {
+   BS_DEBUG( "%s\n", __PRETTY_FUNCTION__);
+-  return PlatformWindowState::kUnknown;
++  return PlatformWindowState::kNormal;
+ }
+ 
+ void NexusWindow::Activate() {
+-  BS_DEBUG( "%s\n", __PRETTY_FUNCTION__);
++  BS_DEBUG2( "%s: title:%s\n", __PRETTY_FUNCTION__, title_.c_str());
+   delegate_->OnActivationChanged(true);
+ }
+ 
+ void NexusWindow::Deactivate() {
+-  BS_DEBUG( "%s\n", __PRETTY_FUNCTION__);
++  BS_DEBUG2( "%s: title:%s\n", __PRETTY_FUNCTION__, title_.c_str());
+   delegate_->OnActivationChanged(false);
+ }
+ 
+@@ -263,13 +267,12 @@ bool NexusWindow::ShouldUseNativeFrame() const {
+ }
+ 
+ void NexusWindow::SetCursor(scoped_refptr<PlatformCursor> cursor) {
+-  BS_DEBUG2( "%s\n", __PRETTY_FUNCTION__);
++  BS_DEBUG( "%s\n", __PRETTY_FUNCTION__);
+   cursor_->SetCursor(BitmapCursor::FromPlatformCursor(cursor));
+ }
+ 
+ void NexusWindow::MoveCursorTo(const gfx::Point& location) {
+-  BS_DEBUG( "%s\n", __PRETTY_FUNCTION__);
+-  BS_DEBUG2( "%s location:%d,%d\n", __PRETTY_FUNCTION__, location.x(), location.y());
++  BS_DEBUG( "%s location:%d,%d\n", __PRETTY_FUNCTION__, location.x(), location.y());
+   event_factory_->WarpCursorTo(widget_, gfx::PointF(location));
+ }
+ 
+@@ -278,21 +281,32 @@ void NexusWindow::ConfineCursorToBounds(const gfx::Rect& bounds) {
+ }
+ 
+ void NexusWindow::OnMouseEnter() {
+-  BS_DEBUG2("%s\n", __PRETTY_FUNCTION__);
++  BS_DEBUG("%s\n", __PRETTY_FUNCTION__);
+   delegate_->OnMouseEnter();
+ }
+ 
+-bool NexusWindow::CanDispatchEvent(const PlatformEvent& ne) {
+-  // If there is a grab, capture events here.
++bool NexusWindow::CanDispatchEvent(const PlatformEvent& event) {
++  if (!visible_)
++    return false;
++
++  // If there is an event grabber, only dispatch events to it.
+   gfx::AcceleratedWidget grabber = window_manager_->event_grabber();
+   BS_DEBUG2("%s: %d\n", __PRETTY_FUNCTION__, grabber == widget_);
+   if (grabber != gfx::kNullAcceleratedWidget)
+     return grabber == widget_;
++
++  // Mouse events will always be dispatched to the window under the cursor.
++  if (event->IsLocatedEvent()) {
++    LocatedEvent* located_event = event->AsLocatedEvent();
++    NexusWindow* window_on_mouse =
++        window_manager_->GetWindowAt(located_event->location());
++    return window_on_mouse == this;
++  }
+   return true;
+ }
+ 
+ uint32_t NexusWindow::DispatchEvent(const PlatformEvent& event) {
+-  BS_DEBUG2("%s\n", __PRETTY_FUNCTION__);
++  BS_DEBUG2("%s: %s\n", title_.c_str(), __PRETTY_FUNCTION__);
+   if (event->IsLocatedEvent()) {
+     // Make the event location relative to this window's origin.
+     LocatedEvent* located_event = event->AsLocatedEvent();
+@@ -308,13 +322,13 @@ uint32_t NexusWindow::DispatchEvent(const PlatformEvent& event) {
+     location -= gfx::Vector2dF(bounds_.OffsetFromOrigin());
+     located_event->set_location_f(location);
+     located_event->set_root_location_f(location);
+-    BS_DEBUG2("%s location:%f, %f\n", __PRETTY_FUNCTION__, location.x(), location.y());
+   }
+ 
+-  DispatchEventFromNativeUiEvent(
++  bool handled = DispatchEventFromNativeUiEvent(
+       event, base::BindOnce(&PlatformWindowDelegate::DispatchEvent,
+-                                   base::Unretained(delegate_)));
+-  return ui::POST_DISPATCH_STOP_PROPAGATION;
++                            base::Unretained(delegate_)));
++
++  return handled ? POST_DISPATCH_STOP_PROPAGATION : POST_DISPATCH_NONE;
+ }
+ 
+ void NexusWindow::SetRestoredBoundsInDIP(const gfx::Rect& bounds) {
+diff --git a/ui/ozone/platform/nexus/nexus_window.h b/ui/ozone/platform/nexus/nexus_window.h
+index 87532626ad3fd80b8d40bd8c961bae1b16f95e5e..2eb68e5bf434b053b8f1f5e66953ee3d72eea10c 100644
+--- a/ui/ozone/platform/nexus/nexus_window.h
++++ b/ui/ozone/platform/nexus/nexus_window.h
+@@ -5,6 +5,7 @@
+ #ifndef UI_OZONE_PLATFORM_HEADLESS_HEADLESS_WINDOW_H_
+ #define UI_OZONE_PLATFORM_HEADLESS_HEADLESS_WINDOW_H_
+ 
++#include <string>
+ #include "base/memory/raw_ptr.h"
+ #include "base/memory/scoped_refptr.h"
+ #include "ui/base/cursor/platform_cursor.h"
+@@ -91,6 +92,7 @@ class NexusWindow : public PlatformWindow, public PlatformEventDispatcher {
+   gfx::AcceleratedWidget widget_;
+   void* native_window_;
+   bool visible_ = false;
++  std::string title_;
+ };
+ 
+ }  // namespace ui
+diff --git a/ui/ozone/platform/nexus/nexus_window_manager.cc b/ui/ozone/platform/nexus/nexus_window_manager.cc
+index 889db1954d90d56771d280c933c3966b8cb5a4cc..f227a9a35806c99f63f0f775202f697b3d38f730 100644
+--- a/ui/ozone/platform/nexus/nexus_window_manager.cc
++++ b/ui/ozone/platform/nexus/nexus_window_manager.cc
+@@ -18,57 +18,71 @@ NexusWindowManager::~NexusWindowManager() {
+ }
+ 
+ gfx::AcceleratedWidget NexusWindowManager::AddWindow(NexusWindow* window) {
+-  BS_DEBUG("%s:%d\n", __PRETTY_FUNCTION__, __LINE__);
+-  return windows_.Add(window);
++  auto current_widget = ++next_accelerated_widget_;
++  window_map_[current_widget] = window;
++  BS_DEBUG("%s:%d window:%p widget:%d\n", __PRETTY_FUNCTION__, __LINE__, window,
++           current_widget);
++  return current_widget;
+ }
+ 
+-void NexusWindowManager::RemoveWindow(gfx::AcceleratedWidget window_id,
++void NexusWindowManager::RemoveWindow(gfx::AcceleratedWidget widget,
+                                       NexusWindow* window) {
+-  BS_DEBUG("%s:%d\n", __PRETTY_FUNCTION__, __LINE__);
+-  DCHECK_EQ(window, windows_.Lookup(window_id));
+-  if (window == window_mouse_currently_on_)
+-    window_mouse_currently_on_ = nullptr;
+-  windows_.Remove(window_id);
++  BS_DEBUG("%s:%d window:%p widget:%d\n", __PRETTY_FUNCTION__, __LINE__, window,
++           widget);
++  auto it = window_map_.find(widget);
++  if (it != window_map_.end()) {
++    if (window_mouse_currently_on_ == it->second)
++      window_mouse_currently_on_ = nullptr;
++    window_map_.erase(it);
++  } else {
++    NOTREACHED() << "Attempting to remove non-existing window " << widget;
++  }
++
++  if (event_grabber_ == widget)
++    event_grabber_ = gfx::kNullAcceleratedWidget;
+ }
+ 
+-NexusWindow* NexusWindowManager::GetWindow(gfx::AcceleratedWidget window_id) {
+-  BS_DEBUG("%s:%d\n", __PRETTY_FUNCTION__, __LINE__);
+-  return windows_.Lookup(window_id);
++NexusWindow* NexusWindowManager::GetWindow(gfx::AcceleratedWidget widget) {
++  auto it = window_map_.find(widget);
++  if (it != window_map_.end())
++    return it->second;
++
++  NOTREACHED() << "Attempting to get non-existing window " << widget;
++  return NULL;
+ }
+ 
+ NexusWindow* NexusWindowManager::GetWindowAt(const gfx::Point& location) {
+   BS_DEBUG("%s:%d location x:%d y:%d\n", __PRETTY_FUNCTION__, __LINE__, location.x(), location.y());
+-  for (base::IDMap<NexusWindow*>::iterator iter(&windows_);
+-      !iter.IsAtEnd();
+-      iter.Advance()) {
+-    if (iter.GetCurrentValue()->GetBoundsInPixels().Contains(location)) {
+-      BS_DEBUG("%s:%d\n", __PRETTY_FUNCTION__, __LINE__);
+-      return iter.GetCurrentValue();
++  for (auto it = window_map_.rbegin(); it != window_map_.rend(); it++)
++    if (it->second->GetBoundsInPixels().Contains(location) && it->second->IsVisible()) {
++      return it->second;
+     }
+-  }
+-  BS_DEBUG("%s:%d\n", __PRETTY_FUNCTION__, __LINE__);
+ 
+   return NULL;
+ }
+ 
+ NexusWindow* NexusWindowManager::GetPrimaryWindow() {
+   BS_DEBUG("%s:%d\n", __PRETTY_FUNCTION__, __LINE__);
+-  base::IDMap<NexusWindow*>::iterator iter(&windows_);
+-  return iter.IsAtEnd() ? nullptr : iter.GetCurrentValue();
++  auto it = window_map_.begin();
++  return it != window_map_.end() ? it->second : nullptr;
+ }
+ 
+ void NexusWindowManager::GrabEvents(gfx::AcceleratedWidget widget) {
+-  BS_DEBUG("%s:%d\n", __PRETTY_FUNCTION__, __LINE__);
++  BS_DEBUG("%s:%d widget:%d\n", __PRETTY_FUNCTION__, __LINE__, widget);
++  if (event_grabber_ != gfx::kNullAcceleratedWidget)
++    return;
+   event_grabber_ = widget;
+ }
+ 
+ void NexusWindowManager::UngrabEvents(gfx::AcceleratedWidget widget) {
+-  BS_DEBUG("%s:%d\n", __PRETTY_FUNCTION__, __LINE__);
++  BS_DEBUG("%s:%d widget:%d\n", __PRETTY_FUNCTION__, __LINE__, widget);
++  if (event_grabber_ != widget)
++    return;
+   event_grabber_ = gfx::kNullAcceleratedWidget;
+ }
+ 
+ void NexusWindowManager::MouseOnWindow(NexusWindow* window) {
+-  BS_DEBUG("%s:%d\n", __PRETTY_FUNCTION__, __LINE__);
++  BS_DEBUG("%s:%d window:%p\n", __PRETTY_FUNCTION__, __LINE__, window);
+   if (window_mouse_currently_on_ == window)
+     return;
+   window_mouse_currently_on_ = window;
+diff --git a/ui/ozone/platform/nexus/nexus_window_manager.h b/ui/ozone/platform/nexus/nexus_window_manager.h
+index 39494730304cfd2be6a1ddc0552d7b40f7b77afc..f4f8777e3799d1cc7caf26e6a17978d4e7a0dffe 100644
+--- a/ui/ozone/platform/nexus/nexus_window_manager.h
++++ b/ui/ozone/platform/nexus/nexus_window_manager.h
+@@ -53,11 +53,12 @@ class NexusWindowManager {
+   gfx::AcceleratedWidget event_grabber() const { return event_grabber_; }
+ 
+  private:
+-  base::IDMap<NexusWindow*> windows_;
++  std::map<gfx::AcceleratedWidget, NexusWindow*> window_map_;
+   base::ThreadChecker thread_checker_;
+ 
+   NexusWindow* window_mouse_currently_on_ = nullptr;
+   gfx::AcceleratedWidget event_grabber_ = gfx::kNullAcceleratedWidget;
++  gfx::AcceleratedWidget next_accelerated_widget_ = 0;
+ };
+ 
+ }  // namespace ui
