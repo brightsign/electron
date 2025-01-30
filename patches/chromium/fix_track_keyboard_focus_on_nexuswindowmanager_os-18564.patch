@@ -1,0 +1,61 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Caner Altinbasak <cal@brightsign.biz>
+Date: Thu, 30 Jan 2025 12:11:33 +0000
+Subject: fix: Track keyboard focus on NexusWindowManager OS-18564
+
+On systems with a window manager, the focus management is
+done by the window manager.
+
+NxClient is a window compositor, it is not a window manager,
+so we have to track the focused window and send the input
+events to that window.
+
+diff --git a/ui/ozone/platform/nexus/nexus_window.cc b/ui/ozone/platform/nexus/nexus_window.cc
+index 62b73163b67ccd28962a0437b5882f4074f16a3b..6d068a17c57e8d9932f7a82dc297de4711717f8b 100644
+--- a/ui/ozone/platform/nexus/nexus_window.cc
++++ b/ui/ozone/platform/nexus/nexus_window.cc
+@@ -301,6 +301,10 @@ bool NexusWindow::CanDispatchEvent(const PlatformEvent& event) {
+     NexusWindow* window_on_mouse =
+         window_manager_->GetWindowAt(located_event->location());
+     return window_on_mouse == this;
++  } else if (event->IsKeyEvent()) {
++    NexusWindow* keyboard_grabber =
++        window_manager_->GetWindow(window_manager_->keyboard_grabber());
++    return keyboard_grabber == this;
+   }
+   return true;
+ }
+diff --git a/ui/ozone/platform/nexus/nexus_window_manager.cc b/ui/ozone/platform/nexus/nexus_window_manager.cc
+index f227a9a35806c99f63f0f775202f697b3d38f730..c38fc13003b77b5f48e00038d52337fc1073513d 100644
+--- a/ui/ozone/platform/nexus/nexus_window_manager.cc
++++ b/ui/ozone/platform/nexus/nexus_window_manager.cc
+@@ -72,6 +72,7 @@ void NexusWindowManager::GrabEvents(gfx::AcceleratedWidget widget) {
+   if (event_grabber_ != gfx::kNullAcceleratedWidget)
+     return;
+   event_grabber_ = widget;
++  keyboard_grabber_ = widget;
+ }
+ 
+ void NexusWindowManager::UngrabEvents(gfx::AcceleratedWidget widget) {
+diff --git a/ui/ozone/platform/nexus/nexus_window_manager.h b/ui/ozone/platform/nexus/nexus_window_manager.h
+index f4f8777e3799d1cc7caf26e6a17978d4e7a0dffe..afa5f7b7e47f3a53c1f8c79eeecaa474dedc26d0 100644
+--- a/ui/ozone/platform/nexus/nexus_window_manager.h
++++ b/ui/ozone/platform/nexus/nexus_window_manager.h
+@@ -49,6 +49,9 @@ class NexusWindowManager {
+   // Called when a mouse physicall moved into the |window|.
+   void MouseOnWindow(NexusWindow* window);
+ 
++  // Get Keyboard grabber.
++  gfx::AcceleratedWidget keyboard_grabber() const { return keyboard_grabber_; }
++
+   // Gets the current widget recipient of mouse events.
+   gfx::AcceleratedWidget event_grabber() const { return event_grabber_; }
+ 
+@@ -58,6 +61,7 @@ class NexusWindowManager {
+ 
+   NexusWindow* window_mouse_currently_on_ = nullptr;
+   gfx::AcceleratedWidget event_grabber_ = gfx::kNullAcceleratedWidget;
++  gfx::AcceleratedWidget keyboard_grabber_ = gfx::kNullAcceleratedWidget;
+   gfx::AcceleratedWidget next_accelerated_widget_ = 0;
+ };
+ 
