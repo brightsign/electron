@@ -1,0 +1,27 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Caner Altinbasak <cal@brightsign.biz>
+Date: Fri, 31 Jan 2025 21:02:17 +0000
+Subject: fix(wayland_window): Always dispatch KeyEvent OS-18589
+
+In the case where topmost window is unfocusable, event target is empty.
+This causes event to be swallowed here. Windows itself know if they are
+focused or not and ignore the event if they are not focused. Pass key
+events to all windows and let windows decide if they want to handle it
+or not.
+
+Signed-off-by: Caner Altinbasak <cal@brightsign.biz>
+
+diff --git a/ui/ozone/platform/wayland/host/wayland_window.cc b/ui/ozone/platform/wayland/host/wayland_window.cc
+index ad4366edfe4db5f704d8f08417bd508660c98f4c..dfa77a2a8cfcf13429e01953b07c37bd11ee6984 100644
+--- a/ui/ozone/platform/wayland/host/wayland_window.cc
++++ b/ui/ozone/platform/wayland/host/wayland_window.cc
+@@ -624,6 +624,9 @@ bool WaylandWindow::CanAcceptEvent(const Event& event) {
+     DCHECK(event.target());
+   }
+ #endif
++  if(event.IsKeyEvent()) {
++    return true;
++  }
+   return this == event.target();
+ }
+ 
