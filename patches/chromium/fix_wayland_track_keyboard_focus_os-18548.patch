@@ -1,0 +1,133 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Caner Altinbasak <cal@brightsign.biz>
+Date: Wed, 26 Feb 2025 10:30:13 +0000
+Subject: fix(wayland): Track keyboard focus OS-18548
+
+We have disabled focus tracking in Weston. Weston no longer calls
+back to Electron for focus updates. Modified WaylandWindowManager
+and WaylandWindow to track the focused window and send key events
+to the focused window.
+
+diff --git a/ui/ozone/platform/wayland/host/wayland_window.cc b/ui/ozone/platform/wayland/host/wayland_window.cc
+index dfa77a2a8cfcf13429e01953b07c37bd11ee6984..209a5bd89264af1437ea4d269f9b6974e1d7caaa 100644
+--- a/ui/ozone/platform/wayland/host/wayland_window.cc
++++ b/ui/ozone/platform/wayland/host/wayland_window.cc
+@@ -87,6 +87,7 @@ WaylandWindow::~WaylandWindow() {
+   CHECK(ui_task_runner_->BelongsToCurrentThread());
+   shutting_down_ = true;
+ 
++  connection_->window_manager()->UngrabKeyboardEvents(this);
+   PlatformEventSource::GetInstance()->RemovePlatformEventDispatcher(this);
+ 
+   if (wayland_overlay_delegation_enabled_) {
+@@ -571,6 +572,16 @@ bool WaylandWindow::CanDispatchEvent(const PlatformEvent& event) {
+ uint32_t WaylandWindow::DispatchEvent(const PlatformEvent& native_event) {
+   Event* event = static_cast<Event*>(native_event);
+ 
++  if (event->IsMouseEvent()) {
++    // If it is mouse button event, set window as keyboard grabber.
++    if (event->AsMouseEvent()->IsAnyButton() && activatable_) {
++      connection_->window_manager()->GrabKeyboardEvents(this);
++    }
++  } else if (event->IsTouchEvent() && activatable_) {
++    // If it is touch event, set window as keyboard grabber.
++    connection_->window_manager()->GrabKeyboardEvents(this);
++  }
++
+   if (event->IsLocatedEvent()) {
+     auto* event_grabber =
+         connection_->window_manager()->located_events_grabber();
+@@ -625,7 +636,7 @@ bool WaylandWindow::CanAcceptEvent(const Event& event) {
+   }
+ #endif
+   if(event.IsKeyEvent()) {
+-    return true;
++    return connection_->window_manager()->keyboard_events_grabber() == this;
+   }
+   return this == event.target();
+ }
+@@ -772,7 +783,7 @@ bool WaylandWindow::Initialize(PlatformWindowInitProperties properties) {
+     LOG(ERROR) << "Failed to create wl_surface";
+     return false;
+   }
+-
++  activatable_ = properties.activatable;
+   PlatformWindowDelegate::State state;
+   state.bounds_dip = properties.bounds;
+ 
+diff --git a/ui/ozone/platform/wayland/host/wayland_window.h b/ui/ozone/platform/wayland/host/wayland_window.h
+index d68d4d818f28f401e400627d8e1c0a500a099ea8..06ae8e94456872055aabce362cd5650a7d692f45 100644
+--- a/ui/ozone/platform/wayland/host/wayland_window.h
++++ b/ui/ozone/platform/wayland/host/wayland_window.h
+@@ -656,6 +656,8 @@ class WaylandWindow : public PlatformWindow,
+ 
+   base::OnceClosure drag_loop_quit_closure_;
+ 
++  bool activatable_ = false;
++
+ #if BUILDFLAG(IS_CHROMEOS_LACROS)
+   wl::Object<zwp_keyboard_shortcuts_inhibitor_v1>
+       permanent_keyboard_shortcuts_inhibitor_;
+diff --git a/ui/ozone/platform/wayland/host/wayland_window_manager.cc b/ui/ozone/platform/wayland/host/wayland_window_manager.cc
+index 9d15a54c0fb3da420ead1ba2bf1ade14b381e154..ca009139a7165663f9466ba8d44e8c04e3e4a9aa 100644
+--- a/ui/ozone/platform/wayland/host/wayland_window_manager.cc
++++ b/ui/ozone/platform/wayland/host/wayland_window_manager.cc
+@@ -10,6 +10,7 @@
+ #include "ui/ozone/platform/wayland/host/wayland_window.h"
+ #include "ui/ozone/platform/wayland/host/wayland_window_drag_controller.h"
+ #include "ui/ozone/platform/wayland/host/wayland_window_observer.h"
++#include "wayland_window_manager.h"
+ 
+ namespace ui {
+ 
+@@ -46,6 +47,7 @@ void WaylandWindowManager::GrabLocatedEvents(WaylandWindow* window) {
+   located_events_grabber_ = window;
+   if (old_grabber)
+     old_grabber->OnWindowLostCapture();
++
+ }
+ 
+ void WaylandWindowManager::UngrabLocatedEvents(WaylandWindow* window) {
+@@ -55,6 +57,15 @@ void WaylandWindowManager::UngrabLocatedEvents(WaylandWindow* window) {
+   old_grabber->OnWindowLostCapture();
+ }
+ 
++void WaylandWindowManager::GrabKeyboardEvents(WaylandWindow* window) {
++  keyboard_events_grabber_ = window;
++}
++
++void WaylandWindowManager::UngrabKeyboardEvents(WaylandWindow* window) {
++  if (keyboard_events_grabber_ == window)
++    keyboard_events_grabber_ = nullptr;
++}
++
+ WaylandWindow* WaylandWindowManager::GetWindow(
+     gfx::AcceleratedWidget widget) const {
+   auto it = window_map_.find(widget);
+diff --git a/ui/ozone/platform/wayland/host/wayland_window_manager.h b/ui/ozone/platform/wayland/host/wayland_window_manager.h
+index d44962e259cd5a0d9f946f230c133089aef3a3c6..008d7a1b5249b7cdc4675e40a34726ec4c8af348 100644
+--- a/ui/ozone/platform/wayland/host/wayland_window_manager.h
++++ b/ui/ozone/platform/wayland/host/wayland_window_manager.h
+@@ -52,6 +52,14 @@ class WaylandWindowManager {
+     return located_events_grabber_;
+   }
+ 
++  void GrabKeyboardEvents(WaylandWindow* event_grabber);
++  void UngrabKeyboardEvents(WaylandWindow* event_grabber);
++
++  // Returns the keyboard event grabber.
++  WaylandWindow* keyboard_events_grabber() const {
++    return keyboard_events_grabber_;
++  }
++
+   // Returns a window found by |widget|.
+   WaylandWindow* GetWindow(gfx::AcceleratedWidget widget) const;
+ 
+@@ -133,6 +141,7 @@ class WaylandWindowManager {
+   std::unique_ptr<WaylandSubsurface> subsurface_recycle_cache_;
+ 
+   raw_ptr<WaylandWindow, DanglingUntriaged> located_events_grabber_ = nullptr;
++  raw_ptr<WaylandWindow, DanglingUntriaged> keyboard_events_grabber_ = nullptr;
+ 
+   // Stores strictly monotonically increasing counter for allocating unique
+   // AccelerateWidgets.
