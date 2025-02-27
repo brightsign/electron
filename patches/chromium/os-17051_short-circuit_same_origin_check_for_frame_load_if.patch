@@ -1,0 +1,35 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Tariq Bashir <120014322+t-bashir-bs@users.noreply.github.com>
+Date: Thu, 27 Feb 2025 14:29:55 +0000
+Subject: OS-17051: Short-circuit same origin check for frame load if
+ websecurity is disabled
+
+Disable the same origin check for frame loads if web security is disabled.
+This is to allow the loading of iframes from different origins when web
+security is disabled.
+
+This is a cherry pick of https://cam-gerrit.brightsign.info/c/qtwebengine-chromium/+/6236
+
+diff --git a/content/browser/renderer_host/ancestor_throttle.cc b/content/browser/renderer_host/ancestor_throttle.cc
+index d007b254c4689966e39ebc5ab04c0b148218eccb..8a4cafe6e47fdf8a5b59d00df40898d0cd588ff4 100644
+--- a/content/browser/renderer_host/ancestor_throttle.cc
++++ b/content/browser/renderer_host/ancestor_throttle.cc
+@@ -25,6 +25,7 @@
+ #include "content/public/browser/navigation_handle.h"
+ #include "content/public/browser/navigation_throttle.h"
+ #include "content/public/browser/storage_partition.h"
++#include "content/public/browser/web_contents.h"
+ #include "content/public/common/content_client.h"
+ #include "net/http/http_response_headers.h"
+ #include "services/network/public/cpp/content_security_policy/content_security_policy.h"
+@@ -284,7 +285,9 @@ AncestorThrottle::CheckResult AncestorThrottle::EvaluateXFrameOptions(
+       url::Origin current_origin =
+           url::Origin::Create(navigation_handle()->GetURL());
+       while (parent) {
+-        if (!parent->GetLastCommittedOrigin().IsSameOriginWith(
++        if ((!navigation_handle()->GetWebContents()
++             || navigation_handle()->GetWebContents()->GetOrCreateWebPreferences().web_security_enabled)
++            && !parent->GetLastCommittedOrigin().IsSameOriginWith(
+                 current_origin)) {
+           if (logging == LoggingDisposition::LOG_TO_CONSOLE)
+             ConsoleErrorXFrameOptions(disposition);
