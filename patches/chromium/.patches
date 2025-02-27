@@ -182,3 +182,4 @@ fix_nexus_fix_window_focus_management_for_vk_os-17597.patch
 fix_track_keyboard_focus_on_nexuswindowmanager_os-18564.patch
 fix_wayland_window_always_dispatch_keyevent_os-18589.patch
 fix_wayland_track_keyboard_focus_os-18548.patch
+os-17051_short-circuit_same_origin_check_for_frame_load_if.patch
