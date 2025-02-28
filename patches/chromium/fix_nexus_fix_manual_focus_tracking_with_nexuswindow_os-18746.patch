@@ -1,0 +1,170 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Caner Altinbasak <cal@brightsign.biz>
+Date: Fri, 28 Feb 2025 11:01:36 +0000
+Subject: fix(nexus): Fix manual focus tracking with NexusWindow OS-18746
+
+My previous attempt to do focus tracking on NexusWindow was based on
+Mouse Grab/UnGrab. These events are not generated for touch events and
+our Carson tests rely on those.
+
+Replaced the focus tracking implementation to be similar to what we did
+in Wayland. It now tracks all events which can activate a window and
+sets the keyboard focus accordingly.
+
+diff --git a/ui/ozone/platform/nexus/nexus_window.cc b/ui/ozone/platform/nexus/nexus_window.cc
+index 6d068a17c57e8d9932f7a82dc297de4711717f8b..148f289ba8e21793a10b9af0b23d2227264528ba 100644
+--- a/ui/ozone/platform/nexus/nexus_window.cc
++++ b/ui/ozone/platform/nexus/nexus_window.cc
+@@ -61,27 +61,29 @@ namespace ui {
+ 
+ NexusWindow::NexusWindow(PlatformWindowDelegate* delegate,
+                          NexusWindowManager* window_manager,
+-                         const gfx::Rect& bounds,
++                         PlatformWindowInitProperties properties,
+                          EventFactoryEvdev* event_factory,
+                          BrightsignCursorDelegateEvdev* cursor)
+-    : bounds_(bounds),
+-    delegate_(delegate),
+-    event_factory_(event_factory),
+-    cursor_(cursor),
+-    window_manager_(window_manager) {
++    : delegate_(delegate),
++      bounds_(properties.bounds),
++      event_factory_(event_factory),
++      cursor_(cursor),
++      window_manager_(window_manager) {
+ 
+-  BS_DEBUG( "%s (%d, %d), %dx%d\n", __PRETTY_FUNCTION__, bounds.x(), bounds.y(), bounds.width(), bounds.height());
++  BS_DEBUG( "%s (%d, %d), %dx%d\n", __PRETTY_FUNCTION__, bounds_.x(), bounds_.y(), bounds_.width(), bounds_.height());
+   NXPL_NativeWindowInfoEXT   win_info;
+   NXPL_GetDefaultNativeWindowInfoEXT(&win_info);
+-  win_info.x = bounds.x();
+-  win_info.y = bounds.y();
+-  win_info.width = bounds.width();
+-  win_info.height = bounds.height();
++  win_info.x = bounds_.x();
++  win_info.y = bounds_.y();
++  win_info.width = bounds_.width();
++  win_info.height = bounds_.height();
+   win_info.zOrder = kZOrder;
+   win_info.colorBlend = HideSourceColor;
+   win_info.alphaBlend = HideSourceAlpha;
+   native_window_ = NXPL_CreateNativeWindowEXT(&win_info);
+ 
++  activatable_ = properties.activatable;
++
+   widget_ = window_manager_->AddWindow(this);
+   delegate->OnAcceleratedWidgetAvailable(widget_);
+ 
+@@ -311,6 +313,16 @@ bool NexusWindow::CanDispatchEvent(const PlatformEvent& event) {
+ 
+ uint32_t NexusWindow::DispatchEvent(const PlatformEvent& event) {
+   BS_DEBUG2("%s: %s\n", title_.c_str(), __PRETTY_FUNCTION__);
++  if (event->IsMouseEvent()) {
++    // If it is mouse button event, set window as keyboard grabber.
++    if (event->AsMouseEvent()->IsAnyButton() && activatable_) {
++      window_manager_->GrabKeyboardEvents(widget_);
++    }
++  } else if (event->IsTouchEvent() && activatable_) {
++    // If it is touch event, set window as keyboard grabber.
++    window_manager_->GrabKeyboardEvents(widget_);
++  }
++
+   if (event->IsLocatedEvent()) {
+     // Make the event location relative to this window's origin.
+     LocatedEvent* located_event = event->AsLocatedEvent();
+diff --git a/ui/ozone/platform/nexus/nexus_window.h b/ui/ozone/platform/nexus/nexus_window.h
+index 2eb68e5bf434b053b8f1f5e66953ee3d72eea10c..3c11d2f7300c693d50a9ea2873ec9e7fa7421aba 100644
+--- a/ui/ozone/platform/nexus/nexus_window.h
++++ b/ui/ozone/platform/nexus/nexus_window.h
+@@ -14,6 +14,7 @@
+ #include "ui/gfx/native_widget_types.h"
+ #include "ui/platform_window/platform_window_delegate.h"
+ #include "ui/platform_window/platform_window.h"
++#include "ui/platform_window/platform_window_init_properties.h"
+ #include "nxpl/default_nexus.h"
+ 
+ namespace ui {
+@@ -26,7 +27,7 @@ class NexusWindow : public PlatformWindow, public PlatformEventDispatcher {
+  public:
+   NexusWindow(PlatformWindowDelegate* delegate,
+               NexusWindowManager* window_manager,
+-              const gfx::Rect& bounds,
++              PlatformWindowInitProperties properties,
+               EventFactoryEvdev* event_factory,
+               BrightsignCursorDelegateEvdev* cursor);
+   ~NexusWindow() override;
+@@ -92,6 +93,7 @@ class NexusWindow : public PlatformWindow, public PlatformEventDispatcher {
+   gfx::AcceleratedWidget widget_;
+   void* native_window_;
+   bool visible_ = false;
++  bool activatable_ = false;
+   std::string title_;
+ };
+ 
+diff --git a/ui/ozone/platform/nexus/nexus_window_manager.cc b/ui/ozone/platform/nexus/nexus_window_manager.cc
+index c38fc13003b77b5f48e00038d52337fc1073513d..1bd9b271f35fa7445e377778c2c23e4393325527 100644
+--- a/ui/ozone/platform/nexus/nexus_window_manager.cc
++++ b/ui/ozone/platform/nexus/nexus_window_manager.cc
+@@ -40,6 +40,9 @@ void NexusWindowManager::RemoveWindow(gfx::AcceleratedWidget widget,
+ 
+   if (event_grabber_ == widget)
+     event_grabber_ = gfx::kNullAcceleratedWidget;
++
++  if (keyboard_grabber_ == widget)
++    keyboard_grabber_ = gfx::kNullAcceleratedWidget;
+ }
+ 
+ NexusWindow* NexusWindowManager::GetWindow(gfx::AcceleratedWidget widget) {
+@@ -72,7 +75,6 @@ void NexusWindowManager::GrabEvents(gfx::AcceleratedWidget widget) {
+   if (event_grabber_ != gfx::kNullAcceleratedWidget)
+     return;
+   event_grabber_ = widget;
+-  keyboard_grabber_ = widget;
+ }
+ 
+ void NexusWindowManager::UngrabEvents(gfx::AcceleratedWidget widget) {
+@@ -82,6 +84,16 @@ void NexusWindowManager::UngrabEvents(gfx::AcceleratedWidget widget) {
+   event_grabber_ = gfx::kNullAcceleratedWidget;
+ }
+ 
++void NexusWindowManager::GrabKeyboardEvents(gfx::AcceleratedWidget widget) {
++  keyboard_grabber_ = widget;
++}
++
++void NexusWindowManager::UngrabKeyboardEvents(gfx::AcceleratedWidget widget) {
++  if (keyboard_grabber_ == widget) {
++    keyboard_grabber_ = gfx::kNullAcceleratedWidget;
++  }
++}
++
+ void NexusWindowManager::MouseOnWindow(NexusWindow* window) {
+   BS_DEBUG("%s:%d window:%p\n", __PRETTY_FUNCTION__, __LINE__, window);
+   if (window_mouse_currently_on_ == window)
+diff --git a/ui/ozone/platform/nexus/nexus_window_manager.h b/ui/ozone/platform/nexus/nexus_window_manager.h
+index afa5f7b7e47f3a53c1f8c79eeecaa474dedc26d0..fc1118c2f497a95bdb7b1097bf4adaeed2c98d54 100644
+--- a/ui/ozone/platform/nexus/nexus_window_manager.h
++++ b/ui/ozone/platform/nexus/nexus_window_manager.h
+@@ -46,6 +46,9 @@ class NexusWindowManager {
+   // Unsets a given widget as the recipient for events.
+   void UngrabEvents(gfx::AcceleratedWidget widget);
+ 
++  void GrabKeyboardEvents(gfx::AcceleratedWidget widget);
++  void UngrabKeyboardEvents(gfx::AcceleratedWidget widget);
++
+   // Called when a mouse physicall moved into the |window|.
+   void MouseOnWindow(NexusWindow* window);
+ 
+diff --git a/ui/ozone/platform/nexus/ozone_platform_nexus.cc b/ui/ozone/platform/nexus/ozone_platform_nexus.cc
+index f928cecd6baf1d650055682674031a7bdf1fcbd5..c9279db33475792335d79b9e429dbd59e8ca0ed6 100644
+--- a/ui/ozone/platform/nexus/ozone_platform_nexus.cc
++++ b/ui/ozone/platform/nexus/ozone_platform_nexus.cc
+@@ -73,7 +73,7 @@ class OzonePlatformNexus : public OzonePlatform {
+   std::unique_ptr<PlatformWindow> CreatePlatformWindow(
+       PlatformWindowDelegate* delegate,
+       PlatformWindowInitProperties properties) override {
+-    return std::make_unique<NexusWindow>(delegate, window_manager_.get(), properties.bounds, event_factory_ozone_.get(), cursor_.get());
++    return std::make_unique<NexusWindow>(delegate, window_manager_.get(), std::move(properties), event_factory_ozone_.get(), cursor_.get());
+   }
+   std::unique_ptr<display::NativeDisplayDelegate> CreateNativeDisplayDelegate()
+       override {
