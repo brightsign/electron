@@ -54,10 +54,12 @@ gin::Handle<WebContents> WebContentsView::GetWebContents(v8::Isolate* isolate) {
 
 int WebContentsView::NonClientHitTest(const gfx::Point& point) {
   gfx::Point local_point(point);
-  views::View::ConvertPointFromWidget(view(), &local_point);
-  SkRegion* region = api_web_contents_->draggable_region();
-  if (region && region->contains(local_point.x(), local_point.y()))
-    return HTCAPTION;
+  if (api_web_contents_) {
+    views::View::ConvertPointFromWidget(view(), &local_point);
+    SkRegion* region = api_web_contents_->draggable_region();
+    if (region && region->contains(local_point.x(), local_point.y()))
+      return HTCAPTION;
+  }
   return HTNOWHERE;
 }
 
