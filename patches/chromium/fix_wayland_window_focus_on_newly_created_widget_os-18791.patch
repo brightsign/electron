@@ -1,0 +1,32 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Caner Altinbasak <cal@brightsign.biz>
+Date: Fri, 7 Mar 2025 15:29:56 +0000
+Subject: fix(wayland_window): Focus on newly created widget OS-18791
+
+Electron no longer receives focus widget update callback
+from Weston, and it tracks its own focus. Weston's default
+behaviour is to focus a widget when it is first created.
+
+Our focus tracking was differing from Weston's default
+behaviour and we have applications which depend on the
+default behaviour. Focus on widget in Initialize call
+to mimic Weston's behaviour.
+
+Weston doesn't have a concept of "non-focusable". Only
+difference is, we don't focus on "non-focusable" widgets.
+
+diff --git a/ui/ozone/platform/wayland/host/wayland_window.cc b/ui/ozone/platform/wayland/host/wayland_window.cc
+index 209a5bd89264af1437ea4d269f9b6974e1d7caaa..826f51c06d2c4b8e27dc994be15a35ad56147e1c 100644
+--- a/ui/ozone/platform/wayland/host/wayland_window.cc
++++ b/ui/ozone/platform/wayland/host/wayland_window.cc
+@@ -825,6 +825,10 @@ bool WaylandWindow::Initialize(PlatformWindowInitProperties properties) {
+     return false;
+   }
+ 
++  if (activatable_) {
++    connection_->window_manager()->GrabKeyboardEvents(this);
++  }
++
+   applied_state_ = state;
+   latched_state_ = state;
+ 
