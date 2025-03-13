@@ -1,0 +1,35 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Tariq Bashir <120014322+t-bashir-bs@users.noreply.github.com>
+Date: Thu, 13 Mar 2025 16:45:00 +0000
+Subject: OS-18772: set visibility when video player is hidden with display
+ none
+
+When the video player is hidden (e.g. due to css display being set to none),
+we need to set the visibility to hidden. This doesn't happen currently
+because when its hidden we won't get a kVideoHole in the quad_list when
+OverlayStrategyUnderlayBrightsign::Propose is called. This will result in
+no items being added to the candidates list, which in turn means that
+OverlayStrategyUnderlayBrightsign::Attempt will not be called. This patch
+adds a check to see if the candidates list is empty and if so, sets the
+visibility of the video player to hidden if last_factory_name_ is set.
+
+diff --git a/components/viz/service/display/overlay_strategy_underlay_brightsign.cc b/components/viz/service/display/overlay_strategy_underlay_brightsign.cc
+index 5217cf58d527687c73824cdecd51c45fe482eec9..e5d7b4f131df290b01a7d4193bceea786c7564f1 100644
+--- a/components/viz/service/display/overlay_strategy_underlay_brightsign.cc
++++ b/components/viz/service/display/overlay_strategy_underlay_brightsign.cc
+@@ -269,6 +269,15 @@ void OverlayStrategyUnderlayBrightsign::Propose(
+   if (overlay_iter != quad_list.end()) {
+     candidates->push_back({overlay_iter, candidate, this});
+   }
++
++  if (candidates->empty() && !last_factory_name_.empty()) {
++    for (auto item : last_frame_player_list_) {
++      vid_player_set_visibility(last_factory_name_.c_str(), item.c_str(),
++                                VID_PLAYER_HIDDEN);
++    }
++    last_frame_player_list_.clear();
++    last_factory_name_.clear();
++  }
+ }
+ 
+ OverlayStrategy OverlayStrategyUnderlayBrightsign::GetUMAEnum() const {
