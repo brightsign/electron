@@ -39,6 +39,7 @@
 #include "shell/browser/background_throttling_source.h"
 #include "shell/browser/event_emitter_mixin.h"
 #include "shell/browser/extended_web_contents_observer.h"
+#include "shell/browser/media/media_resource_getter_impl.h"
 #include "shell/browser/ui/inspectable_web_contents.h"
 #include "shell/browser/ui/inspectable_web_contents_delegate.h"
 #include "shell/browser/ui/inspectable_web_contents_view_delegate.h"
@@ -158,6 +159,10 @@ class WebContents : public ExclusiveAccessContext,
   static gin::WrapperInfo kWrapperInfo;
   const char* GetTypeName() override;
 
+  v8::Local<v8::Promise> GetBlobData(v8::Isolate*,
+                                     const std::string& url,
+                                     uint64_t location,
+                                     uint64_t size);
   void Destroy();
   void Close(absl::optional<gin_helper::Dictionary> options);
   base::WeakPtr<WebContents> GetWeakPtr() { return weak_factory_.GetWeakPtr(); }
@@ -496,6 +501,9 @@ class WebContents : public ExclusiveAccessContext,
                              content::WebContents* web_contents,
                              extensions::mojom::ViewType view_type);
 #endif
+
+  void OnGetBlobData(gin_helper::Promise<v8::Local<v8::Value>> promise,
+                     scoped_refptr<net::IOBufferWithSize> io_buf);
 
   // content::WebContentsDelegate:
   bool DidAddMessageToConsole(content::WebContents* source,
@@ -849,6 +857,8 @@ class WebContents : public ExclusiveAccessContext,
   std::unique_ptr<SkRegion> draggable_region_;
 
   bool force_non_draggable_ = false;
+
+  std::unique_ptr<content::MediaResourceGetterImpl> media_resource_getter_;
 
   base::WeakPtrFactory<WebContents> weak_factory_{this};
 };
