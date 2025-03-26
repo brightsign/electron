@@ -1,0 +1,120 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Tariq Bashir <120014322+t-bashir-bs@users.noreply.github.com>
+Date: Tue, 18 Mar 2025 15:43:30 +0000
+Subject: OS-17206: fix video punch through with transparency
+
+This patch fixes two issues related to video punch through with and without transparency.
+The first issue was that we weren't searching through the render pass list indexes
+in OverlayStrategyUnderlayBrightsign::Propose in the same way as done in
+OverlayStrategyUnderlayBrightsign::Attempt. This was causing Propose not to find VideoHoleDraw
+quads in the render pass list in some cases. The second issue was causing issues when the
+punch through quad was drawn with transparency. This has been fixed by using the correct
+blending mode when replacing the quad with a solid color.
+
+diff --git a/components/viz/service/display/overlay_strategy_underlay_brightsign.cc b/components/viz/service/display/overlay_strategy_underlay_brightsign.cc
+index e5d7b4f131df290b01a7d4193bceea786c7564f1..cfb85c329ee87db7536a80a99c3ff392007f4067 100644
+--- a/components/viz/service/display/overlay_strategy_underlay_brightsign.cc
++++ b/components/viz/service/display/overlay_strategy_underlay_brightsign.cc
+@@ -70,8 +70,14 @@ bool OverlayStrategyUnderlayBrightsign::VideoHoleDraw(
+               quad = quad_list.InsertAfterAndInvalidateAllPointers<VideoHoleDrawQuad>(quad, 1, temp_quad);
+ 
+               if (VideoHoleDrawQuad::MaterialCast(*quad)->z_index < 0) {
+-                render_pass->ReplaceExistingQuadWithSolidColor(quad,  SkColors::kBlack,
+-                                                               SkBlendMode::kDstOut);
++                if (!quad->ShouldDrawWithBlending() &&
++                    quad->shared_quad_state->blend_mode == SkBlendMode::kSrcOver) {
++                  render_pass->ReplaceExistingQuadWithSolidColor(quad, SkColors::kBlack,
++                                                                 SkBlendMode::kDstOut);
++                } else {
++                  render_pass->ReplaceExistingQuadWithSolidColor(quad, SkColors::kTransparent,
++                                                                 SkBlendMode::kSrcOut);
++                }
+               }
+             }
+             return !tokens->empty();
+@@ -233,41 +239,52 @@ void OverlayStrategyUnderlayBrightsign::Propose(
+     const PrimaryPlane* primary_plane,
+     std::vector<OverlayProposedCandidate>* candidates,
+     std::vector<gfx::Rect>* content_bounds) {
+-  auto* render_pass = render_pass_list->back().get();
+-  QuadList& quad_list = render_pass->quad_list;
+-  OverlayCandidate candidate;
+-  auto overlay_iter = quad_list.end();
+-  const OverlayCandidateFactory::OverlayContext context = {
+-      .supports_mask_filter = true};
+-  OverlayCandidateFactory candidate_factory = OverlayCandidateFactory(
+-      render_pass, resource_provider, surface_damage_rect_list,
+-      &output_color_matrix, GetPrimaryPlaneDisplayRect(primary_plane),
+-      &render_pass_filters, context);
+-
+-  // Original code did reverse iteration.
+-  // Here we do forward but find the last one. which should be the same thing.
+-  for (auto it = quad_list.begin(); it != quad_list.end(); ++it) {
+-    if (OverlayCandidate::IsInvisibleQuad(*it)) {
+-      continue;
+-    }
++  bool continue_loop = true;
++  for (int index = render_pass_list->size() - 1; index >= 0 && continue_loop; index--) {
++    continue_loop = false;
++    auto render_pass = (*render_pass_list)[index].get();
++    QuadList& quad_list = render_pass->quad_list;
++    OverlayCandidate candidate;
++    auto overlay_iter = quad_list.end();
++    const OverlayCandidateFactory::OverlayContext context = {
++        .supports_mask_filter = true};
++    OverlayCandidateFactory candidate_factory = OverlayCandidateFactory(
++        render_pass, resource_provider, surface_damage_rect_list,
++        &output_color_matrix, GetPrimaryPlaneDisplayRect(primary_plane),
++        &render_pass_filters, context);
++
++    // Original code did reverse iteration.
++    // Here we do forward but find the last one. which should be the same thing.
++    for (auto it = quad_list.begin(); it != quad_list.end(); ++it) {
++      BS_DEBUG("OVERLAY: QUAD MATERIAL:%2d, OPACITY:%f, Location:%s\n",
++               it->material,
++               it->shared_quad_state->opacity,
++               it->visible_rect.ToString().c_str());
++      if (OverlayCandidate::IsInvisibleQuad(*it)) {
++        continue;
++      }
+ 
+-    // Look for quads that are overlayable and require an overlay. Chromecast
+-    // only supports a video underlay so this can't promote all quads that are
+-    // overlayable, it needs to ensure that the quad requires overlays since
+-    // that quad is side-channeled through a secure path into an overlay
+-    // sitting underneath the primary plane. This is only looking at where the
+-    // quad is supposed to be to replace it with a transparent quad to allow
+-    // the underlay to be visible.
+-    // VIDEO_HOLE implies it requires overlay.
+-    if (it->material == DrawQuad::Material::kVideoHole &&
+-        candidate_factory.FromDrawQuad(*it, candidate) ==
+-            OverlayCandidate::CandidateStatus::kSuccess) {
+-      overlay_iter = it;
++      // Look for quads that are overlayable and require an overlay. Chromecast
++      // only supports a video underlay so this can't promote all quads that are
++      // overlayable, it needs to ensure that the quad requires overlays since
++      // that quad is side-channeled through a secure path into an overlay
++      // sitting underneath the primary plane. This is only looking at where the
++      // quad is supposed to be to replace it with a transparent quad to allow
++      // the underlay to be visible.
++      // VIDEO_HOLE implies it requires overlay.
++      if (it->material == DrawQuad::Material::kVideoHole &&
++          candidate_factory.FromDrawQuad(*it, candidate) ==
++              OverlayCandidate::CandidateStatus::kSuccess) {
++        overlay_iter = it;
++      }
++      else if (it->material == DrawQuad::Material::kAggregatedRenderPass)
++      {
++        continue_loop = true;
++      }
++    }
++    if (overlay_iter != quad_list.end()) {
++      candidates->push_back({overlay_iter, candidate, this});
+     }
+-  }
+-
+-  if (overlay_iter != quad_list.end()) {
+-    candidates->push_back({overlay_iter, candidate, this});
+   }
+ 
+   if (candidates->empty() && !last_factory_name_.empty()) {
