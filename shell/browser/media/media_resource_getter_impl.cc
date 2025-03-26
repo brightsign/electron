@@ -36,12 +36,6 @@
 #include "url/gurl.h"
 #include "url/origin.h"
 
-#define BS_DEBUG(...)                 \
-  do {                                \
-    if (0)                            \
-      fprintf(stderr, ##__VA_ARGS__); \
-  } while (0)
-
 using storage::BlobReader;
 
 namespace content {
@@ -204,7 +198,6 @@ void OnReadCompleteOnIO(MediaResourceGetterImpl::GetMediaDataCB callback,
                         scoped_refptr<net::IOBufferWithSize> io_buf,
                         std::shared_ptr<storage::BlobReader> reader,
                         int bytes_read) {
-  BS_DEBUG("OnReadCompleteOnIO\n");
   GetUIThreadTaskRunner({})->PostTask(FROM_HERE,
                                       base::BindRepeating(callback, io_buf));
 }
@@ -214,8 +207,8 @@ void CalculateSizeComplete(MediaResourceGetterImpl::GetMediaDataCB callback,
                            uint64_t size,
                            std::shared_ptr<storage::BlobReader> reader,
                            int value) {
-  BS_DEBUG("TotalSize is %d\n", (int)reader->total_size());
-  BS_DEBUG("IsInMemory: %s\n", reader->IsInMemory() ? "true" : "false");
+  DVLOG(1) << "TotalSize is " << reader->total_size();
+  DVLOG(1) << "IsInMemory: " << (reader->IsInMemory() ? "true" : "false");
   if (location > reader->total_size()) {
     callback.Run(nullptr);
     return;
@@ -227,21 +220,17 @@ void CalculateSizeComplete(MediaResourceGetterImpl::GetMediaDataCB callback,
 
   if (reader->SetReadRange(location, size) !=
       storage::BlobReader::Status::DONE) {
-    BS_DEBUG("%s:%d\n", __FILE__, __LINE__);
     callback.Run(nullptr);
   } else {
-    BS_DEBUG("%s:%d\n", __FILE__, __LINE__);
     auto buffer = base::MakeRefCounted<net::IOBufferWithSize>(size);
     int bytes_read;
     BlobReader::Status status = reader->Read(
         buffer.get(), size, &bytes_read,
         base::BindOnce(&OnReadCompleteOnIO, callback, buffer, reader));
-    BS_DEBUG("%s:%d\n", __FILE__, __LINE__);
     if (status == BlobReader::Status::IO_PENDING)
       return;
     if (status == BlobReader::Status::NET_ERROR)
       bytes_read = reader->net_error();
-    BS_DEBUG("%s:%d\n", __FILE__, __LINE__);
     OnReadCompleteOnIO(callback, buffer, reader, bytes_read);
   }
 }
@@ -251,7 +240,6 @@ void ReceivedBlobDataHandleOnIO(
     uint64_t size,
     MediaResourceGetterImpl::GetMediaDataCB callback,
     std::unique_ptr<storage::BlobDataHandle> handle) {
-  BS_DEBUG("%s:%d\n", __FILE__, __LINE__);
   std::string result;
   if (handle) {
     std::shared_ptr<storage::BlobReader> reader = handle->CreateReader();
@@ -281,16 +269,16 @@ void RequestBlobDataHandleOnIO(
     callback.Run(nullptr);
 }
 
-void MediaResourceGetterImpl::ReadMediaData(const std::string& url,
+void MediaResourceGetterImpl::ReadMediaData(const std::string& blob_url,
                                             uint64_t location,
                                             uint64_t size,
                                             GetMediaDataCB callback) {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
   DCHECK(callback);
   StoragePartitionImpl* storage_partititon = static_cast<StoragePartitionImpl*>(
-      browser_context_->GetStoragePartitionForUrl(GURL(url)));
+      browser_context_->GetStoragePartitionForUrl(GURL(blob_url)));
   auto blob_ptr =
-      storage_partititon->GetBlobUrlRegistry()->GetBlobFromUrl(GURL(url));
+      storage_partititon->GetBlobUrlRegistry()->GetBlobFromUrl(GURL(blob_url));
 
   if (blob_ptr) {
     BrowserContext::BlobContextGetter blob_context_getter =

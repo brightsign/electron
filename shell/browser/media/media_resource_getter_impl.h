@@ -59,7 +59,7 @@ class MediaResourceGetterImpl {
                   bool has_storage_access,
                   GetCookieCB callback);
 
-  void ReadMediaData(const std::string& url,
+  void ReadMediaData(const std::string& blob_url,
                      uint64_t location,
                      uint64_t size,
                      GetMediaDataCB callback);

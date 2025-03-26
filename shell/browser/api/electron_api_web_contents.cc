@@ -1111,7 +1111,7 @@ void WebContents::Close(absl::optional<gin_helper::Dictionary> options) {
 }
 
 v8::Local<v8::Promise> WebContents::GetBlobData(v8::Isolate* isolate,
-                                                const std::string& url,
+                                                const std::string& blob_url,
                                                 uint64_t location,
                                                 uint64_t size) {
   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
@@ -1135,7 +1135,7 @@ v8::Local<v8::Promise> WebContents::GetBlobData(v8::Isolate* isolate,
   content::MediaResourceGetterImpl::GetMediaDataCB callback =
       base::BindRepeating(&WebContents::OnGetBlobData, GetWeakPtr(),
                           base::Passed(&promise));
-  media_resource_getter_->ReadMediaData(url, location, size,
+  media_resource_getter_->ReadMediaData(blob_url, location, size,
                                         std::move(callback));
   return handle;
 }

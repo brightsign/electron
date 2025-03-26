@@ -160,7 +160,7 @@ class WebContents : public ExclusiveAccessContext,
   const char* GetTypeName() override;
 
   v8::Local<v8::Promise> GetBlobData(v8::Isolate*,
-                                     const std::string& url,
+                                     const std::string& blob_url,
                                      uint64_t location,
                                      uint64_t size);
   void Destroy();
