@@ -2683,4 +2683,79 @@ describe('webContents module', () => {
       expect(mimeType).to.equal('text/xml');
     });
   });
+
+  describe('getblobdata', () => {
+    const code = `
+      <html><head><script>
+      var blob = new Blob([ "BrightSign" ],
+      {
+        type : "text/plain;charset=utf-8"
+      });
+      downloadUrl = URL.createObjectURL( blob );
+      console.log(downloadUrl);
+      </script></head></html>
+    `;
+    const buffer = Buffer.from(code);
+    const data = buffer.toString('base64');
+    const url = (`data:text/html;base64,${data}`);
+    let w: BrowserWindow;
+    let downloadUrl = '';
+
+    before(async () => {
+      w = new BrowserWindow({ show: false, webPreferences: { contextIsolation: false } });
+      await w.loadURL(url);
+      downloadUrl = await w.webContents.executeJavaScript('downloadUrl');
+    });
+    after(closeAllWindows);
+
+    it('fetch all data', async () => {
+      const result = await w.webContents.getBlobData(downloadUrl, 0, 10);
+      expect(result.toString()).to.equal('BrightSign');
+      expect(result.length).to.equal(10);
+    });
+
+    it('fetch in parallel', (done) => {
+      let numResults = 0;
+      w.webContents.getBlobData(downloadUrl, 0, 10).then((result) => {
+        expect(result.toString()).to.equal('BrightSign');
+        expect(result.length).to.equal(10);
+        numResults++;
+        if (numResults === 2) {
+          done();
+        }
+      });
+      w.webContents.getBlobData(downloadUrl, 5, 5).then((result) => {
+        expect(result.toString()).to.equal('tSign');
+        expect(result.length).to.equal(5);
+        numResults++;
+        if (numResults === 2) {
+          done();
+        }
+      });
+    });
+
+    it('fetch partial data', async () => {
+      let result = await w.webContents.getBlobData(downloadUrl, 5, 5);
+      expect(result.toString()).to.equal('tSign');
+      expect(result.length).to.equal(5);
+
+      result = await w.webContents.getBlobData(downloadUrl, 2, 3);
+      expect(result.toString()).to.equal('igh');
+      expect(result.length).to.equal(3);
+    });
+
+    it('fetch out of range params', async () => {
+      let result = await w.webContents.getBlobData(downloadUrl, 0, 50);
+      expect(result.toString()).to.equal('BrightSign');
+      expect(result.length).to.equal(10);
+
+      result = await w.webContents.getBlobData(downloadUrl, 10, 10);
+      expect(result.length).to.equal(0);
+    });
+
+    it('fetch non existant url', async () => {
+      const result = await w.webContents.getBlobData('blob:null/none', 0, 10);
+      expect(result).to.equal(null);
+    });
+  });
 });

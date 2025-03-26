@@ -1077,6 +1077,14 @@ const win = new BrowserWindow()
 win.loadFile('src/index.html')
 ```
 
+#### `contents.getBlobData(blobUrl, location, size)`
+
+* `blobUrl` string - Valid Blob Url.
+* `location` Integer - The offset of the range.
+* `size` Integer - The length of the range.
+
+Returns `Promise<Buffer>` - Resolves with the Blob data.
+
 #### `contents.downloadURL(url[, options])`
 
 * `url` string

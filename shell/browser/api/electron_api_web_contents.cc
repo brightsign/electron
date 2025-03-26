@@ -1110,6 +1110,58 @@ void WebContents::Close(absl::optional<gin_helper::Dictionary> options) {
   }
 }
 
+v8::Local<v8::Promise> WebContents::GetBlobData(v8::Isolate* isolate,
+                                                const std::string& blob_url,
+                                                uint64_t location,
+                                                uint64_t size) {
+  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
+
+  gin_helper::Promise<v8::Local<v8::Value>> promise(isolate);
+  v8::Local<v8::Promise> handle = promise.GetHandle();
+
+  if (!media_resource_getter_.get()) {
+    auto* rfh = web_contents()->GetPrimaryMainFrame();
+    if (!rfh) {
+      promise.Resolve(v8::Null(isolate));
+      return handle;
+    }
+    int frame_process_id = rfh->GetProcess()->GetID();
+    int frame_routing_id = rfh->GetRoutingID();
+    content::BrowserContext* context = GetBrowserContext();
+    media_resource_getter_ = std::make_unique<content::MediaResourceGetterImpl>(
+        context, frame_process_id, frame_routing_id);
+  }
+
+  content::MediaResourceGetterImpl::GetMediaDataCB callback =
+      base::BindRepeating(&WebContents::OnGetBlobData, GetWeakPtr(),
+                          base::Passed(&promise));
+  media_resource_getter_->ReadMediaData(blob_url, location, size,
+                                        std::move(callback));
+  return handle;
+}
+
+void WebContents::OnGetBlobData(
+    gin_helper::Promise<v8::Local<v8::Value>> promise,
+    scoped_refptr<net::IOBufferWithSize> io_buf) {
+  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
+  if (io_buf) {
+    v8::Isolate* isolate = promise.isolate();
+    gin_helper::Locker locker(isolate);
+    v8::HandleScope handle_scope(isolate);
+    v8::Context::Scope context_scope(
+        v8::Local<v8::Context>::New(isolate, promise.GetContext()));
+
+    v8::Local<v8::Value> buffer =
+        node::Buffer::Copy(isolate,
+                           reinterpret_cast<const char*>(io_buf->data()),
+                           io_buf->size())
+            .ToLocalChecked();
+    promise.Resolve(buffer);
+  } else {
+    promise.Resolve(v8::Null(promise.isolate()));
+  }
+}
+
 bool WebContents::DidAddMessageToConsole(
     content::WebContents* source,
     blink::mojom::ConsoleMessageLevel level,
@@ -4232,6 +4284,7 @@ void WebContents::FillObjectTemplate(v8::Isolate* isolate,
   // gin::ObjectTemplateBuilder here to handle the fact that WebContents is
   // destroyable.
   gin_helper::ObjectTemplateBuilder(isolate, templ)
+      .SetMethod("getBlobData", &WebContents::GetBlobData)
       .SetMethod("destroy", &WebContents::Destroy)
       .SetMethod("close", &WebContents::Close)
       .SetMethod("getBackgroundThrottling",
