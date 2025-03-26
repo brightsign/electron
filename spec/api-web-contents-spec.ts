@@ -2684,7 +2684,7 @@ describe('webContents module', () => {
     });
   });
 
-  describe('getblobdata', async () => {
+  describe('getblobdata', () => {
     const code = `
       <html><head><script>
       var blob = new Blob([ "BrightSign" ],
@@ -2698,14 +2698,17 @@ describe('webContents module', () => {
     const buffer = Buffer.from(code);
     const data = buffer.toString('base64');
     const url = (`data:text/html;base64,${data}`);
-    const w = new BrowserWindow({ show: false, webPreferences: { webSecurity: false } });
+    let w: BrowserWindow;
     let downloadUrl = '';
 
-    after(closeAllWindows);
-    it('fetch all data', async () => {
+    before(async () => {
+      w = new BrowserWindow({ show: false, webPreferences: { contextIsolation: false } });
       await w.loadURL(url);
       downloadUrl = await w.webContents.executeJavaScript('downloadUrl');
+    });
+    after(closeAllWindows);
 
+    it('fetch all data', async () => {
       const result = await w.webContents.getBlobData(downloadUrl, 0, 10);
       expect(result.toString()).to.equal('BrightSign');
       expect(result.length).to.equal(10);
