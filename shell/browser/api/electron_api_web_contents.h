@@ -163,6 +163,10 @@ class WebContents : public ExclusiveAccessContext,
                                      const std::string& blob_url,
                                      uint64_t location,
                                      uint64_t size);
+  v8::Local<v8::Promise> GetMediaResource(v8::Isolate*,
+                                          const std::string& url,
+                                          const std::string& url_for_cookies,
+                                          const std::string& origin);
   void Destroy();
   void Close(absl::optional<gin_helper::Dictionary> options);
   base::WeakPtr<WebContents> GetWeakPtr() { return weak_factory_.GetWeakPtr(); }
@@ -504,6 +508,15 @@ class WebContents : public ExclusiveAccessContext,
 
   void OnGetBlobData(gin_helper::Promise<v8::Local<v8::Value>> promise,
                      scoped_refptr<net::IOBufferWithSize> io_buf);
+
+  void OnGetCookieData(gin_helper::Promise<gin_helper::Dictionary> promise,
+                       const std::string& url,
+                       const std::string& cookie);
+
+  void OnGetAuthData(gin_helper::Promise<gin_helper::Dictionary> promise,
+                     const std::string& cookie,
+                     const std::u16string& username,
+                     const std::u16string& password);
 
   // content::WebContentsDelegate:
   bool DidAddMessageToConsole(content::WebContents* source,

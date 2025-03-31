@@ -1085,6 +1085,19 @@ win.loadFile('src/index.html')
 
 Returns `Promise<Buffer>` - Resolves with the Blob data.
 
+#### `contents.getMediaResource(url, urlForCookies, origin)`
+
+* `url` string - Valid Url.
+* `urlForCookies` string - The URL to use for cookies.
+* `origin` string - The origin of the request.
+
+Returns `Promise<Object>` - Resolve with an object containing the following:
+
+* `username` string (optional)
+* `password` string (optional)
+* `cookie` string (optional)
+
+
 #### `contents.downloadURL(url[, options])`
 
 * `url` string

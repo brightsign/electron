@@ -2311,6 +2311,8 @@ describe('webContents module', () => {
       expect(eventAuthInfo.host).to.equal('127.0.0.1');
       expect(eventAuthInfo.port).to.equal(serverPort);
       expect(eventAuthInfo.realm).to.equal('Foo');
+      const authDetails = await w.webContents.getMediaResource(`${serverUrl}`, '', `${serverUrl}`);
+      expect(authDetails).to.deep.equal({ username: user, password: pass, cookie: '' });
     });
 
     it('is emitted when a proxy requests authorization', async () => {
