@@ -1162,6 +1162,68 @@ void WebContents::OnGetBlobData(
   }
 }
 
+v8::Local<v8::Promise> WebContents::GetMediaResource(
+    v8::Isolate* isolate,
+    const std::string& url,
+    const std::string& url_for_cookies,
+    const std::string& origin) {
+  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
+
+  gin_helper::Promise<gin_helper::Dictionary> promise(isolate);
+  v8::Local<v8::Promise> handle = promise.GetHandle();
+
+  if (!media_resource_getter_.get()) {
+    auto* rfh = web_contents()->GetPrimaryMainFrame();
+    if (!rfh) {
+      promise.Resolve(gin_helper::Dictionary::CreateEmpty(isolate));
+      return handle;
+    }
+    int frame_process_id = rfh->GetProcess()->GetID();
+    int frame_routing_id = rfh->GetRoutingID();
+    content::BrowserContext* context = GetBrowserContext();
+    media_resource_getter_ = std::make_unique<content::MediaResourceGetterImpl>(
+        context, frame_process_id, frame_routing_id);
+  }
+
+  content::MediaResourceGetterImpl::GetCookieCB callback = base::BindOnce(
+      &WebContents::OnGetCookieData, GetWeakPtr(), std::move(promise), url);
+  media_resource_getter_->GetCookies(
+      GURL(url), net::SiteForCookies::FromUrl(GURL(url_for_cookies)),
+      url::Origin::Create(GURL(origin)), true, std::move(callback));
+  return handle;
+}
+
+void WebContents::OnGetCookieData(
+    gin_helper::Promise<gin_helper::Dictionary> promise,
+    const std::string& url,
+    const std::string& cookie) {
+  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
+
+  content::MediaResourceGetterImpl::GetAuthCredentialsCB callback =
+      base::BindOnce(&WebContents::OnGetAuthData, GetWeakPtr(),
+                     std::move(promise), cookie);
+  media_resource_getter_->GetAuthCredentials(GURL(url), std::move(callback));
+}
+
+void WebContents::OnGetAuthData(
+    gin_helper::Promise<gin_helper::Dictionary> promise,
+    const std::string& cookie,
+    const std::u16string& username,
+    const std::u16string& password) {
+  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
+  v8::Isolate* isolate = promise.isolate();
+  gin_helper::Locker locker(isolate);
+  v8::HandleScope handle_scope(isolate);
+  v8::Context::Scope context_scope(
+      v8::Local<v8::Context>::New(isolate, promise.GetContext()));
+
+  auto dict = gin_helper::Dictionary::CreateEmpty(isolate);
+  dict.Set("username", username);
+  dict.Set("password", password);
+  dict.Set("cookie", cookie);
+  promise.Resolve(dict);
+}
+
 bool WebContents::DidAddMessageToConsole(
     content::WebContents* source,
     blink::mojom::ConsoleMessageLevel level,
@@ -4285,6 +4347,7 @@ void WebContents::FillObjectTemplate(v8::Isolate* isolate,
   // destroyable.
   gin_helper::ObjectTemplateBuilder(isolate, templ)
       .SetMethod("getBlobData", &WebContents::GetBlobData)
+      .SetMethod("getMediaResource", &WebContents::GetMediaResource)
       .SetMethod("destroy", &WebContents::Destroy)
       .SetMethod("close", &WebContents::Close)
       .SetMethod("getBackgroundThrottling",
