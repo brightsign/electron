@@ -1,0 +1,175 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Caner Altinbasak <cal@brightsign.biz>
+Date: Mon, 28 Apr 2025 14:16:54 +0100
+Subject: fix(ozone-nexus): Fix touch screen resolution OS-19061
+
+DeviceDataManager should be configured with touch coordinates to
+display coordinates transform. This patch does the necassary
+configuration at start up and when a new touch device is attached
+to the system.
+
+diff --git a/ui/ozone/platform/nexus/nexus_screen.cc b/ui/ozone/platform/nexus/nexus_screen.cc
+index 56757c0a039aceff9800120286d6391d081a7d01..3da767d7c3ca27f675bf043be80dce0cb573b827 100644
+--- a/ui/ozone/platform/nexus/nexus_screen.cc
++++ b/ui/ozone/platform/nexus/nexus_screen.cc
+@@ -3,6 +3,7 @@
+ // found in the LICENSE file.
+ 
+ #include "ui/ozone/platform/nexus/nexus_screen.h"
++#include "base/logging.h"
+ #include "nexus_core_utils.h"
+ #include "nxclient.h"
+ 
+@@ -11,14 +12,12 @@ namespace ui {
+ NexusScreen::NexusScreen() {
+   NxClient_Join(nullptr);
+   static constexpr int64_t kNexusDisplayId = 1;
+-  static constexpr float kNexusDisplayScale = 1.0f;
+   NxClient_DisplaySettings settings;
+   NxClient_GetDisplaySettings(&settings);
+   NEXUS_VideoFormatInfo format_info;
+   NEXUS_VideoFormat_GetInfo(settings.format, &format_info);
+   gfx::Rect kNexusDisplayBounds(gfx::Size(format_info.width, format_info.height));
+-  display::Display display(kNexusDisplayId);
+-  display.SetScaleAndBounds(kNexusDisplayScale, kNexusDisplayBounds);
++  display::Display display(kNexusDisplayId, kNexusDisplayBounds);
+   display_list_.AddDisplay(display, display::DisplayList::Type::PRIMARY);
+ }
+ 
+@@ -69,4 +68,13 @@ void NexusScreen::RemoveObserver(display::DisplayObserver* observer) {
+   display_list_.RemoveObserver(observer);
+ }
+ 
++gfx::Size NexusScreen::GetPrimaryDisplayPixelSize() const {
++  const display::Display& primary_display = GetPrimaryDisplay();
++  if (!primary_display.is_valid()) {
++     LOG(ERROR) << "Primary display is not valid";
++     return gfx::Size();
++  }
++  return primary_display.GetSizeInPixel();
++}
++
+ }  // namespace ui
+diff --git a/ui/ozone/platform/nexus/nexus_screen.h b/ui/ozone/platform/nexus/nexus_screen.h
+index 004ec6a2e74e57aabf831f3e9b1137905260f37e..61dd4c93e74943e65b36256a51d7c7e60e7bf5b5 100644
+--- a/ui/ozone/platform/nexus/nexus_screen.h
++++ b/ui/ozone/platform/nexus/nexus_screen.h
+@@ -10,6 +10,7 @@
+ #include "base/observer_list.h"
+ #include "ui/display/display_list.h"
+ #include "ui/gfx/geometry/point.h"
++#include "ui/gfx/geometry/size.h" // Add include
+ #include "ui/ozone/public/platform_screen.h"
+ 
+ namespace ui {
+@@ -34,6 +35,9 @@ class NexusScreen : public PlatformScreen {
+   void AddObserver(display::DisplayObserver* observer) override;
+   void RemoveObserver(display::DisplayObserver* observer) override;
+ 
++  // Returns the pixel size of the primary display.
++  gfx::Size GetPrimaryDisplayPixelSize() const; // Add this method declaration
++
+  private:
+   display::DisplayList display_list_;
+ 
+diff --git a/ui/ozone/platform/nexus/ozone_platform_nexus.cc b/ui/ozone/platform/nexus/ozone_platform_nexus.cc
+index c9279db33475792335d79b9e429dbd59e8ca0ed6..ed517df54d90dc682c7e68a8ffcde32a8ab5701a 100644
+--- a/ui/ozone/platform/nexus/ozone_platform_nexus.cc
++++ b/ui/ozone/platform/nexus/ozone_platform_nexus.cc
+@@ -12,6 +12,8 @@
+ #include "ui/base/buildflags.h"
+ #include "ui/base/ime/input_method_minimal.h"
+ #include "ui/display/types/native_display_delegate.h"
++#include "ui/events/devices/device_data_manager.h"
++#include "ui/events/devices/input_device_event_observer.h"
+ #include "ui/events/ozone/device/device_manager.h"
+ #include "ui/events/ozone/evdev/event_factory_evdev.h"
+ #include "ui/events/ozone/layout/keyboard_layout_engine_manager.h"
+@@ -45,7 +47,8 @@ namespace ui {
+ namespace {
+ 
+ // OzonePlatform for nexus mode
+-class OzonePlatformNexus : public OzonePlatform {
++class OzonePlatformNexus : public OzonePlatform,
++                           public ui::InputDeviceEventObserver {
+  public:
+   OzonePlatformNexus() {
+   }
+@@ -80,7 +83,9 @@ class OzonePlatformNexus : public OzonePlatform {
+     return nullptr;
+   }
+   std::unique_ptr<PlatformScreen> CreateScreen() override {
+-    return std::make_unique<NexusScreen>();
++    auto screen =  std::make_unique<NexusScreen>();
++    screen_bounds_ = screen->GetPrimaryDisplayPixelSize();
++    return std::move(screen);
+   }
+   void InitScreen(PlatformScreen* screen) override {}
+   std::unique_ptr<InputMethod> CreateInputMethod(
+@@ -91,6 +96,7 @@ class OzonePlatformNexus : public OzonePlatform {
+ 
+ 
+   bool InitializeUI(const InitParams& params) override {
++    DeviceDataManager::CreateInstance();
+     device_manager_ = CreateDeviceManager();
+     window_manager_ = std::make_unique<NexusWindowManager>();
+     surface_factory_ = std::make_unique<NexusSurfaceFactory>(window_manager_.get());
+@@ -115,6 +121,8 @@ class OzonePlatformNexus : public OzonePlatform {
+     cursor_factory_ = std::make_unique<BitmapCursorFactory>();
+     gpu_platform_support_host_.reset(CreateStubGpuPlatformSupportHost());
+ 
++    DeviceDataManager::GetInstance()->AddObserver(this);
++    ConfigureNexusTouchTransforms();
+     return true;
+   }
+ 
+@@ -135,6 +143,41 @@ class OzonePlatformNexus : public OzonePlatform {
+         std::move(user_input_task_runner));
+   }
+ 
++  void OnInputDeviceConfigurationChanged(uint8_t input_device_types) override {
++    if (input_device_types & InputDeviceEventObserver::kTouchscreen) {
++      ConfigureNexusTouchTransforms();
++    }
++  }
++
++  void ConfigureNexusTouchTransforms() {
++    DeviceDataManager* ddm = DeviceDataManager::GetInstance();
++    const std::vector<TouchscreenDevice>& devices =
++        ddm->GetTouchscreenDevices();
++    gfx::Size display_size_pixels = screen_bounds_;
++
++    std::vector<ui::TouchDeviceTransform> transforms;
++    for (const auto& device : devices) {
++      ui::TouchDeviceTransform transform;
++      transform.device_id = device.id;
++
++      if (!device.size.IsEmpty()) {
++        transform.transform.Scale(
++            static_cast<double>(display_size_pixels.width()) /
++                device.size.width(),
++            static_cast<double>(display_size_pixels.height()) /
++                device.size.height());
++      } else {
++        LOG(WARNING) << "Touch device " << device.id
++                     << " has empty size. Skipping transform.";
++        continue;
++      }
++      transform.radius_scale = 1.0;
++      transforms.push_back(transform);
++    }
++
++    ddm->ConfigureTouchDevices(transforms);
++  }
++
+  private:
+ #if BUILDFLAG(USE_XKBCOMMON)
+   XkbEvdevCodes xkb_evdev_code_converter_;
+@@ -148,6 +191,7 @@ class OzonePlatformNexus : public OzonePlatform {
+   std::unique_ptr<GpuPlatformSupportHost> gpu_platform_support_host_;
+   std::unique_ptr<OverlayManagerOzone> overlay_manager_;
+   std::unique_ptr<BrightsignCursorDelegateEvdev> cursor_;
++  gfx::Size screen_bounds_;
+ };
+ 
+ }  // namespace
