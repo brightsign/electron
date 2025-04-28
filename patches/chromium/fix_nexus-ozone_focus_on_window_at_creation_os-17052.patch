@@ -1,0 +1,23 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Caner Altinbasak <cal@brightsign.biz>
+Date: Mon, 28 Apr 2025 15:27:29 +0100
+Subject: fix(nexus-ozone): Focus on window at creation OS-17052
+
+Nexus backend does its own focus tracking. Brightsign devices sets
+the focus on last created window, unless it is marked as unfocusable.
+
+diff --git a/ui/ozone/platform/nexus/nexus_window.cc b/ui/ozone/platform/nexus/nexus_window.cc
+index 148f289ba8e21793a10b9af0b23d2227264528ba..b5c13f805d8232b5cfbd0fd0f4d8c2e6d64f7fb1 100644
+--- a/ui/ozone/platform/nexus/nexus_window.cc
++++ b/ui/ozone/platform/nexus/nexus_window.cc
+@@ -89,6 +89,10 @@ NexusWindow::NexusWindow(PlatformWindowDelegate* delegate,
+ 
+   if (PlatformEventSource::GetInstance())
+     PlatformEventSource::GetInstance()->AddPlatformEventDispatcher(this);
++
++  if (activatable_) {
++    window_manager_->GrabKeyboardEvents(widget_);
++  }
+ }
+ 
+ NexusWindow::~NexusWindow() {
