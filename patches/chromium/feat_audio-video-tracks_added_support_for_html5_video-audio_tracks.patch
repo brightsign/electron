@@ -1,0 +1,217 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Caner Altinbasak <cal@brightsign.biz>
+Date: Mon, 12 May 2025 16:58:52 +0100
+Subject: feat(audio-video-tracks): Added support for html5 video-audio tracks
+ OS-19067
+
+LoadCallback provides audio/video tracks found in the stream. I've
+added AddVideoTrack, AddAudioTrack calls for each track in the stream.
+
+The strings in StringMapVector are freed after initial callback. LoadCallback
+method was getting called with StringMapVector, which had char *'s pointing
+to freed memory.
+
+Converted internal API structures to std types, which then can be
+binded and copied over in callbacks.
+
+diff --git a/third_party/blink/renderer/platform/media/brightsign/video_player_proxy.cc b/third_party/blink/renderer/platform/media/brightsign/video_player_proxy.cc
+index 7abaaed16555e635e37745fc064898fe1bf8c4e5..3c6d777dd3aa516db4230d05fa7c1f6312db3109 100644
+--- a/third_party/blink/renderer/platform/media/brightsign/video_player_proxy.cc
++++ b/third_party/blink/renderer/platform/media/brightsign/video_player_proxy.cc
+@@ -40,7 +40,11 @@ void VidPlayerListenerProxy::PlaybackCompletedCallback() {
+ }
+ 
+ void VidPlayerListenerProxy::LoadCallback(
+-    std::chrono::microseconds current_time, const StringMapVector& video_tracks,const StringMapVector& audio_tracks, const StringMapVector& text_tracks){
++    std::chrono::microseconds current_time,
++    const std::vector< std::map<std::string, std::string> >& video_tracks,
++    const std::vector< std::map<std::string, std::string> >& audio_tracks,
++    const std::vector< std::map<std::string, std::string> >& text_tracks) {
++
+   main_task_runner_->PostTask(
+       FROM_HERE,
+       base::BindOnce(&WebMediaPlayerBrightsign::LoadCallback, web_media_player_,
+@@ -98,7 +102,7 @@ void VidPlayerListenerProxy::FrameReadyCallback() {
+ }
+ 
+ void VidPlayerListenerProxy::SubtitleUpdatedCallback(
+-    const StringMapVector& text_tracks) {
++    const std::vector< std::map<std::string, std::string> >& text_tracks) {
+   main_task_runner_->PostTask(
+       FROM_HERE, base::BindOnce(&WebMediaPlayerBrightsign::SubtitleUpdatedCallback,
+                                 web_media_player_, text_tracks));
+diff --git a/third_party/blink/renderer/platform/media/brightsign/video_player_proxy.h b/third_party/blink/renderer/platform/media/brightsign/video_player_proxy.h
+index c34d368be76dcbe5ae2c366e29d7449209bee5ab..7f9dabb4a3b459f5519cf774298bf77be6d9556e 100644
+--- a/third_party/blink/renderer/platform/media/brightsign/video_player_proxy.h
++++ b/third_party/blink/renderer/platform/media/brightsign/video_player_proxy.h
+@@ -2,6 +2,7 @@
+ #define MEDIA_BLINK_VID_PLAYER_PROXY_H
+ 
+ #include <libvid/vid_player_c_bindings.h>
++#include <map>
+ #include "base/memory/weak_ptr.h"
+ 
+ namespace blink {
+@@ -28,7 +29,7 @@ class VidPlayerListenerProxy {
+   void ErrorCallback(enum VidPlayerErrorCode code, const char *message);
+   void PlaybackStartedCallback();
+   void PlaybackCompletedCallback();
+-  void LoadCallback(std::chrono::microseconds duration, const StringMapVector& video_tracks,const StringMapVector& audio_tracks, const StringMapVector& text_tracks);
++  void LoadCallback(std::chrono::microseconds duration, const std::vector< std::map<std::string, std::string> >& video_tracks,const std::vector< std::map<std::string, std::string> >& audio_tracks, const std::vector< std::map<std::string, std::string> >& text_tracks);
+   void VideoSizeChangedCallback(uint32_t width, uint32_t height, int32_t z_index);
+   void PlaybackPositionUpdatedCallback(std::chrono::microseconds current_time,
+                                        const VidPlayerDecodeStatistics& stats);
+@@ -37,7 +38,7 @@ class VidPlayerListenerProxy {
+   void SeekCompletedCallback(std::chrono::microseconds current_time);
+   void ReleasedCallback();
+   void FrameReadyCallback();
+-  void SubtitleUpdatedCallback(const StringMapVector& text_tracks);
++  void SubtitleUpdatedCallback(const std::vector< std::map<std::string, std::string> >& text_tracks);
+   void TextureMailboxReadyCallback(const VidPlayerMailboxData& mbox);
+ 
+  private:
+diff --git a/third_party/blink/renderer/platform/media/brightsign/web_media_player_brightsign.cc b/third_party/blink/renderer/platform/media/brightsign/web_media_player_brightsign.cc
+index 6758f4755611873eacd74a5203170527ac5dc4d9..27d98a283a2f523fa822ec2a86c98734cedb4914 100644
+--- a/third_party/blink/renderer/platform/media/brightsign/web_media_player_brightsign.cc
++++ b/third_party/blink/renderer/platform/media/brightsign/web_media_player_brightsign.cc
+@@ -8,6 +8,7 @@
+ #include "base/task/thread_pool.h"
+ #include "base/time/time.h"
+ #include "cc/layers/video_layer.h"
++#include "media/base/media_track.h"
+ #include "media/base/media_switches.h"
+ #include "media/base/video_frame.h"
+ #include "media/renderers/paint_canvas_video_renderer.h"
+@@ -22,6 +23,29 @@
+ #include "gpu/GLES2/gl2extchromium.h"
+ #include "gpu/command_buffer/client/gles2_interface.h"
+ 
++namespace {
++std::vector<std::map<std::string, std::string>> convertStringMapVector(const StringMapVector &stringMapVector)
++{
++    std::vector<std::map<std::string, std::string>> videoTracks;
++
++    for (size_t i = 0; i < stringMapVector.length; i++)
++    {
++        std::map<std::string, std::string> track;
++
++        for (size_t j = 0; j < stringMapVector.items[i].length; j++)
++        {
++            const char *key = stringMapVector.items[i].items[j].key;
++            const char *value = stringMapVector.items[i].items[j].value;
++
++            track[key] = value;
++        }
++
++        videoTracks.push_back(track);
++    }
++
++    return videoTracks;
++}
++}
+ namespace blink {
+ 
+ static void VidPlayerErrorCallback(void* context,
+@@ -51,8 +75,8 @@ static void VidPlayerLoadCallback(void* context,
+                                   const StringMapVector& text_tracks) {
+   VidPlayerListenerProxy* vid_player_listener =
+       static_cast<VidPlayerListenerProxy*>(context);
+-  vid_player_listener->LoadCallback(std::chrono::microseconds(duration), video_tracks, audio_tracks,
+-                                    text_tracks);
++  vid_player_listener->LoadCallback(std::chrono::microseconds(duration), convertStringMapVector(video_tracks), convertStringMapVector(audio_tracks),
++  convertStringMapVector(text_tracks));
+ }
+ 
+ static void VidPlayerVideoSizeChangedCallback(void* context,
+@@ -110,7 +134,7 @@ static void VidPlayerSubtitleUpdatedCallback(
+     const StringMapVector& text_tracks) {
+   VidPlayerListenerProxy* vid_player_listener =
+       static_cast<VidPlayerListenerProxy*>(context);
+-  vid_player_listener->SubtitleUpdatedCallback(text_tracks);
++  vid_player_listener->SubtitleUpdatedCallback(convertStringMapVector(text_tracks));
+ }
+ 
+ static void VidPlayerTextureMailboxReadyCallback(
+@@ -587,7 +611,7 @@ void WebMediaPlayerBrightsign::PlaybackCompletedCallback() {
+ }
+ 
+ void WebMediaPlayerBrightsign::SubtitleUpdatedCallback(
+-    const StringMapVector& text_tracks) {
++    const std::vector< std::map<std::string, std::string> >& text_tracks) {
+   /*
+ for (auto t : text_tracks) {
+   // We have ownership of the text track objects, so keep them in a map and
+@@ -619,11 +643,12 @@ for (auto t : text_tracks) {
+ */
+ }
+ 
++
+ void WebMediaPlayerBrightsign::LoadCallback(
+     std::chrono::microseconds duration,
+-    const StringMapVector& video_tracks,
+-    const StringMapVector& audio_tracks,
+-    const StringMapVector& text_tracks) {
++    const std::vector< std::map<std::string, std::string> >& video_tracks,
++    const std::vector< std::map<std::string, std::string> >& audio_tracks,
++    const std::vector< std::map<std::string, std::string> >& text_tracks) {
+   VLOG(1) << __func__;
+   DCHECK(main_task_runner_->BelongsToCurrentThread());
+   DurationChangedCallback(duration);  // Before we declare HaveMetadata
+@@ -633,6 +658,31 @@ void WebMediaPlayerBrightsign::LoadCallback(
+   if ((natural_size_.height() == 0) && (natural_size_.width() == 0)) {
+     natural_size_ = gfx::Size(640, 360);
+   }
++  // Set the video tracks
++  for (auto t : video_tracks) {
++    VLOG(1) << "Video track: " << t["pid"] << " " << t["label"] << " "
++            << t["lang"];
++    client_->AddMediaTrack(
++        media::MediaTrack::CreateVideoTrack(
++                t["pid"],
++                media::MediaTrack::VideoKind::kMain,
++                t["label"],
++                t["lang"],
++                t.find("selected") != t.end()));
++  }
++
++  for (auto t : audio_tracks) {
++    VLOG(1) << "Audio track: " << t["pid"] << " " << t["label"] << " "
++            << t["lang"];
++    client_->AddMediaTrack(
++        media::MediaTrack::CreateAudioTrack(
++                t["pid"],
++                media::MediaTrack::AudioKind::kMain,
++                t["label"],
++                t["lang"],
++                t.find("selected") != t.end()));
++  }
++
+   SetReadyState(WebMediaPlayer::kReadyStateHaveMetadata);
+   SetReadyState(WebMediaPlayer::kReadyStateHaveEnoughData);
+   SetNetworkState(WebMediaPlayer::kNetworkStateIdle);
+diff --git a/third_party/blink/renderer/platform/media/brightsign/web_media_player_brightsign.h b/third_party/blink/renderer/platform/media/brightsign/web_media_player_brightsign.h
+index ef0eb7c98f705a7579d0780b18d5071cc217cd69..43ee6ba5fa2617b4d71b7f1290058683a1351aeb 100644
+--- a/third_party/blink/renderer/platform/media/brightsign/web_media_player_brightsign.h
++++ b/third_party/blink/renderer/platform/media/brightsign/web_media_player_brightsign.h
+@@ -152,9 +152,9 @@ class WebMediaPlayerBrightsign
+   void PlaybackStartedCallback();
+   void PlaybackCompletedCallback();
+   void LoadCallback(std::chrono::microseconds duration,
+-                    const StringMapVector& video_tracks,
+-                    const StringMapVector& audio_tracks,
+-                    const StringMapVector& text_tracks);
++                    const std::vector< std::map<std::string, std::string> >& video_tracks,
++                    const std::vector< std::map<std::string, std::string> >& audio_tracks,
++                    const std::vector< std::map<std::string, std::string> >& text_tracks);
+   void VideoSizeChangedCallback(uint32_t width,
+                                 uint32_t height,
+                                 int32_t z_index);
+@@ -165,7 +165,7 @@ class WebMediaPlayerBrightsign
+   void SeekCompletedCallback(std::chrono::microseconds current_time);
+   void ReleasedCallback();
+   void FrameReadyCallback();
+-  void SubtitleUpdatedCallback(const StringMapVector& text_tracks);
++  void SubtitleUpdatedCallback(const std::vector< std::map<std::string, std::string> >& text_tracks);
+   void TextureMailboxReadyCallback(const VidPlayerMailboxData& mbox);
+ 
+   // void SetAttribute(const std::string& name, const std::string& value)
