@@ -1,0 +1,337 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Tariq Bashir <tbashir@brightsign.biz>
+Date: Mon, 30 Mar 2026 17:39:24 +0100
+Subject: feat(text_tracks): Add support for in-band text tracks OS-18886
+
+Added minimum interfaces available in WebMediaPlayerClient to inform
+HtmlMediaElement with the text tracks found in the stream.
+
+Majority of the logic for creating unique ids, and management of
+tracks are carried over from QtWebEngine based Chromium. Unlike
+the previous implementation, the ownership of the TextTrack
+instances will be managed by HtmlMediaElement.
+
+diff --git a/third_party/blink/public/platform/web_media_player_client.h b/third_party/blink/public/platform/web_media_player_client.h
+index e1c2e2010723ea254b29807577b65e37e2bdc0f8..cf572c1f6c87ff5dda886b30f1f667645589c573 100644
+--- a/third_party/blink/public/platform/web_media_player_client.h
++++ b/third_party/blink/public/platform/web_media_player_client.h
+@@ -32,6 +32,7 @@
+ #define THIRD_PARTY_BLINK_PUBLIC_PLATFORM_WEB_MEDIA_PLAYER_CLIENT_H_
+ 
+ #include "third_party/blink/public/platform/web_common.h"
++#include "third_party/blink/public/platform/web_media_player.h"
+ 
+ namespace media {
+ class RemotePlaybackClientWrapper;
+@@ -41,6 +42,15 @@ namespace blink {
+ 
+ class BLINK_PLATFORM_EXPORT WebMediaPlayerClient {
+  public:
++  enum TextTrackKind {
++    kTextTrackKindNone,
++    kTextTrackKindSubtitles,
++    kTextTrackKindCaptions,
++    kTextTrackKindDescriptions,
++    kTextTrackKindChapters,
++    kTextTrackKindMetadata
++  };
++
+   // Returns the remote playback client associated with the media element, if
+   // any.
+   virtual media::RemotePlaybackClientWrapper* RemotePlaybackClientWrapper() {
+@@ -50,6 +60,12 @@ class BLINK_PLATFORM_EXPORT WebMediaPlayerClient {
+   // Returns the DOMNodeId of the DOM element hosting this media player.
+   virtual int GetElementId() = 0;
+ 
++  virtual WebMediaPlayer::TrackId AddTextTrack(const WebString& id,
++                                               TextTrackKind,
++                                               const WebString& label,
++                                               const WebString& language) = 0;
++  virtual void RemoveTextTrack(WebMediaPlayer::TrackId) = 0;
++
+  protected:
+   ~WebMediaPlayerClient() = default;
+ 
+diff --git a/third_party/blink/renderer/core/html/media/html_media_element.cc b/third_party/blink/renderer/core/html/media/html_media_element.cc
+index b2bb331777bdc77b01b3a17b7b354e7c1836728c..eb8f109b1402e4d7714431e358499fa5f348649c 100644
+--- a/third_party/blink/renderer/core/html/media/html_media_element.cc
++++ b/third_party/blink/renderer/core/html/media/html_media_element.cc
+@@ -55,6 +55,7 @@
+ #include "third_party/blink/public/platform/web_media_player_source.h"
+ #include "third_party/blink/renderer/bindings/core/v8/script_promise_resolver.h"
+ #include "third_party/blink/renderer/bindings/core/v8/v8_can_play_type_result.h"
++#include "third_party/blink/renderer/bindings/core/v8/v8_text_track_kind.h"
+ #include "third_party/blink/renderer/core/core_initializer.h"
+ #include "third_party/blink/renderer/core/core_probes_inl.h"
+ #include "third_party/blink/renderer/core/css/style_change_reason.h"
+@@ -363,6 +364,26 @@ std::ostream& operator<<(std::ostream& stream,
+   return stream << static_cast<void const*>(&media_element);
+ }
+ 
++V8TextTrackKind TextKindToV8(WebMediaPlayerClient::TextTrackKind kind) {
++  switch (kind) {
++    case WebMediaPlayerClient::kTextTrackKindNone:
++      return V8TextTrackKind(V8TextTrackKind::Enum::kSubtitles);
++    case WebMediaPlayerClient::kTextTrackKindSubtitles:
++      return V8TextTrackKind(V8TextTrackKind::Enum::kSubtitles);
++    case WebMediaPlayerClient::kTextTrackKindCaptions:
++      return V8TextTrackKind(V8TextTrackKind::Enum::kCaptions);
++    case WebMediaPlayerClient::kTextTrackKindDescriptions:
++      return V8TextTrackKind(V8TextTrackKind::Enum::kDescriptions);
++    case WebMediaPlayerClient::kTextTrackKindChapters:
++      return V8TextTrackKind(V8TextTrackKind::Enum::kChapters);
++    case WebMediaPlayerClient::kTextTrackKindMetadata:
++      return V8TextTrackKind(V8TextTrackKind::Enum::kMetadata);
++  }
++
++  NOTREACHED();
++  return V8TextTrackKind(V8TextTrackKind::Enum::kSubtitles);
++}
++
+ }  // anonymous namespace
+ 
+ // static
+@@ -3452,9 +3473,36 @@ void HTMLMediaElement::RemoveMediaTrack(const media::MediaTrack& track) {
+   }
+ }
+ 
++WebMediaPlayer::TrackId HTMLMediaElement::AddTextTrack(
++    const WebString& id,
++    WebMediaPlayerClient::TextTrackKind kind,
++    const WebString& label,
++    const WebString& language) {
++  DVLOG(3) << "addTextTrack(" << *this << ", '" << String(id) << "')";
++
++  auto* text_track = MakeGarbageCollected<TextTrack>(
++      TextKindToV8(kind), AtomicString(String(label)),
++      AtomicString(String(language)), *this, AtomicString(String(id)));
++  text_track->SetReadinessState(TextTrack::kLoaded);
++  text_track->SetModeEnum(TextTrackMode::kHidden);
++  textTracks()->Append(text_track);
++  return text_track->id();
++}
++
++void HTMLMediaElement::RemoveTextTrack(WebMediaPlayer::TrackId track_id) {
++  DVLOG(3) << "removeTextTrack(" << *this << ")";
++
++  if (!text_tracks_)
++    return;
++
++  text_tracks_->Remove(text_tracks_->getTrackById(track_id));
++}
++
+ void HTMLMediaElement::ForgetResourceSpecificTracks() {
+   audio_tracks_->RemoveAll();
+   video_tracks_->RemoveAll();
++  if (text_tracks_)
++    text_tracks_->RemoveAll();
+ 
+   audio_tracks_timer_.Stop();
+ }
+diff --git a/third_party/blink/renderer/core/html/media/html_media_element.h b/third_party/blink/renderer/core/html/media/html_media_element.h
+index 8379cde231630f78303828ce9a22ff99d9a89815..228374f2656995585eb451e3ca797805d11f85ea 100644
+--- a/third_party/blink/renderer/core/html/media/html_media_element.h
++++ b/third_party/blink/renderer/core/html/media/html_media_element.h
+@@ -569,6 +569,11 @@ class CORE_EXPORT HTMLMediaElement
+ 
+   void AddMediaTrack(const media::MediaTrack&) final;
+   void RemoveMediaTrack(const media::MediaTrack&) final;
++  WebMediaPlayer::TrackId AddTextTrack(const WebString& id,
++                                       WebMediaPlayerClient::TextTrackKind,
++                                       const WebString& label,
++                                       const WebString& language) final;
++  void RemoveTextTrack(WebMediaPlayer::TrackId) final;
+ 
+   void MediaSourceOpened(std::unique_ptr<WebMediaSource>) final;
+   void RemotePlaybackCompatibilityChanged(const KURL&,
+diff --git a/third_party/blink/renderer/core/html/track/text_track_list.cc b/third_party/blink/renderer/core/html/track/text_track_list.cc
+index 4ab683b4018311fc5c369eb4e8d6fca4bb125b31..d0a4d27267250aa173bca7174535958b1730a6c0 100644
+--- a/third_party/blink/renderer/core/html/track/text_track_list.cc
++++ b/third_party/blink/renderer/core/html/track/text_track_list.cc
+@@ -181,6 +181,20 @@ void TextTrackList::Remove(TextTrack* track) {
+   ScheduleRemoveTrackEvent(track);
+ }
+ 
++void TextTrackList::RemoveAll() {
++  for (const auto& track : element_tracks_) {
++    DCHECK_EQ(track->TrackList(), this);
++    track->SetTrackList(nullptr);
++  }
++  element_tracks_.clear();
++
++  for (const auto& track : add_track_tracks_) {
++    DCHECK_EQ(track->TrackList(), this);
++    track->SetTrackList(nullptr);
++  }
++  add_track_tracks_.clear();
++}
++
+ bool TextTrackList::Contains(TextTrack* track) const {
+   const HeapVector<Member<TextTrack>>* tracks = nullptr;
+ 
+diff --git a/third_party/blink/renderer/core/html/track/text_track_list.h b/third_party/blink/renderer/core/html/track/text_track_list.h
+index 1386ea2f0c39822b2c9990040f217ab469d4ee4d..014e0c6dfee91d792cc603a20ff239c3c426706c 100644
+--- a/third_party/blink/renderer/core/html/track/text_track_list.h
++++ b/third_party/blink/renderer/core/html/track/text_track_list.h
+@@ -55,6 +55,7 @@ class CORE_EXPORT TextTrackList final : public EventTarget {
+   TextTrack* getTrackById(const AtomicString& id);
+   void Append(TextTrack*);
+   void Remove(TextTrack*);
++  void RemoveAll();
+ 
+   // EventTarget
+   const AtomicString& InterfaceName() const override;
+diff --git a/third_party/blink/renderer/platform/media/brightsign/web_media_player_brightsign.cc b/third_party/blink/renderer/platform/media/brightsign/web_media_player_brightsign.cc
+index 27d98a283a2f523fa822ec2a86c98734cedb4914..e69aafdc8108811cdf3ef72f7a6398888d58f50d 100644
+--- a/third_party/blink/renderer/platform/media/brightsign/web_media_player_brightsign.cc
++++ b/third_party/blink/renderer/platform/media/brightsign/web_media_player_brightsign.cc
+@@ -214,9 +214,6 @@ WebMediaPlayerBrightsign::~WebMediaPlayerBrightsign() {
+   SetVideoFrameProviderClient(nullptr);
+   client_->SetCcLayer(nullptr);
+ 
+-  //for (const auto& text_track : textTrackMap) {
+-  //  client_->RemoveTextTrack(text_track.second.get());
+-  //}
+   vid_player_destroy(vid_player_);
+   main_task_runner_->DeleteSoon(FROM_HERE,
+                                 std::move(vid_player_listener_proxy_));
+@@ -610,39 +607,44 @@ void WebMediaPlayerBrightsign::PlaybackCompletedCallback() {
+   }
+ }
+ 
+-void WebMediaPlayerBrightsign::SubtitleUpdatedCallback(
+-    const std::vector< std::map<std::string, std::string> >& text_tracks) {
+-  /*
+-for (auto t : text_tracks) {
+-  // We have ownership of the text track objects, so keep them in a map and
+-  // just pass pointer in to AddTextTrack
+-  std::string id = t["pid"];
+-  WebInbandTextTrackImpl::Kind kind = WebInbandTextTrackImpl::kKindSubtitles;
+-  if (id == "0") {
+-    id = t["label"] + t["service_number"];
+-    kind = WebInbandTextTrackImpl::kKindCaptions;
++blink::WebString WebMediaPlayerBrightsign::GetUniqueSubtitlesKey(
++    const std::map<std::string, std::string>& text_track) const {
++  std::string label;
++  std::string service_number;
++  std::string lang;
++  auto i = text_track.find("label");
++  if (i != text_track.end()) {
++    label = i->second;
+   }
+-
+-  std::unordered_map<std::string,
+-                     std::unique_ptr<WebInbandTextTrackImpl>>::iterator it;
+-
+-  it = textTrackMap.find(id);
+-  if (it != textTrackMap.end()) {
+-    // Nothing to do, as it's already in the map (we should perhaps update it
+-    // if the details change)
+-    continue;
++  i = text_track.find("service_number");
++  if (i != text_track.end()) {
++    service_number = i->second;
+   }
+-  // New text track
+-  std::unique_ptr<WebInbandTextTrackImpl> web_inband_text_track(
+-      new WebInbandTextTrackImpl(kind, blink::WebString::FromUTF8(t["label"]),
+-                                 blink::WebString::FromUTF8(t["lang"]),
+-                                 blink::WebString::FromUTF8(id)));
+-  textTrackMap[id] = std::move(web_inband_text_track);
+-  client_->AddTextTrack(textTrackMap[id].get());
+-}
+-*/
++  i = text_track.find("lang");
++  if (i != text_track.end()) {
++    lang = i->second;
++  }
++  return blink::WebString::FromUTF8(label + "_" + service_number + "_" + lang);
+ }
+ 
++void WebMediaPlayerBrightsign::SubtitleUpdatedCallback(
++    const std::vector<std::map<std::string, std::string>>& text_tracks) {
++  VLOG(1) << __func__;
++  for (auto t : text_tracks) {
++    VLOG(1) << "Text track: " << t["pid"] << " " << t["label"] << " "
++            << t["lang"];
++    auto i = text_track_ids_.find(GetUniqueSubtitlesKey(t));
++    // If this is a new track, add it to the map and notify the client
++    if (i == text_track_ids_.end()) {
++      WebMediaPlayer::TrackId track_id = client_->AddTextTrack(
++          GetUniqueSubtitlesKey(t),
++          blink::WebMediaPlayerClient::kTextTrackKindSubtitles,
++          blink::WebString::FromUTF8(t["label"]),
++          blink::WebString::FromUTF8(t["lang"]));
++      text_track_ids_.insert(track_id);
++    }
++  }
++}
+ 
+ void WebMediaPlayerBrightsign::LoadCallback(
+     std::chrono::microseconds duration,
+@@ -683,6 +685,18 @@ void WebMediaPlayerBrightsign::LoadCallback(
+                 t.find("selected") != t.end()));
+   }
+ 
++  for (auto t : text_tracks) {
++    VLOG(1) << "Text track: " << t["pid"] << " " << t["label"] << " "
++            << t["lang"];
++    WebMediaPlayer::TrackId track_id = client_->AddTextTrack(
++        GetUniqueSubtitlesKey(t),
++        blink::WebMediaPlayerClient::kTextTrackKindSubtitles,
++        blink::WebString::FromUTF8(t["label"]),
++        blink::WebString::FromUTF8(t["lang"]));
++
++    text_track_ids_.insert(track_id);
++  }
++
+   SetReadyState(WebMediaPlayer::kReadyStateHaveMetadata);
+   SetReadyState(WebMediaPlayer::kReadyStateHaveEnoughData);
+   SetNetworkState(WebMediaPlayer::kNetworkStateIdle);
+diff --git a/third_party/blink/renderer/platform/media/brightsign/web_media_player_brightsign.h b/third_party/blink/renderer/platform/media/brightsign/web_media_player_brightsign.h
+index 43ee6ba5fa2617b4d71b7f1290058683a1351aeb..5f1295b3dc09aeab0d595a7131cd7b87ad7d37e4 100644
+--- a/third_party/blink/renderer/platform/media/brightsign/web_media_player_brightsign.h
++++ b/third_party/blink/renderer/platform/media/brightsign/web_media_player_brightsign.h
+@@ -8,6 +8,7 @@
+ #include <chrono>
+ #include <libbvp/api.h>
+ #include <libvid/vid_player_c_bindings.h>
++#include <set>
+ #include "base/functional/callback.h"
+ #include "base/memory/weak_ptr.h"
+ #include "base/task/single_thread_task_runner.h"
+@@ -17,7 +18,6 @@
+ #include "third_party/blink/renderer/platform/media/video_frame_compositor.h"
+ #include "third_party/blink/public/platform/media/web_media_player_delegate.h"
+ #include "third_party/blink/public/platform/web_media_player.h"
+-// #include "third_party/blink/renderer/platform/media/web_inband_text_track_impl.h"
+ 
+ namespace cc {
+ class PaintCanvas;
+@@ -207,6 +207,8 @@ class WebMediaPlayerBrightsign
+   // they've changed.
+   void SetNetworkState(blink::WebMediaPlayer::NetworkState state);
+   void SetReadyState(blink::WebMediaPlayer::ReadyState state);
++    blink::WebString GetUniqueSubtitlesKey(
++            const std::map<std::string, std::string>& text_track) const;
+ 
+   blink::WebLocalFrame* frame_;
+   blink::MediaPlayerClient* client_;
+@@ -244,9 +246,6 @@ class WebMediaPlayerBrightsign
+   base::Lock video_frame_provider_client_lock_;
+   base::RepeatingTimer frame_ready_timer_;
+ 
+-  // std::unordered_map<std::string, std::unique_ptr<WebInbandTextTrackImpl>>
+-  //     textTrackMap;
+-
+   // The compositor layer for displaying the video content when using composited
+   // playback
+   scoped_refptr<cc::VideoLayer> video_layer_;
+@@ -264,6 +263,7 @@ class WebMediaPlayerBrightsign
+   std::unique_ptr<media::VideoOverlayFactory> video_overlay_factory_;
+   VidPlayerWrapper* vid_player_;
+   cc::VideoFrameProvider::Client* video_frame_provider_client_;
++  std::set<WebMediaPlayer::TrackId> text_track_ids_;
+ };
+ 
+ }  // namespace blink

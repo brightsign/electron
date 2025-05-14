@@ -170,3 +170,4 @@ brightsign_add_support_for_brightsign_video_player.patch
 video_player_reuse_os-14887.patch
 brightsign_add_custom_video_attributes_and_changes.patch
 feat_audio-video-tracks_added_support_for_html5_video-audio_tracks.patch
+feat_text_tracks_add_support_for_in-band_text_tracks_os-18886.patch
