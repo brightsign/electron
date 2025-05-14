@@ -190,3 +190,4 @@ os-17206_fix_video_punch_through_with_transparency.patch
 fix_ozone-nexus_fix_touch_screen_resolution_os-19061.patch
 fix_nexus-ozone_focus_on_window_at_creation_os-17052.patch
 feat_audio-video-tracks_added_support_for_html5_video-audio_tracks.patch
+feat_text_tracks_add_support_for_in-band_text_tracks_os-18886.patch
