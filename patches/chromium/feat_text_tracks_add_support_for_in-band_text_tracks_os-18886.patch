@@ -44,7 +44,7 @@ index b65ebcdddd09ab8ce4b3de8d44e3df136d666469..06f3fe67f918beed098371a3f43e3a6a
    virtual void RemotePlaybackCompatibilityChanged(const WebURL&,
                                                    bool is_compatible) = 0;
 diff --git a/third_party/blink/renderer/core/html/media/html_media_element.cc b/third_party/blink/renderer/core/html/media/html_media_element.cc
-index 023cd523aa27b3a4c8b16737792a6015f9f3929b..3abe80663119300948409f438382c97ae6764963 100644
+index 023cd523aa27b3a4c8b16737792a6015f9f3929b..8fd90ab7a611997b89eb237ef1e6e758da689bdb 100644
 --- a/third_party/blink/renderer/core/html/media/html_media_element.cc
 +++ b/third_party/blink/renderer/core/html/media/html_media_element.cc
 @@ -306,6 +306,26 @@ const AtomicString& VideoKindToString(
@@ -74,11 +74,12 @@ index 023cd523aa27b3a4c8b16737792a6015f9f3929b..3abe80663119300948409f438382c97a
  bool CanLoadURL(const KURL& url, const String& content_type_str) {
    DEFINE_STATIC_LOCAL(const String, codecs, ("codecs"));
  
-@@ -3319,10 +3339,41 @@ void HTMLMediaElement::RemoveVideoTrack(WebMediaPlayer::TrackId track_id) {
+@@ -3319,10 +3339,42 @@ void HTMLMediaElement::RemoveVideoTrack(WebMediaPlayer::TrackId track_id) {
  void HTMLMediaElement::ForgetResourceSpecificTracks() {
    audio_tracks_->RemoveAll();
    video_tracks_->RemoveAll();
-+  text_tracks_->RemoveAll();
++  if (text_tracks_)
++    text_tracks_->RemoveAll();
  
    audio_tracks_timer_.Stop();
  }
