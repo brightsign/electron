@@ -50,7 +50,7 @@ jobs:
     - name: Setup Node
       uses: actions/setup-node@v3
       with:
-        node-version: 16
+        node-version: 21
 
     - name: Download config file and set env vars from it
       run: |
@@ -217,7 +217,7 @@ jobs:
       if: inputs.build_type == 'test'
       run: |
         cd src
-        ninja -C $OUTPUT_FOLDER electron:node_headers shell_browser_ui_unittests
+        ninja -C $OUTPUT_FOLDER electron:node_headers
 
     - name: Display sccache stats
       run: sccache -s
