@@ -1,0 +1,20 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Tariq Bashir <tbashir@brightsign.biz>
+Date: Wed, 15 Mar 2023 11:37:56 +0000
+Subject: feat:os_14967_force_sniffing_file_urls
+
+This patch forces Mime Sniffing for file urls.
+
+diff --git a/content/public/browser/content_browser_client.cc b/content/public/browser/content_browser_client.cc
+index f8fffc6d41d26d15ff1f563005d58039099d069e..d26ac950d4a39a0ce9a1d1693cb3f37f2a303762 100644
+--- a/content/public/browser/content_browser_client.cc
++++ b/content/public/browser/content_browser_client.cc
+@@ -427,7 +427,7 @@ bool ContentBrowserClient::IsFileAccessAllowed(
+ }
+ 
+ bool ContentBrowserClient::ForceSniffingFileUrlsForHtml() {
+-  return false;
++  return true;
+ }
+ 
+ std::string ContentBrowserClient::GetApplicationClientGUIDForQuarantineCheck() {
