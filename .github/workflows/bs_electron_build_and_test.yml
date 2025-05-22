@@ -88,12 +88,9 @@ jobs:
       run: |
         # export SCCACHE_ERROR_LOG="$PWD"/sccache.log
         # export SCCACHE_LOG="info,sccache::cache=debug"
-
-        # curl -o sccache_package.tar.gz -L https://github.com/mozilla/sccache/releases/download/v0.3.3/sccache-v0.3.3-x86_64-unknown-linux-musl.tar.gz
-        # echo "427bd2151a1b01cd9b094d842e22c445b30f3c645f171a9a62ea55270f06bf23  sccache_package.tar.gz" | shasum -a 256 -c
-        
-        curl -o sccache_package.tar.gz -L https://github.com/mozilla/sccache/releases/download/v0.4.0-pre.6/sccache-v0.4.0-pre.6-x86_64-unknown-linux-musl.tar.gz
-        echo "be5e423c546de2756337ccc1990eb842d85fa5255fb1c4f10a8b5788e18d3e22  sccache_package.tar.gz" | shasum -a 256 -c
+                                          
+        curl -o sccache_package.tar.gz -L https://github.com/mozilla/sccache/releases/download/v0.10.0/sccache-v0.10.0-x86_64-unknown-linux-musl.tar.gz
+        echo "1fbb35e135660d04a2d5e42b59c7874d39b3deb17de56330b25b713ec59f849b  sccache_package.tar.gz" | shasum -a 256 -c
 
         tar xzf sccache_package.tar.gz --strip-components=1
         sudo ln -s "$PWD"/sccache /usr/local/bin/sccache
