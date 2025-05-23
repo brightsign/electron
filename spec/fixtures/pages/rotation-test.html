@@ -1,0 +1,26 @@
+<html>
+    <!-- No shadow around select elements -->
+    <style>
+        select {
+           border: none;
+           outline: none;
+           box-shadow: none;
+           -webkit-box-shadow: none;
+        }
+    </style>
+<body>
+<!-- Put a red 20x10 select element with green options in 
+ the top left corner -->
+<select id="top-left-select" style="width: 20px; height: 10px; position: fixed; top: 0; left: 0; background-color: red; color: red">
+    <option style="background-color: green"></option>
+    <option style="background-color: green"></option>
+</select>
+
+<!-- Put a red 20x10 select element with green options in the bottom right corner -->
+<select id="bottom-right-select" style="width: 20px; height: 10px; position: fixed; bottom: 0; right: 0; background-color: red; color: red">
+    <option style="background-color: green"></option>
+    <option style="background-color: green"></option>
+</select>
+
+</body>
+</html>

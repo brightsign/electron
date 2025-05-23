@@ -7426,4 +7426,433 @@ describe('BrowserWindow module', () => {
       expect(scrollHeight).to.be.equal(0);
     });
   });
+
+  ifdescribe(process.platform === 'linux')('window rotation', () => {
+    const screenSize = screen.getPrimaryDisplay().size;
+    const display = screen.getPrimaryDisplay();
+    const fixturesPath = path.resolve(__dirname, '..', 'spec', 'fixtures');
+    const url = `file://${fixturesPath}/pages/rotation-test.html`;
+    const landscapeBounds = { x: 0, y: 0, width: 600, height: 400 };
+    const portraitBounds = { x: 0, y: 0, width: 500, height: 900 };
+    const squareBounds = { x: 0, y: 0, width: 350, height: 350 };
+    const offsetBounds = { x: 100, y: 200, width: 600, height: 400 };
+    const negativeOffsetBounds = { x: -5, y: -5, width: 600, height: 400 };
+    const fullScreenBounds = { x: 0, y: 0, width: screenSize.width - 1, height: screenSize.height - 1 };
+    const SELECT_HEIGHT = 10;
+    const SELECT_WIDTH = 20;
+    const SELECT_OPTION_HEIGHT = 18;
+
+    // Select popups and will have a border/shadow so want to pick a pixel in the middle when comparing the colour.
+    const SELECT_HEIGHT_OFFSET = SELECT_HEIGHT / 2;
+    const SELECT_WIDTH_OFFSET = SELECT_WIDTH / 2;
+
+    // The first option will be highlighted so we want to pick the second.
+    // Also, select popup options have a border/shadow so we want to pick a pixel in the middle when comparing the colour.
+    const SELECT_OPTION_HEIGHT_OFFSET = SELECT_HEIGHT + SELECT_OPTION_HEIGHT * 1.5;
+    const SELECT_OPTION_WIDTH_OFFSET = SELECT_WIDTH / 2;
+
+    const MOUSE_X_OFFSET = 10;
+    const MOUSE_Y_OFFSET = 5;
+    let w: BrowserWindow;
+    const clickMouse = (w: BrowserWindow, pos: {x: number, y: number}) => {
+      w.webContents.sendInputEvent({ type: 'mouseDown', clickCount: 1, x: pos.x, y: pos.y });
+      w.webContents.sendInputEvent({ type: 'mouseUp', clickCount: 1, x: pos.x, y: pos.y });
+    };
+    // Enable to help debug problems.
+    // const dumpImageForDebug = async (filename: string) => {
+    //   const screen = await captureScreen();
+    //   const pngImage = screen.toPNG();
+    //   fs.writeFileSync(filename, pngImage);
+    // }
+
+    describe('webpreference', () => {
+      afterEach(closeAllWindows);
+      after(() => { w = null as unknown as BrowserWindow; });
+
+      [{ name: 'landscape', bounds: landscapeBounds }, { name: 'portrait', bounds: portraitBounds }, { name: 'square', bounds: squareBounds },
+        { name: 'x,y offset', bounds: offsetBounds }, { name: 'x,y negative offset', bounds: negativeOffsetBounds },
+        { name: 'full screen', bounds: fullScreenBounds }].forEach((item) => {
+        it(`identity: ${item.name}`, async () => {
+          w = new BrowserWindow({ ...item.bounds, frame: false, webPreferences: { windowTransform: 'none' } });
+          await w.loadURL(url);
+          const { windowWidth, windowHeight } = await w.webContents.executeJavaScript('({windowWidth: window.innerWidth, windowHeight: window.innerHeight})');
+          expect(windowWidth).to.be.equal(item.bounds.width);
+          expect(windowHeight).to.be.equal(item.bounds.height);
+          expectBoundsEqual(w.getBounds(), item.bounds);
+
+          await setTimeout(500);
+          const screenCapture = new ScreenCapture(display);
+          await screenCapture.expectColorAtPointOnDisplayMatches(
+            HexColors.RED,
+            () => ({
+              x: item.bounds.x + SELECT_WIDTH_OFFSET,
+              y: item.bounds.y + SELECT_HEIGHT_OFFSET
+            })
+          );
+
+          clickMouse(w, { x: MOUSE_X_OFFSET, y: MOUSE_Y_OFFSET });
+          await setTimeout(500);
+          await screenCapture.expectColorAtPointOnDisplayMatches(
+            HexColors.GREEN,
+            () => ({
+              x: item.bounds.x + SELECT_OPTION_WIDTH_OFFSET,
+              y: item.bounds.y + SELECT_OPTION_HEIGHT_OFFSET
+            })
+          );
+        });
+
+        it(`rot90: ${item.name}`, async () => {
+          w = new BrowserWindow({ ...item.bounds, frame: false, webPreferences: { windowTransform: 'rot90' } });
+          await w.loadURL(url);
+          const { windowWidth, windowHeight } = await w.webContents.executeJavaScript('({windowWidth: window.innerWidth, windowHeight: window.innerHeight})');
+          expect(windowWidth).to.be.equal(item.bounds.height);
+          expect(windowHeight).to.be.equal(item.bounds.width);
+          expectBoundsEqual(w.getBounds(), item.bounds);
+
+          await setTimeout(500);
+          const screenCapture = new ScreenCapture(display);
+          await screenCapture.expectColorAtPointOnDisplayMatches(
+            HexColors.RED,
+            () => ({
+              x: item.bounds.x + item.bounds.width - SELECT_HEIGHT_OFFSET,
+              y: item.bounds.y + SELECT_WIDTH_OFFSET
+            })
+          );
+
+          clickMouse(w, { x: MOUSE_X_OFFSET, y: MOUSE_Y_OFFSET });
+          await setTimeout(500);
+          await screenCapture.expectColorAtPointOnDisplayMatches(
+            HexColors.GREEN,
+            () => ({
+              x: item.bounds.x + item.bounds.width - SELECT_OPTION_HEIGHT_OFFSET,
+              y: item.bounds.y + SELECT_OPTION_WIDTH_OFFSET
+            })
+          );
+        });
+
+        it(`rot180: ${item.name}`, async () => {
+          w = new BrowserWindow({ ...item.bounds, frame: false, webPreferences: { windowTransform: 'rot180' } });
+          await w.loadURL(url);
+          const { windowWidth, windowHeight } = await w.webContents.executeJavaScript('({windowWidth: window.innerWidth, windowHeight: window.innerHeight})');
+          expect(windowWidth).to.be.equal(item.bounds.width);
+          expect(windowHeight).to.be.equal(item.bounds.height);
+          expectBoundsEqual(w.getBounds(), item.bounds);
+
+          await setTimeout(500);
+          const screenCapture = new ScreenCapture(display);
+          await screenCapture.expectColorAtPointOnDisplayMatches(
+            HexColors.RED,
+            () => ({
+              x: item.bounds.x + item.bounds.width - SELECT_WIDTH_OFFSET,
+              y: item.bounds.y + item.bounds.height - SELECT_HEIGHT_OFFSET
+            })
+          );
+
+          clickMouse(w, { x: MOUSE_X_OFFSET, y: MOUSE_Y_OFFSET });
+          await setTimeout(500);
+          await screenCapture.expectColorAtPointOnDisplayMatches(
+            HexColors.GREEN,
+            () => ({
+              x: item.bounds.x + item.bounds.width - SELECT_OPTION_WIDTH_OFFSET,
+              y: item.bounds.y + item.bounds.height - SELECT_OPTION_HEIGHT_OFFSET
+            })
+          );
+        });
+
+        it(`rot270: ${item.name}`, async () => {
+          w = new BrowserWindow({ ...item.bounds, frame: false, webPreferences: { windowTransform: 'rot270' } });
+          await w.loadURL(url);
+          const { windowWidth, windowHeight } = await w.webContents.executeJavaScript('({windowWidth: window.innerWidth, windowHeight: window.innerHeight})');
+          expect(windowWidth).to.be.equal(item.bounds.height);
+          expect(windowHeight).to.be.equal(item.bounds.width);
+          expectBoundsEqual(w.getBounds(), item.bounds);
+
+          await setTimeout(500);
+          const screenCapture = new ScreenCapture(display);
+          await screenCapture.expectColorAtPointOnDisplayMatches(
+            HexColors.RED,
+            () => ({
+              x: item.bounds.x + SELECT_HEIGHT_OFFSET,
+              y: item.bounds.y + item.bounds.height - SELECT_WIDTH_OFFSET
+            })
+          );
+
+          clickMouse(w, { x: MOUSE_X_OFFSET, y: MOUSE_Y_OFFSET });
+          await setTimeout(500);
+          await screenCapture.expectColorAtPointOnDisplayMatches(
+            HexColors.GREEN,
+            () => ({
+              x: item.bounds.x + SELECT_OPTION_HEIGHT_OFFSET,
+              y: item.bounds.y + item.bounds.height - SELECT_OPTION_WIDTH_OFFSET
+            })
+          );
+        });
+      });
+    });
+
+    describe('SetWindowTransform', () => {
+      before(async () => {
+        w = new BrowserWindow({ ...landscapeBounds, frame: false, webPreferences: { windowTransform: 'none' } });
+        await w.loadURL(url);
+      });
+      after(async () => {
+        await closeWindow(w);
+        w = null as unknown as BrowserWindow;
+      });
+      afterEach(() => { clickMouse(w, { x: 500, y: 500 }); });
+
+      it('rot90', async () => {
+        w.setWindowTransform('rot90');
+        await setTimeout(500);
+        const { windowWidth, windowHeight } = await w.webContents.executeJavaScript('({windowWidth: window.innerWidth, windowHeight: window.innerHeight})');
+        expect(windowWidth).to.be.equal(landscapeBounds.height);
+        expect(windowHeight).to.be.equal(landscapeBounds.width);
+        expectBoundsEqual(w.getBounds(), landscapeBounds);
+
+        const screenCapture = new ScreenCapture(display);
+        await screenCapture.expectColorAtPointOnDisplayMatches(
+          HexColors.RED,
+          () => ({
+            x: landscapeBounds.x + landscapeBounds.width - SELECT_HEIGHT_OFFSET,
+            y: landscapeBounds.y + SELECT_WIDTH_OFFSET
+          })
+        );
+
+        clickMouse(w, { x: MOUSE_X_OFFSET, y: MOUSE_Y_OFFSET });
+        await setTimeout(500);
+        await screenCapture.expectColorAtPointOnDisplayMatches(
+          HexColors.GREEN,
+          () => ({
+            x: landscapeBounds.x + landscapeBounds.width - SELECT_OPTION_HEIGHT_OFFSET,
+            y: landscapeBounds.y + SELECT_OPTION_WIDTH_OFFSET
+          })
+        );
+      });
+
+      it('rot180', async () => {
+        w.setWindowTransform('rot180');
+        await setTimeout(500);
+        const { windowWidth, windowHeight } = await w.webContents.executeJavaScript('({windowWidth: window.innerWidth, windowHeight: window.innerHeight})');
+        expect(windowWidth).to.be.equal(landscapeBounds.width);
+        expect(windowHeight).to.be.equal(landscapeBounds.height);
+        expectBoundsEqual(w.getBounds(), landscapeBounds);
+
+        const screenCapture = new ScreenCapture(display);
+        await screenCapture.expectColorAtPointOnDisplayMatches(
+          HexColors.RED,
+          () => ({
+            x: landscapeBounds.x + landscapeBounds.width - SELECT_WIDTH_OFFSET,
+            y: landscapeBounds.y + landscapeBounds.height - SELECT_HEIGHT_OFFSET
+          })
+        );
+
+        clickMouse(w, { x: MOUSE_X_OFFSET, y: MOUSE_Y_OFFSET });
+        await setTimeout(500);
+        await screenCapture.expectColorAtPointOnDisplayMatches(
+          HexColors.GREEN,
+          () => ({
+            x: landscapeBounds.x + landscapeBounds.width - SELECT_OPTION_WIDTH_OFFSET,
+            y: landscapeBounds.y + landscapeBounds.height - SELECT_OPTION_HEIGHT_OFFSET
+          })
+        );
+      });
+
+      it('rot270', async () => {
+        w.setWindowTransform('rot270');
+        await setTimeout(500);
+        const { windowWidth, windowHeight } = await w.webContents.executeJavaScript('({windowWidth: window.innerWidth, windowHeight: window.innerHeight})');
+        expect(windowWidth).to.be.equal(landscapeBounds.height);
+        expect(windowHeight).to.be.equal(landscapeBounds.width);
+        expectBoundsEqual(w.getBounds(), landscapeBounds);
+
+        const screenCapture = new ScreenCapture(display);
+        await screenCapture.expectColorAtPointOnDisplayMatches(
+          HexColors.RED,
+          () => ({
+            x: landscapeBounds.x + SELECT_HEIGHT_OFFSET,
+            y: landscapeBounds.y + landscapeBounds.height - SELECT_WIDTH_OFFSET
+          })
+        );
+
+        clickMouse(w, { x: MOUSE_X_OFFSET, y: MOUSE_Y_OFFSET });
+        await setTimeout(500);
+        await screenCapture.expectColorAtPointOnDisplayMatches(
+          HexColors.GREEN,
+          () => ({
+            x: landscapeBounds.x + SELECT_OPTION_HEIGHT_OFFSET,
+            y: landscapeBounds.y + landscapeBounds.height - SELECT_OPTION_WIDTH_OFFSET
+          })
+        );
+      });
+
+      it('Resize while rotated to portraitBounds', async () => {
+        w.setBounds(portraitBounds);
+        await setTimeout(500);
+        const { windowWidth, windowHeight } = await w.webContents.executeJavaScript('({windowWidth: window.innerWidth, windowHeight: window.innerHeight})');
+        expect(windowWidth).to.be.equal(portraitBounds.height);
+        expect(windowHeight).to.be.equal(portraitBounds.width);
+        expectBoundsEqual(w.getBounds(), portraitBounds);
+
+        const screenCapture = new ScreenCapture(display);
+        await screenCapture.expectColorAtPointOnDisplayMatches(
+          HexColors.RED,
+          () => ({
+            x: portraitBounds.x + SELECT_HEIGHT_OFFSET,
+            y: portraitBounds.y + portraitBounds.height - SELECT_WIDTH_OFFSET
+          })
+        );
+
+        clickMouse(w, { x: MOUSE_X_OFFSET, y: MOUSE_Y_OFFSET });
+        await setTimeout(500);
+        await screenCapture.expectColorAtPointOnDisplayMatches(
+          HexColors.GREEN,
+          () => ({
+            x: portraitBounds.x + SELECT_OPTION_HEIGHT_OFFSET,
+            y: portraitBounds.y + portraitBounds.height - SELECT_OPTION_WIDTH_OFFSET
+          })
+        );
+      });
+
+      it('Resize while rotated to squareBounds', async () => {
+        w.setBounds(squareBounds);
+        await setTimeout(500);
+        const { windowWidth, windowHeight } = await w.webContents.executeJavaScript('({windowWidth: window.innerWidth, windowHeight: window.innerHeight})');
+        expect(windowWidth).to.be.equal(squareBounds.height);
+        expect(windowHeight).to.be.equal(squareBounds.width);
+        expectBoundsEqual(w.getBounds(), squareBounds);
+
+        const screenCapture = new ScreenCapture(display);
+        await screenCapture.expectColorAtPointOnDisplayMatches(
+          HexColors.RED,
+          () => ({
+            x: squareBounds.x + SELECT_HEIGHT_OFFSET,
+            y: squareBounds.y + squareBounds.height - SELECT_WIDTH_OFFSET
+          })
+        );
+
+        clickMouse(w, { x: MOUSE_X_OFFSET, y: MOUSE_Y_OFFSET });
+        await setTimeout(500);
+        await screenCapture.expectColorAtPointOnDisplayMatches(
+          HexColors.GREEN,
+          () => ({
+            x: squareBounds.x + SELECT_OPTION_HEIGHT_OFFSET,
+            y: squareBounds.y + squareBounds.height - SELECT_OPTION_WIDTH_OFFSET
+          })
+        );
+      });
+
+      it('Resize while rotated to bounds with x,y offsets', async () => {
+        w.setBounds(offsetBounds);
+        await setTimeout(500);
+        const { windowWidth, windowHeight } = await w.webContents.executeJavaScript('({windowWidth: window.innerWidth, windowHeight: window.innerHeight})');
+        expect(windowWidth).to.be.equal(offsetBounds.height);
+        expect(windowHeight).to.be.equal(offsetBounds.width);
+        expectBoundsEqual(w.getBounds(), offsetBounds);
+
+        const screenCapture = new ScreenCapture(display);
+        await screenCapture.expectColorAtPointOnDisplayMatches(
+          HexColors.RED,
+          () => ({
+            x: offsetBounds.x + SELECT_HEIGHT_OFFSET,
+            y: offsetBounds.y + offsetBounds.height - SELECT_WIDTH_OFFSET
+          })
+        );
+
+        clickMouse(w, { x: MOUSE_X_OFFSET, y: MOUSE_Y_OFFSET });
+        await setTimeout(500);
+        await screenCapture.expectColorAtPointOnDisplayMatches(
+          HexColors.GREEN,
+          () => ({
+            x: offsetBounds.x + SELECT_OPTION_HEIGHT_OFFSET,
+            y: offsetBounds.y + offsetBounds.height - SELECT_OPTION_WIDTH_OFFSET
+          })
+        );
+      });
+
+      it('Resize while rotated to bounds with negative x,y offsets', async () => {
+        w.setBounds(negativeOffsetBounds);
+        await setTimeout(500);
+        const { windowWidth, windowHeight } = await w.webContents.executeJavaScript('({windowWidth: window.innerWidth, windowHeight: window.innerHeight})');
+        expect(windowWidth).to.be.equal(negativeOffsetBounds.height);
+        expect(windowHeight).to.be.equal(negativeOffsetBounds.width);
+        expectBoundsEqual(w.getBounds(), negativeOffsetBounds);
+
+        const screenCapture = new ScreenCapture(display);
+        await screenCapture.expectColorAtPointOnDisplayMatches(
+          HexColors.RED,
+          () => ({
+            x: negativeOffsetBounds.x + SELECT_HEIGHT_OFFSET,
+            y: negativeOffsetBounds.y + negativeOffsetBounds.height - SELECT_WIDTH_OFFSET
+          })
+        );
+
+        clickMouse(w, { x: MOUSE_X_OFFSET, y: MOUSE_Y_OFFSET });
+        await setTimeout(500);
+        await screenCapture.expectColorAtPointOnDisplayMatches(
+          HexColors.GREEN,
+          () => ({
+            x: negativeOffsetBounds.x + SELECT_OPTION_HEIGHT_OFFSET,
+            y: negativeOffsetBounds.y + negativeOffsetBounds.height - SELECT_OPTION_WIDTH_OFFSET
+          })
+        );
+      });
+
+      it('identity', async () => {
+        w.setWindowTransform('none');
+        await setTimeout(500);
+        const { windowWidth, windowHeight } = await w.webContents.executeJavaScript('({windowWidth: window.innerWidth, windowHeight: window.innerHeight})');
+        expect(windowWidth).to.be.equal(negativeOffsetBounds.width);
+        expect(windowHeight).to.be.equal(negativeOffsetBounds.height);
+        expectBoundsEqual(w.getBounds(), negativeOffsetBounds);
+
+        const screenCapture = new ScreenCapture(display);
+        await screenCapture.expectColorAtPointOnDisplayMatches(
+          HexColors.RED,
+          () => ({
+            x: negativeOffsetBounds.x + SELECT_WIDTH_OFFSET,
+            y: negativeOffsetBounds.y + SELECT_HEIGHT_OFFSET
+          })
+        );
+
+        clickMouse(w, { x: MOUSE_X_OFFSET, y: MOUSE_Y_OFFSET });
+        await setTimeout(500);
+        await screenCapture.expectColorAtPointOnDisplayMatches(
+          HexColors.GREEN,
+          () => ({
+            x: negativeOffsetBounds.x + SELECT_OPTION_WIDTH_OFFSET,
+            y: negativeOffsetBounds.y + SELECT_OPTION_HEIGHT_OFFSET
+          })
+        );
+      });
+
+      it('Check fullscreen bottom right option in correct location', async () => {
+        w.setBounds(fullScreenBounds);
+        await setTimeout(500);
+        const { windowWidth, windowHeight } = await w.webContents.executeJavaScript('({windowWidth: window.innerWidth, windowHeight: window.innerHeight})');
+        expect(windowWidth).to.be.equal(fullScreenBounds.width);
+        expect(windowHeight).to.be.equal(fullScreenBounds.height);
+        expectBoundsEqual(w.getBounds(), fullScreenBounds);
+
+        const screenCapture = new ScreenCapture(display);
+        await screenCapture.expectColorAtPointOnDisplayMatches(
+          HexColors.RED,
+          () => ({
+            x: fullScreenBounds.width - SELECT_WIDTH_OFFSET,
+            y: fullScreenBounds.height - SELECT_HEIGHT_OFFSET
+          })
+        );
+
+        clickMouse(w, { x: fullScreenBounds.width - MOUSE_X_OFFSET, y: fullScreenBounds.height - MOUSE_Y_OFFSET });
+        await setTimeout(500);
+        // Check when fullscreen the option for the bottom right select element is rendered above the element and inside the window
+        await screenCapture.expectColorAtPointOnDisplayMatches(
+          HexColors.GREEN,
+          () => ({
+            x: fullScreenBounds.width - SELECT_OPTION_WIDTH_OFFSET,
+            y: fullScreenBounds.height - SELECT_HEIGHT - SELECT_OPTION_HEIGHT / 2
+          })
+        );
+      });
+    });
+  });
 });
