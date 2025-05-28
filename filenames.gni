@@ -420,6 +420,8 @@ filenames = {
     "shell/browser/media/media_capture_devices_dispatcher.h",
     "shell/browser/media/media_device_id_salt.cc",
     "shell/browser/media/media_device_id_salt.h",
+    "shell/browser/media/media_resource_getter_impl.cc",
+    "shell/browser/media/media_resource_getter_impl.h",
     "shell/browser/microtasks_runner.cc",
     "shell/browser/microtasks_runner.h",
     "shell/browser/native_window.cc",
