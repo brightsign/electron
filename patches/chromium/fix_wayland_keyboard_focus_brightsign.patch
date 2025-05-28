@@ -1,0 +1,150 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Caner Altinbasak <cal@brightsign.biz>
+Date: Wed, 26 Feb 2025 10:30:13 +0000
+Subject: fix(wayland): keyboard and focus changes
+
+Track keyboard focus OS-18548
+We have disabled focus tracking in Weston. Weston no longer calls
+back to Electron for focus updates. Modified WaylandWindowManager
+and WaylandWindow to track the focused window and send key events
+to the focused window.
+
+Always dispatch KeyEvent OS-18589
+In the case where topmost window is unfocusable, event target is empty.
+This causes event to be swallowed here. Windows itself know if they are
+focused or not and ignore the event if they are not focused. Pass key
+events to all windows and let windows decide if they want to handle it
+or not.
+
+Focus on newly created widget OS-18791
+
+Electron no longer receives focus widget update callback
+from Weston, and it tracks its own focus. Weston's default
+behaviour is to focus a widget when it is first created.
+
+Our focus tracking was differing from Weston's default
+behaviour and we have applications which depend on the
+default behaviour. Focus on widget in Initialize call
+to mimic Weston's behaviour.
+
+Weston doesn't have a concept of "non-focusable". Only
+difference is, we don't focus on "non-focusable" widgets.
+
+diff --git a/ui/ozone/platform/wayland/host/wayland_window.cc b/ui/ozone/platform/wayland/host/wayland_window.cc
+index 18aecee4b2da09a7a677580472b6a929aeffd290..0dab9c68bf42d7b9397f826a93371bf63166582d 100644
+--- a/ui/ozone/platform/wayland/host/wayland_window.cc
++++ b/ui/ozone/platform/wayland/host/wayland_window.cc
+@@ -668,6 +668,16 @@ bool WaylandWindow::CanDispatchEvent(const PlatformEvent& event) {
+ uint32_t WaylandWindow::DispatchEvent(const PlatformEvent& native_event) {
+   Event* event = static_cast<Event*>(native_event);
+ 
++  if (event->IsMouseEvent()) {
++    // If it is mouse button event, set window as keyboard grabber.
++    if (event->AsMouseEvent()->IsAnyButton() && activatable_) {
++      connection_->window_manager()->GrabKeyboardEvents(this);
++    }
++  } else if (event->IsTouchEvent() && activatable_) {
++    // If it is touch event, set window as keyboard grabber.
++    connection_->window_manager()->GrabKeyboardEvents(this);
++  }
++
+   if (event->IsLocatedEvent()) {
+     auto* event_grabber =
+         connection_->window_manager()->located_events_grabber();
+@@ -733,6 +743,9 @@ bool WaylandWindow::CanAcceptEvent(const Event& event) {
+     DCHECK(event.target());
+   }
+ #endif
++  if(event.IsKeyEvent()) {
++    return true;
++  }
+   return this == event.target();
+ }
+ 
+@@ -942,6 +955,10 @@ bool WaylandWindow::Initialize(PlatformWindowInitProperties properties) {
+                       state.window_scale * state.ui_scale)
+                       .size();
+ 
++  if (activatable_) {
++    connection_->window_manager()->GrabKeyboardEvents(this);
++  }
++
+   applied_state_ = state;
+   latched_state_ = state;
+ 
+diff --git a/ui/ozone/platform/wayland/host/wayland_window.h b/ui/ozone/platform/wayland/host/wayland_window.h
+index e29df94f4cd4e2b0a201dcce6e3de8806cc575d7..b0a556ae2c7806fa9d8f3a3cbeb2d2d6b0888a4e 100644
+--- a/ui/ozone/platform/wayland/host/wayland_window.h
++++ b/ui/ozone/platform/wayland/host/wayland_window.h
+@@ -699,6 +699,8 @@ class WaylandWindow : public PlatformWindow,
+ 
+   base::OnceClosure drag_loop_quit_closure_;
+ 
++  bool activatable_ = false;
++
+ #if DCHECK_IS_ON()
+   bool disable_null_target_dcheck_for_test_ = false;
+ #endif
+diff --git a/ui/ozone/platform/wayland/host/wayland_window_manager.cc b/ui/ozone/platform/wayland/host/wayland_window_manager.cc
+index 2fba9c2dae5c48e9b7e99dc685f180c9054fc8d9..22d29417d65ba4995caa1b05dbf03a722ca3b31a 100644
+--- a/ui/ozone/platform/wayland/host/wayland_window_manager.cc
++++ b/ui/ozone/platform/wayland/host/wayland_window_manager.cc
+@@ -14,6 +14,7 @@
+ #include "ui/ozone/platform/wayland/host/wayland_window.h"
+ #include "ui/ozone/platform/wayland/host/wayland_window_drag_controller.h"
+ #include "ui/ozone/platform/wayland/host/wayland_window_observer.h"
++#include "wayland_window_manager.h"
+ 
+ namespace ui {
+ 
+@@ -48,6 +49,7 @@ void WaylandWindowManager::GrabLocatedEvents(WaylandWindow* window) {
+   located_events_grabber_ = window;
+   if (old_grabber)
+     old_grabber->OnWindowLostCapture();
++
+ }
+ 
+ void WaylandWindowManager::UngrabLocatedEvents(WaylandWindow* window) {
+@@ -57,6 +59,15 @@ void WaylandWindowManager::UngrabLocatedEvents(WaylandWindow* window) {
+   old_grabber->OnWindowLostCapture();
+ }
+ 
++void WaylandWindowManager::GrabKeyboardEvents(WaylandWindow* window) {
++  keyboard_events_grabber_ = window;
++}
++
++void WaylandWindowManager::UngrabKeyboardEvents(WaylandWindow* window) {
++  if (keyboard_events_grabber_ == window)
++    keyboard_events_grabber_ = nullptr;
++}
++
+ WaylandWindow* WaylandWindowManager::GetWindow(
+     gfx::AcceleratedWidget widget) const {
+   auto it = window_map_.find(widget);
+diff --git a/ui/ozone/platform/wayland/host/wayland_window_manager.h b/ui/ozone/platform/wayland/host/wayland_window_manager.h
+index 7017c90b3efaac19535566d89c7050b5fbb1bdc8..ed78498bebb33a50a5af99b6ba02b54629cb2db9 100644
+--- a/ui/ozone/platform/wayland/host/wayland_window_manager.h
++++ b/ui/ozone/platform/wayland/host/wayland_window_manager.h
+@@ -52,6 +52,14 @@ class WaylandWindowManager {
+     return located_events_grabber_;
+   }
+ 
++  void GrabKeyboardEvents(WaylandWindow* event_grabber);
++  void UngrabKeyboardEvents(WaylandWindow* event_grabber);
++
++  // Returns the keyboard event grabber.
++  WaylandWindow* keyboard_events_grabber() const {
++    return keyboard_events_grabber_;
++  }
++
+   // Returns a window found by |widget|.
+   WaylandWindow* GetWindow(gfx::AcceleratedWidget widget) const;
+ 
+@@ -146,6 +154,7 @@ class WaylandWindowManager {
+   std::unique_ptr<WaylandSubsurface> subsurface_recycle_cache_;
+ 
+   raw_ptr<WaylandWindow> located_events_grabber_ = nullptr;
++  raw_ptr<WaylandWindow, DanglingUntriaged> keyboard_events_grabber_ = nullptr;
+ 
+   // Stores strictly monotonically increasing counter for allocating unique
+   // AccelerateWidgets.

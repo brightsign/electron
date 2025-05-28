@@ -100,6 +100,9 @@ class NativeWindowObserver : public base::CheckedObserver {
   virtual void OnNewWindowForTab() {}
   virtual void OnSystemContextMenu(int x, int y, bool* prevent_default) {}
 
+  // Called when virtual keyboard visibility changes
+  virtual void OnVirtualKeyboardVisibilityChanged(bool is_visible) {}
+
 // Called when window message received
 #if BUILDFLAG(IS_WIN)
   virtual void OnWindowMessage(UINT message, WPARAM w_param, LPARAM l_param) {}
