@@ -14,6 +14,8 @@
 #include "base/memory/raw_ptr.h"
 #include "shell/browser/ui/views/root_view.h"
 #include "third_party/abseil-cpp/absl/container/flat_hash_set.h"
+#include "ui/base/ime/input_method_observer.h"
+#include "ui/base/ime/text_input_client.h"
 #include "ui/base/ozone_buildflags.h"
 #include "ui/views/controls/webview/unhandled_keyboard_event_handler.h"
 #include "ui/views/widget/widget_observer.h"
@@ -39,8 +41,9 @@ gfx::Rect ScreenToDIPRect(HWND hwnd, const gfx::Rect& pixel_bounds);
 #endif
 
 class NativeWindowViews : public NativeWindow,
-                          private views::WidgetObserver,
-                          private ui::EventHandler {
+                          public views::WidgetObserver,
+                          public ui::EventHandler,
+                          public ui::InputMethodObserver {
  public:
   NativeWindowViews(const gin_helper::Dictionary& options,
                     NativeWindow* parent);
@@ -192,6 +195,13 @@ class NativeWindowViews : public NativeWindow,
                              const gfx::Rect& bounds) override;
   void OnWidgetDestroying(views::Widget* widget) override;
   void OnWidgetDestroyed(views::Widget* widget) override;
+
+  // ui::InputMethodObserver:
+  void OnFocus() override {}
+  void OnBlur() override {}
+  void OnCaretBoundsChanged(const ui::TextInputClient* client) override {}
+  void OnTextInputStateChanged(const ui::TextInputClient* client) override;
+  void OnInputMethodDestroyed(const ui::InputMethod* input_method) override {}
 
   // views::WidgetDelegate:
   views::View* GetInitiallyFocusedView() override;
