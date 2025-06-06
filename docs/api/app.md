@@ -1496,6 +1496,18 @@ details.
 
 **Note:** Enable `Secure Keyboard Entry` only when it is needed and disable it when it is no longer needed.
 
+### `app.addFont(path)` _Linux_
+
+* `path` string - A path to the ttf font file.
+
+Returns `boolean` - Whether the font was successfully added.
+
+This method calls fontconfig's `FcConfigAppFontAddFile` to add a font to the
+application's font configuration. This allows the application to use the font
+without having to install it system-wide. The font will be available to all
+web contents in the application, but will not be available to other applications
+or the system.
+
 ## Properties
 
 ### `app.accessibilitySupportEnabled` _macOS_ _Windows_
@@ -1580,3 +1592,4 @@ or Windows [WOW](https://en.wikipedia.org/wiki/Windows_on_Windows)).
 
 You can use this property to prompt users to download the arm64 version of
 your application when they are mistakenly running the x64 version under Rosetta or WOW.
+
