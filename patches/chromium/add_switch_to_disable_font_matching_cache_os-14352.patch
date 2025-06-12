@@ -1,0 +1,68 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Tariq Bashir <tbashir@brightsign.biz>
+Date: Thu, 12 Jun 2025 12:30:02 +0100
+Subject: Add switch to disable font matching cache: OS-14352
+
+This patch adds a switch to disable font family matching cache in FontServiceApp. This cache
+is created and lives in the main process and is not cleared as its a LRU cache. This causes
+issues when the AddFont API is called in between using multiple roHtmlWidgets, as the cache
+isn't cleared as the main process isn't restarted.
+
+An analysis was made on how to clear the cache when the AddFont API is called from Electron,
+but this was found to be difficult and not worth the effort:
+The way that FontServiceApp, which runs in the main process, is accessed is via FontLoader,
+which is called in the render process. We call AddFont in the main process and so cannot use
+FontLoader to call a new CacheClear method in FontServiceApp. Also, trying to get a reference
+and directly call FontServiceApp would be very messy. Finally, since we call AddFont before the
+render process has been created, to add a call from there triggered by Electron is also not easy.
+
+diff --git a/base/base_switches.h b/base/base_switches.h
+index 1c8c6d07bd62f92d19c95bfd192cb84c41ccbc82..b4f30a51cefd5c56b6870ebdb47563dc59d9e851 100644
+--- a/base/base_switches.h
++++ b/base/base_switches.h
+@@ -20,6 +20,12 @@ inline constexpr char kDisableBreakpad[] = "disable-breakpad";
+ // Comma-separated list of feature names to disable. See also kEnableFeatures.
+ inline constexpr char kDisableFeatures[] = "disable-features";
+ 
++// Disables font family matching cache in FontServiceApp. This is required for
++// when using the AddFont API to add a font in FontConfig as the cache lives
++// as long as the main process is running and isn't manually cleared.
++inline constexpr char kDisableFontFamilyMatchingCache[] =
++    "disable-font-family-matching-cache";
++
+ // Force disabling of low-end device mode when set.
+ inline constexpr char kDisableLowEndDeviceMode[] =
+     "disable-low-end-device-mode";
+diff --git a/components/services/font/font_service_app.cc b/components/services/font/font_service_app.cc
+index 0605e678e471fe2c124cdea16113261bea396801..c4f77cf253fa9a2c3095e061deb416e17338bb8c 100644
+--- a/components/services/font/font_service_app.cc
++++ b/components/services/font/font_service_app.cc
+@@ -10,6 +10,7 @@
+ #include <utility>
+ #include <vector>
+ 
++#include "base/base_switches.h"
+ #include "base/command_line.h"
+ #include "base/containers/span.h"
+ #include "base/feature_list.h"
+@@ -152,12 +153,14 @@ void FontServiceApp::MatchFamilyName(const std::string& family_name,
+     style->slant = static_cast<mojom::TypefaceSlant>(SkFontStyle().slant());
+   }
+ 
+-  // Add to the cache.
+-  MatchCacheValue value;
+-  value.family_name = result_family_cppstring;
+-  value.identity = identity ? identity.Clone() : nullptr;
+-  value.style = style.Clone();
+-  match_cache_.Put(key, std::move(value));
++  if (!base::CommandLine::ForCurrentProcess()->HasSwitch(switches::kDisableFontFamilyMatchingCache)) {
++    // Add to the cache.
++    MatchCacheValue value;
++    value.family_name = result_family_cppstring;
++    value.identity = identity ? identity.Clone() : nullptr;
++    value.style = style.Clone();
++    match_cache_.Put(key, std::move(value));
++  }
+ 
+   std::move(callback).Run(std::move(identity), result_family_cppstring,
+                           std::move(style));
