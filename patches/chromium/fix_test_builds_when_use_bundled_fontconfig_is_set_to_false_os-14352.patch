@@ -1,0 +1,28 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Tariq Bashir <tbashir@brightsign.biz>
+Date: Thu, 12 Jun 2025 17:15:39 +0100
+Subject: Fix test builds when use_bundled_fontconfig is set to false: OS-14352
+
+This patch fixes a compilation failure that occurs when making test builds
+when `use_bundled_fontconfig` is set to false.
+
+diff --git a/third_party/test_fonts/fontconfig/BUILD.gn b/third_party/test_fonts/fontconfig/BUILD.gn
+index 040fdbb14968da1aeb1adf078ebc563758d4b121..dd99ff4cde7a4428913b219d9206c7b86b7b7a60 100644
+--- a/third_party/test_fonts/fontconfig/BUILD.gn
++++ b/third_party/test_fonts/fontconfig/BUILD.gn
+@@ -3,13 +3,14 @@
+ # found in the LICENSE file.
+ 
+ import("//build/compiled_action.gni")
++import("//third_party/fontconfig/fontconfig.gni")
+ 
+ if (is_linux || is_chromeos) {
+   group("test_support") {
+     testonly = true
+     public_deps = [ ":fontconfig_util_linux" ]
+     data_deps = [ "//third_party/test_fonts" ]
+-    if (current_toolchain == host_toolchain) {
++    if (current_toolchain == host_toolchain && use_bundled_fontconfig) {
+       data_deps += [ ":do_generate_fontconfig_caches" ]
+     }
+   }
