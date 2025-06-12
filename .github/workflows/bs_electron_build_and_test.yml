@@ -206,8 +206,8 @@ jobs:
     - name: Run GN Gen
       run: |
         cd src
-        gn gen $OUTPUT_FOLDER --args="import(\"${GN_IMPORT}\") cc_wrapper=\"sccache\""
- 
+        gn gen $OUTPUT_FOLDER --args="use_bundled_fontconfig=false import(\"${GN_IMPORT}\") cc_wrapper=\"sccache\""
+
     - name: Run Ninja Build
       run: |
         cd src
