@@ -1,0 +1,51 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Tariq Bashir <120014322+t-bashir-bs@users.noreply.github.com>
+Date: Wed, 18 Jun 2025 13:22:36 +0100
+Subject: Fix overlay strategy for html pages with transparency OS-19250
+
+Chromecast does not support overlays with opacity, so we need to
+disable the opacity check in the overlay candidate factory. Additionally,
+we need to fix the case when z-index is negative and we have VideoHoleDrawQuad
+with transparency.
+
+diff --git a/components/viz/service/display/overlay_candidate_factory.cc b/components/viz/service/display/overlay_candidate_factory.cc
+index 4b8e5c2aae07206789575808a2c8217fe0fbfdd9..ffd035def63968742be4d45242d41d95996cd9b2 100644
+--- a/components/viz/service/display/overlay_candidate_factory.cc
++++ b/components/viz/service/display/overlay_candidate_factory.cc
+@@ -154,6 +154,7 @@ OverlayCandidate::CandidateStatus OverlayCandidateFactory::FromDrawQuad(
+ 
+   const SharedQuadState* sqs = quad->shared_quad_state;
+ 
++#if 0  // Brightsign, we support overlays with opacity.
+   // We don't support an opacity value different than one for an overlay plane.
+   // Render pass quads should have their |sqs| opacity integrated directly into
+   // their final output buffers.
+@@ -161,6 +162,7 @@ OverlayCandidate::CandidateStatus OverlayCandidateFactory::FromDrawQuad(
+       !cc::MathUtil::IsWithinEpsilon(sqs->opacity, 1.0f)) {
+     return CandidateStatus::kFailOpacity;
+   }
++#endif
+   candidate.opacity = sqs->opacity;
+ 
+   // We support only kSrc (no blending) and kSrcOver (blending with premul).
+diff --git a/components/viz/service/display/overlay_strategy_underlay_brightsign.cc b/components/viz/service/display/overlay_strategy_underlay_brightsign.cc
+index cfb85c329ee87db7536a80a99c3ff392007f4067..bda69e19a679cbedf35e0fc2b6cf7440a5d38369 100644
+--- a/components/viz/service/display/overlay_strategy_underlay_brightsign.cc
++++ b/components/viz/service/display/overlay_strategy_underlay_brightsign.cc
+@@ -137,8 +137,14 @@ bool OverlayStrategyUnderlayBrightsign::VideoHoleDraw(
+       found_underlay = true;
+ 
+       if (VideoHoleDrawQuad::MaterialCast(*quad)->z_index < 0) {
+-        render_pass->ReplaceExistingQuadWithSolidColor(quad,  SkColors::kBlack,
+-                                                       SkBlendMode::kDstOut);
++        if (!quad->ShouldDrawWithBlending() &&
++            quad->shared_quad_state->blend_mode == SkBlendMode::kSrcOver) {
++            render_pass->ReplaceExistingQuadWithSolidColor(quad, SkColors::kBlack,
++                                                           SkBlendMode::kDstOut);
++        } else {
++            render_pass->ReplaceExistingQuadWithSolidColor(quad, SkColors::kTransparent,
++                                                           SkBlendMode::kSrcOut);
++        }
+       }
+     }
+   }
