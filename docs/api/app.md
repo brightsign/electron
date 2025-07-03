@@ -1681,6 +1681,18 @@ app.setClientCertRequestPasswordHandler(async ({ hostname, tokenName, isRetry })
 })
 ```
 
+### `app.addFont(path)` _Linux_
+
+* `path` string - A path to the ttf font file.
+
+Returns `boolean` - Whether the font was successfully added.
+
+This method calls fontconfig's `FcConfigAppFontAddFile` to add a font to the
+application's font configuration. This allows the application to use the font
+without having to install it system-wide. The font will be available to all
+web contents in the application, but will not be available to other applications
+or the system.
+
 ## Properties
 
 ### `app.accessibilitySupportEnabled` _macOS_ _Windows_
