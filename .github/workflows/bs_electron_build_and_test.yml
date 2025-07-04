@@ -113,6 +113,7 @@ jobs:
       run: |
         echo "Setting up build type as testing"
         echo 'OUTPUT_FOLDER=out/Testing' >> $GITHUB_ENV
+        echo 'ELECTRON_OUT_DIR=Testing' >> $GITHUB_ENV
         echo 'GN_IMPORT=//electron/build/args/testing.gn' >> $GITHUB_ENV
         echo 'SCCACHE_BUCKET=${{ env.SCCACHE_TEST_BUILD_BUCKET_NAME }}' >> $GITHUB_ENV
 
@@ -121,6 +122,7 @@ jobs:
       run: |
         echo "Setting up build type as release"
         echo 'OUTPUT_FOLDER=out/Release' >> $GITHUB_ENV
+        echo 'ELECTRON_OUT_DIR=Release' >> $GITHUB_ENV
         echo 'GN_IMPORT=//electron/build/args/release.gn' >> $GITHUB_ENV
         echo 'SOURCE_RELEASE_FILE_NAME=${{ env.ELECTRON_VERSION }}' >> $GITHUB_ENV
         echo 'RELEASE_SRC_FOLDER=${{ env.ELECTRON_VERSION }}' >> $GITHUB_ENV
@@ -235,7 +237,7 @@ jobs:
       if: inputs.build_type == 'release'
       run: |
         cd src
-        ninja -C $OUTPUT_FOLDER electron:electron_dist_zip electron:node_headers third_party/electron_node:overlapped-checker electron:hunspell_dictionaries_zip
+        ninja -C $OUTPUT_FOLDER electron:electron_dist_zip electron:node_headers electron:hunspell_dictionaries_zip
         if [ "`uname`" == "Darwin" ]; then
           target_os=mac
           target_cpu=x64
