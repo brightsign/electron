@@ -26,6 +26,8 @@ Module._nodeModulePaths = function (from: string) {
       return candidate.startsWith(resourcesPathWithTrailingSlash);
     });
   } else {
+    paths.push('/usr/lib/node_modules');
+    paths.push('/var/volatile/node_modules');
     return paths;
   }
 };
