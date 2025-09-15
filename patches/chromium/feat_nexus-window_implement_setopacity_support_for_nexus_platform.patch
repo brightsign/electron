@@ -1,0 +1,138 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Caner Altinbasak <cal@brightsign.biz>
+Date: Mon, 15 Sep 2025 14:44:13 +0100
+Subject: feat(nexus-window): implement SetOpacity support for Nexus platform
+ windows
+
+Add SetOpacity method override to NexusWindow class that uses Nexus blend
+equations to control window transparency. The implementation uses
+HideSourceColor/HideSourceAlpha for fully transparent windows (opacity 0.0),
+ShowSourceColor with ConstantAlpha blending for partial transparency, and
+ShowSourceColor with SourceAlpha for fully opaque windows (opacity 1.0). The
+Show() method is updated to apply current opacity when the window is
+displayed, and opacity value is stored in the opacity_ member variable. This
+enables BrowserWindow.setOpacity() functionality in Electron apps and allows
+h.setalpha() and similar opacity controls to work properly on the Nexus
+embedded platform by leveraging the native Nexus Graphics2D blend equation
+system.
+
+diff --git a/ui/ozone/platform/nexus/nexus_window.cc b/ui/ozone/platform/nexus/nexus_window.cc
+index b5c13f805d8232b5cfbd0fd0f4d8c2e6d64f7fb1..ff8e8325574fdb936dd6dd4c3658e53535f62a6d 100644
+--- a/ui/ozone/platform/nexus/nexus_window.cc
++++ b/ui/ozone/platform/nexus/nexus_window.cc
+@@ -112,7 +112,36 @@ void NexusWindow::Show(bool inactive) {
+   win_info.width = bounds_.width();
+   win_info.height = bounds_.height();
+   win_info.zOrder = kZOrder;
+-  win_info.colorBlend = ShowSourceColor;
++
++  // Apply current opacity when showing
++  if (opacity_ == 1.0f) {
++    // Fully opaque
++    win_info.colorBlend = ShowSourceColor;
++    NEXUS_BlendEquation showSourceAlpha = {
++      NEXUS_BlendFactor_eSourceAlpha,
++      NEXUS_BlendFactor_eOne,
++      false,
++      NEXUS_BlendFactor_eDestinationAlpha,
++      NEXUS_BlendFactor_eInverseSourceAlpha,
++      false,
++      NEXUS_BlendFactor_eZero
++    };
++    win_info.alphaBlend = showSourceAlpha;
++  } else {
++    // Use current opacity value
++    win_info.colorBlend = ShowSourceColor;
++    NEXUS_BlendEquation blendAlpha = {
++      NEXUS_BlendFactor_eSourceAlpha,
++      NEXUS_BlendFactor_eConstantAlpha,
++      false,
++      NEXUS_BlendFactor_eDestinationAlpha,
++      NEXUS_BlendFactor_eInverseSourceAlpha,
++      false,
++      NEXUS_BlendFactor_eZero
++    };
++    win_info.alphaBlend = blendAlpha;
++  }
++
+   NXPL_UpdateNativeWindowEXT(native_window_, &win_info);
+ }
+ 
+@@ -369,5 +398,57 @@ void NexusWindow::SizeConstraintsChanged() {
+   BS_DEBUG( "%s\n", __PRETTY_FUNCTION__);
+ }
+ 
++void NexusWindow::SetOpacity(float opacity) {
++  BS_DEBUG( "%s opacity: %f\n", __PRETTY_FUNCTION__, opacity);
+ 
++  opacity_ = opacity;
++
++  // Update the window with new opacity settings
++  if (native_window_) {
++    NXPL_NativeWindowInfoEXT win_info;
++    NXPL_GetDefaultNativeWindowInfoEXT(&win_info);
++    win_info.x = bounds_.x();
++    win_info.y = bounds_.y();
++    win_info.width = bounds_.width();
++    win_info.height = bounds_.height();
++    win_info.zOrder = kZOrder;
++
++    if (!visible_ || opacity_ == 0.0f) {
++      // Hidden or fully transparent
++      win_info.colorBlend = HideSourceColor;
++      win_info.alphaBlend = HideSourceAlpha;
++    } else if (opacity_ == 1.0f) {
++      // Fully opaque
++      win_info.colorBlend = ShowSourceColor;
++      // For alpha, we want: source_alpha * 1.0
++      NEXUS_BlendEquation showSourceAlpha = {
++        NEXUS_BlendFactor_eSourceAlpha,
++        NEXUS_BlendFactor_eOne,
++        false,
++        NEXUS_BlendFactor_eDestinationAlpha,
++        NEXUS_BlendFactor_eInverseSourceAlpha,
++        false,
++        NEXUS_BlendFactor_eZero
++      };
++      win_info.alphaBlend = showSourceAlpha;
++    } else {
++      // Partially transparent - blend with constant alpha
++      win_info.colorBlend = ShowSourceColor;
++
++      // For alpha blending with opacity: source_alpha * constant_alpha
++      NEXUS_BlendEquation blendAlpha = {
++        NEXUS_BlendFactor_eSourceAlpha,
++        NEXUS_BlendFactor_eConstantAlpha,
++        false,
++        NEXUS_BlendFactor_eDestinationAlpha,
++        NEXUS_BlendFactor_eInverseSourceAlpha,
++        false,
++        NEXUS_BlendFactor_eZero
++      };
++      win_info.alphaBlend = blendAlpha;
++    }
++
++    NXPL_UpdateNativeWindowEXT(native_window_, &win_info);
++  }
++}
+ }  // namespace ui
+diff --git a/ui/ozone/platform/nexus/nexus_window.h b/ui/ozone/platform/nexus/nexus_window.h
+index 3c11d2f7300c693d50a9ea2873ec9e7fa7421aba..243907be19cda16fc9e2b12e871aed3a6e34b0cb 100644
+--- a/ui/ozone/platform/nexus/nexus_window.h
++++ b/ui/ozone/platform/nexus/nexus_window.h
+@@ -75,6 +75,7 @@ class NexusWindow : public PlatformWindow, public PlatformEventDispatcher {
+                               const gfx::ImageSkia& app_icon) override;
+ 
+   virtual void SizeConstraintsChanged() override;
++  virtual void SetOpacity(float opacity) override;
+ 
+   void UpdateBounds(const gfx::Rect& bounds);
+   void OnMouseEnter();
+@@ -95,6 +96,7 @@ class NexusWindow : public PlatformWindow, public PlatformEventDispatcher {
+   bool visible_ = false;
+   bool activatable_ = false;
+   std::string title_;
++  float opacity_ = 1.0f;
+ };
+ 
+ }  // namespace ui
