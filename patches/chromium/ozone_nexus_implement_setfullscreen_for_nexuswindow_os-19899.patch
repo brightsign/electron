@@ -1,0 +1,102 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Caner Altinbasak <cal@brightsign.biz>
+Date: Wed, 17 Sep 2025 17:16:48 +0100
+Subject: ozone/nexus: Implement SetFullscreen for NexusWindow OS-19899
+
+Implements missing fullscreen functionality in Nexus Ozone backend
+with proper state tracking and bounds management. Enables
+BrowserWindow.setFullscreen() support on Nexus platform.
+
+diff --git a/ui/ozone/platform/nexus/nexus_window.cc b/ui/ozone/platform/nexus/nexus_window.cc
+index ff8e8325574fdb936dd6dd4c3658e53535f62a6d..4ef226ba76bf75da2b430c890e2a08081db64fc8 100644
+--- a/ui/ozone/platform/nexus/nexus_window.cc
++++ b/ui/ozone/platform/nexus/nexus_window.cc
+@@ -8,6 +8,7 @@
+ #include "base/strings/string_util.h"
+ #include "base/strings/utf_string_conversions.h"
+ #include "build/build_config.h"
++#include "ui/display/screen.h"
+ #include "ui/events/event.h"
+ #include "ui/events/ozone/evdev/event_factory_evdev.h"
+ #include "ui/events/ozone/events_ozone.h"
+@@ -68,7 +69,10 @@ NexusWindow::NexusWindow(PlatformWindowDelegate* delegate,
+       bounds_(properties.bounds),
+       event_factory_(event_factory),
+       cursor_(cursor),
+-      window_manager_(window_manager) {
++      window_manager_(window_manager),
++      state_(PlatformWindowState::kNormal),
++      previous_state_(PlatformWindowState::kNormal),
++      restore_bounds_(properties.bounds) {
+ 
+   BS_DEBUG( "%s (%d, %d), %dx%d\n", __PRETTY_FUNCTION__, bounds_.x(), bounds_.y(), bounds_.width(), bounds_.height());
+   NXPL_NativeWindowInfoEXT   win_info;
+@@ -261,7 +265,42 @@ bool NexusWindow::HasCapture() const {
+ }
+ 
+ void NexusWindow::SetFullscreen(bool fullscreen, int64_t target_display_id) {
+-  BS_DEBUG( "%s\n", __PRETTY_FUNCTION__);
++  BS_DEBUG("%s fullscreen: %s\n", __PRETTY_FUNCTION__, fullscreen ? "true" : "false");
++
++  PlatformWindowState new_state = fullscreen ? PlatformWindowState::kFullScreen
++                                             : PlatformWindowState::kNormal;
++
++  if (new_state == state_) {
++    return;  // Already in the requested state
++  }
++
++  previous_state_ = state_;
++  state_ = new_state;
++
++  if (fullscreen) {
++    // Save current bounds for restoration
++    restore_bounds_ = bounds_;
++
++    // Get the display bounds and set window to fullscreen
++    display::Display display = display::Screen::GetScreen()->GetPrimaryDisplay();
++    gfx::Rect display_bounds = display.bounds();
++
++    BS_DEBUG("%s Setting fullscreen bounds: %dx%d+%d+%d\n", __PRETTY_FUNCTION__,
++             display_bounds.width(), display_bounds.height(),
++             display_bounds.x(), display_bounds.y());
++
++    SetBoundsInDIP(display_bounds);
++  } else {
++    // Restore previous bounds
++    BS_DEBUG("%s Restoring bounds: %dx%d+%d+%d\n", __PRETTY_FUNCTION__,
++             restore_bounds_.width(), restore_bounds_.height(),
++             restore_bounds_.x(), restore_bounds_.y());
++
++    SetBoundsInDIP(restore_bounds_);
++  }  // Notify the delegate about the state change
++  if (delegate_) {
++    delegate_->OnWindowStateChanged(previous_state_, state_);
++  }
+ }
+ 
+ void NexusWindow::Maximize() {
+@@ -278,7 +317,7 @@ void NexusWindow::Restore() {
+ 
+ PlatformWindowState NexusWindow::GetPlatformWindowState() const {
+   BS_DEBUG( "%s\n", __PRETTY_FUNCTION__);
+-  return PlatformWindowState::kNormal;
++  return state_;
+ }
+ 
+ void NexusWindow::Activate() {
+diff --git a/ui/ozone/platform/nexus/nexus_window.h b/ui/ozone/platform/nexus/nexus_window.h
+index 243907be19cda16fc9e2b12e871aed3a6e34b0cb..0e85baec902b4db8e749ca88e585eb40bcd37bd6 100644
+--- a/ui/ozone/platform/nexus/nexus_window.h
++++ b/ui/ozone/platform/nexus/nexus_window.h
+@@ -97,6 +97,11 @@ class NexusWindow : public PlatformWindow, public PlatformEventDispatcher {
+   bool activatable_ = false;
+   std::string title_;
+   float opacity_ = 1.0f;
++
++  // Window state tracking
++  PlatformWindowState state_ = PlatformWindowState::kNormal;
++  PlatformWindowState previous_state_ = PlatformWindowState::kNormal;
++  gfx::Rect restore_bounds_;
+ };
+ 
+ }  // namespace ui
