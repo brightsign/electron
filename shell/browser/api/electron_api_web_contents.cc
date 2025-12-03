@@ -1139,13 +1139,13 @@ void WebContents::OnGetBlobData(
     gin_helper::Promise<v8::Local<v8::Value>> promise,
     scoped_refptr<net::IOBufferWithSize> io_buf) {
   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
-  if (io_buf) {
-    v8::Isolate* isolate = promise.isolate();
-    gin_helper::Locker locker(isolate);
-    v8::HandleScope handle_scope(isolate);
-    v8::Context::Scope context_scope(
-        v8::Local<v8::Context>::New(isolate, promise.GetContext()));
+  v8::Isolate* isolate = promise.isolate();
+  gin_helper::Locker locker(isolate);
+  v8::HandleScope handle_scope(isolate);
+  v8::Context::Scope context_scope(
+      v8::Local<v8::Context>::New(isolate, promise.GetContext()));
 
+  if (io_buf) {
     v8::Local<v8::Value> buffer =
         node::Buffer::Copy(isolate,
                            reinterpret_cast<const char*>(io_buf->data()),
@@ -1153,7 +1153,7 @@ void WebContents::OnGetBlobData(
             .ToLocalChecked();
     promise.Resolve(buffer);
   } else {
-    promise.Resolve(v8::Null(promise.isolate()));
+    promise.Resolve(v8::Null(isolate));
   }
 }
 

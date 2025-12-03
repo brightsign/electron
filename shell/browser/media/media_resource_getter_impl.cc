@@ -217,7 +217,8 @@ void CalculateSizeComplete(MediaResourceGetterImpl::GetMediaDataCB callback,
   DVLOG(1) << "TotalSize is " << reader->total_size();
   DVLOG(1) << "IsInMemory: " << (reader->IsInMemory() ? "true" : "false");
   if (location > reader->total_size()) {
-    callback.Run(nullptr);
+    // Use OnReadCompleteOnIO to ensure callback is called on the UI thread.
+    OnReadCompleteOnIO(callback, nullptr, reader, /*bytes_read=*/0);
     return;
   }
 
@@ -227,7 +228,8 @@ void CalculateSizeComplete(MediaResourceGetterImpl::GetMediaDataCB callback,
 
   if (reader->SetReadRange(location, size) !=
       storage::BlobReader::Status::DONE) {
-    callback.Run(nullptr);
+    // Use OnReadCompleteOnIO to ensure callback is called on the UI thread.
+    OnReadCompleteOnIO(callback, nullptr, reader, /*bytes_read=*/0);
   } else {
     auto buffer = base::MakeRefCounted<net::IOBufferWithSize>(size);
     int bytes_read;
@@ -273,7 +275,8 @@ void RequestBlobDataHandleOnIO(
   if (blob_context)
     blob_context->GetBlobDataFromBlobRemote(std::move(blob_ptr), std::move(cb));
   else
-    callback.Run(nullptr);
+    // Use OnReadCompleteOnIO to ensure callback is called on the UI thread.
+    OnReadCompleteOnIO(callback, nullptr, nullptr, /*bytes_read=*/0);
 }
 
 void MediaResourceGetterImpl::ReadMediaData(const std::string& blob_url,
