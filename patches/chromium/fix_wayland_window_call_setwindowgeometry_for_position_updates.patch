@@ -1,0 +1,24 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Caner Altinbasak <cal@brightsign.biz>
+Date: Thu, 27 Nov 2025 15:21:12 +0000
+Subject: fix(wayland_window): Call SetWindowGeometry for position updates
+ OS-20350
+
+Our wayland compositor is modified to accept position updates. Chromium
+ignores position updates, and only calls xdg_surface_set_window_geometry
+when size changes. Modified the code to call Wayland for both
+position and size changes.
+
+diff --git a/ui/ozone/platform/wayland/host/wayland_window.cc b/ui/ozone/platform/wayland/host/wayland_window.cc
+index 826f51c06d2c4b8e27dc994be15a35ad56147e1c..a33b888a35070cc25f9dd325e8373c99c3681bb5 100644
+--- a/ui/ozone/platform/wayland/host/wayland_window.cc
++++ b/ui/ozone/platform/wayland/host/wayland_window.cc
+@@ -1332,7 +1332,7 @@ void WaylandWindow::LatchStateRequest(const StateRequest& req) {
+   auto old_state = latched_state_;
+   latched_state_ = req.state;
+ 
+-  if (req.state.bounds_dip.size() != old_state.bounds_dip.size()) {
++  if (req.state.bounds_dip != old_state.bounds_dip) {
+     SetWindowGeometry(req.state.bounds_dip.size());
+   }
+   UpdateWindowMask();
