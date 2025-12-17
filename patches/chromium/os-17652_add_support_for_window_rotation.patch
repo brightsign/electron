@@ -44,6 +44,9 @@ applied to mouse and touch events in WindowEventDispatcher::PreDispatchEvent.
 The non_transformed_bounds method, added to Window, stores the original bounds,
 enabling WindowTargeter to align hit-test rectangles with screen resolution,
 thus ensuring consistent mouse and touch input alignment.
+In addition WindowTargeter::FindTargetInRootWindow has been modified to use the
+non_transformed_bounds to ensure the touch event location (which is not transformed)
+is compared with non-transformed window bounds.
 
 diff --git a/components/viz/service/display/output_surface.h b/components/viz/service/display/output_surface.h
 index 47191a5184ab97cd7a946986df64e2b427e3e270..bedf4f6a388b98da5cfd5be795403b0c864f9f97 100644
@@ -434,7 +437,7 @@ index a63e34b66c740ce4534a5d94a682da830168b4c0..d7bab950057f3fbc2c4c76813820c2d5
    if (event->IsMouseEvent()) {
      details = PreDispatchMouseEvent(target_window, event->AsMouseEvent());
 diff --git a/ui/aura/window_targeter.cc b/ui/aura/window_targeter.cc
-index 055c4ad18ba0a7c8175ec8ef5ad39837776e4d13..49555a5608382c4e3d0575f814e434e77d608854 100644
+index 055c4ad18ba0a7c8175ec8ef5ad39837776e4d13..11dbcb0df20fb047fb31a9877b866482314d68bf 100644
 --- a/ui/aura/window_targeter.cc
 +++ b/ui/aura/window_targeter.cc
 @@ -40,7 +40,7 @@ bool WindowTargeter::GetHitTestRects(Window* window,
@@ -446,6 +449,15 @@ index 055c4ad18ba0a7c8175ec8ef5ad39837776e4d13..49555a5608382c4e3d0575f814e434e7
  
    if (ShouldUseExtendedBounds(window)) {
      hit_test_rect_mouse->Inset(mouse_extend_);
+@@ -142,7 +142,7 @@ Window* WindowTargeter::FindTargetInRootWindow(Window* root_window,
+ #else
+     // If the initial touch is outside the root window, target the root.
+     // TODO(lanwei): this code is likely not necessarily and will be removed.
+-    if (!root_window->bounds().Contains(event.location()))
++    if (!root_window->non_transformed_bounds().Contains(event.location()))
+       return root_window;
+ #endif
+   }
 diff --git a/ui/aura/window_tree_host.cc b/ui/aura/window_tree_host.cc
 index 70906e64b4b7849aa42421b17caf16d08c922112..6527d15683c7055baa358fb5e2b90e198d5fc9bc 100644
 --- a/ui/aura/window_tree_host.cc
