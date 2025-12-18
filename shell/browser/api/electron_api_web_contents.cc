@@ -2166,6 +2166,7 @@ void WebContents::UpdateDraggableRegions(
 
 void WebContents::DidStartNavigation(
     content::NavigationHandle* navigation_handle) {
+  navigation_handle->SetSilentlyIgnoreErrors();
   EmitNavigationEvent("did-start-navigation", navigation_handle);
 }
 
@@ -2201,17 +2202,18 @@ void WebContents::DidFinishNavigation(
     owner_window_->NotifyLayoutWindowControlsOverlay();
   }
 
-  if (!navigation_handle->HasCommitted())
-    return;
   bool is_main_frame = navigation_handle->IsInMainFrame();
-  content::RenderFrameHost* frame_host =
-      navigation_handle->GetRenderFrameHost();
+  content::RenderFrameHost* frame_host = nullptr;
+
+  if (navigation_handle->HasCommitted()) {
+    frame_host = navigation_handle->GetRenderFrameHost();
+  }
   int frame_process_id = -1, frame_routing_id = -1;
   if (frame_host) {
     frame_process_id = frame_host->GetProcess()->GetID();
     frame_routing_id = frame_host->GetRoutingID();
   }
-  if (!navigation_handle->IsErrorPage()) {
+  if (!navigation_handle->IsErrorPage() && navigation_handle->HasCommitted()) {
     // FIXME: All the Emit() calls below could potentially result in |this|
     // being destroyed (by JS listening for the event and calling
     // webContents.destroy()).
