@@ -2342,6 +2342,7 @@ SkRegion* WebContents::draggable_region() {
 void WebContents::DidStartNavigation(
     content::NavigationHandle* navigation_handle) {
   base::AutoReset<bool> resetter(&is_safe_to_delete_, false);
+  navigation_handle->SetSilentlyIgnoreErrors();
   EmitNavigationEvent("did-start-navigation", navigation_handle);
 }
 
@@ -2380,20 +2381,20 @@ void WebContents::DidFinishNavigation(
     owner_window_->NotifyLayoutWindowControlsOverlay();
   }
 
-  if (!navigation_handle->HasCommitted())
-    return;
-
   base::AutoReset<bool> resetter(&is_emitting_event_, true);
 
   bool is_main_frame = navigation_handle->IsInMainFrame();
-  content::RenderFrameHost* frame_host =
-      navigation_handle->GetRenderFrameHost();
+  content::RenderFrameHost* frame_host = nullptr;
+
+  if (navigation_handle->HasCommitted()) {
+    frame_host = navigation_handle->GetRenderFrameHost();
+  }
   int frame_process_id = -1, frame_routing_id = -1;
   if (frame_host) {
     frame_process_id = frame_host->GetProcess()->GetID().GetUnsafeValue();
     frame_routing_id = frame_host->GetRoutingID();
   }
-  if (!navigation_handle->IsErrorPage()) {
+  if (!navigation_handle->IsErrorPage() && navigation_handle->HasCommitted()) {
     auto url = navigation_handle->GetURL();
     bool is_same_document = navigation_handle->IsSameDocument();
     if (is_same_document) {
