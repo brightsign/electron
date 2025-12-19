@@ -688,12 +688,18 @@ describe('<webview> tag', function () {
     });
 
     it('blocks accessing cross-origin frames', async () => {
+      const server = http.createServer((req, res) => {
+        res.writeHead(200, { 'Content-Type': 'text/html' });
+        res.end('<html><body>Blank Page</body></html>');
+      });
+      const serverUrl = (await listen(server)).url;
+
       // Don't wait for loading to finish.
       loadWebView(w.webContents, {
         allowpopups: 'on',
         nodeintegration: 'on',
         webpreferences: 'contextIsolation=no',
-        src: `file://${path.join(fixtures, 'api', 'native-window-open-cross-origin.html')}`
+        src: `file://${path.join(fixtures, 'api', 'native-window-open-cross-origin.html')}?url=${encodeURIComponent(serverUrl)}`
       });
 
       const [, content] = await once(ipcMain, 'answer');
@@ -701,6 +707,8 @@ describe('<webview> tag', function () {
           /Failed to read a named property 'toString' from 'Location': Blocked a frame with origin "(.*?)" from accessing a cross-origin frame./;
 
       expect(content).to.match(expectedContent);
+
+      server.close();
     });
 
     it('emits a browser-window-created event', async () => {
