@@ -1,0 +1,246 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Caner Altinbasak <cal@brightsign.biz>
+Date: Fri, 30 Jan 2026 17:58:16 +0000
+Subject: feat: Add video/audio-codecs-supported flag support
+
+Chromium should advertise Brightsign video player capabilities
+correctly. Codec support will be passed as command line parameter.
+
+diff --git a/content/browser/renderer_host/render_process_host_impl.cc b/content/browser/renderer_host/render_process_host_impl.cc
+index 152a7bfebf7b7656eb6831d0e7f18687590221f4..2ae74d3de6f4ce0b0d05b20d5442d619abee9e8d 100644
+--- a/content/browser/renderer_host/render_process_host_impl.cc
++++ b/content/browser/renderer_host/render_process_host_impl.cc
+@@ -3566,6 +3566,8 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
+     switches::kLacrosUseChromeosProtectedMedia,
+     switches::kLacrosUseChromeosProtectedAv1,
+ #endif
++    switches::kVideoCodecsSupported,
++    switches::kAudioCodecsSupported,
+   };
+   renderer_cmd->CopySwitchesFrom(browser_cmd, kSwitchNames);
+ 
+diff --git a/media/base/media_switches.cc b/media/base/media_switches.cc
+index 2536acb12a2433b1d5afb0d8bbf872e3958b0335..34da310da1ea03660408c79105159f40552e8988 100644
+--- a/media/base/media_switches.cc
++++ b/media/base/media_switches.cc
+@@ -54,6 +54,12 @@ const char kDisableAudioOutput[] = "disable-audio-output";
+ // various failure cases.
+ const char kFailAudioStreamCreation[] = "fail-audio-stream-creation";
+ 
++// Sets the list of video codecs we will claim to support
++const char kVideoCodecsSupported[] = "video-codecs-supported";
++
++// Sets the list of audio codecs we will claim to support
++const char kAudioCodecsSupported[] = "audio-codecs-supported";
++
+ // Set number of threads to use for video decoding.
+ const char kVideoThreads[] = "video-threads";
+ 
+diff --git a/media/base/media_switches.h b/media/base/media_switches.h
+index 75c763127b52cf659cc1b631f000ccb9ed197564..dbf5c91f7266339cfa7497ae90c7b005267a9584 100644
+--- a/media/base/media_switches.h
++++ b/media/base/media_switches.h
+@@ -42,6 +42,12 @@ MEDIA_EXPORT extern const char kDisableAudioOutput[];
+ 
+ MEDIA_EXPORT extern const char kFailAudioStreamCreation[];
+ 
++// Sets the list of video codecs we will claim to support
++MEDIA_EXPORT extern const char kVideoCodecsSupported[];
++
++// Sets the list of audio codecs we will claim to support
++MEDIA_EXPORT extern const char kAudioCodecsSupported[];
++
+ MEDIA_EXPORT extern const char kVideoThreads[];
+ 
+ MEDIA_EXPORT extern const char kDisableBackgroundMediaSuspend[];
+diff --git a/media/base/supported_types.cc b/media/base/supported_types.cc
+index 1272b0e828afc1b4da14a8f84cdb2da013c8e2d0..15d113024139214c3b8662de808ce13d62aa182b 100644
+--- a/media/base/supported_types.cc
++++ b/media/base/supported_types.cc
+@@ -69,6 +69,140 @@ SupplementalProfileCache<AudioType>* GetSupplementalAudioTypeCache() {
+   return cache.get();
+ }
+ 
++static bool VideoCodecEnabledOnCommandLine(VideoCodec codec,
++                                           const VideoType& type) {
++  const base::CommandLine* cmd_line = base::CommandLine::ForCurrentProcess();
++  std::string allowed =
++      cmd_line->GetSwitchValueASCII(switches::kVideoCodecsSupported);
++
++  std::string codec_name;
++  int profile = 0;
++  int level = type.level;
++
++  switch (codec) {
++    case VideoCodec::kH264:
++      codec_name = "avc";
++      profile = type.profile - H264PROFILE_MIN;
++      break;
++    case VideoCodec::kVP8:
++      codec_name = "vp8";
++      break;
++    case VideoCodec::kVP9:
++      codec_name = "vp9";
++      profile = type.profile - VP9PROFILE_MIN;
++      break;
++    case VideoCodec::kHEVC:
++      codec_name = "hevc";
++      profile = type.profile - HEVCPROFILE_MIN;
++      break;
++    case VideoCodec::kMPEG2:
++      codec_name = "mpeg2";
++      break;
++    case VideoCodec::kMPEG4:
++      codec_name = "mpeg4part2";
++      break;
++    case VideoCodec::kAV1:
++      codec_name = "av1";
++      break;
++    case VideoCodec::kTheora:
++    case VideoCodec::kVC1:
++    case VideoCodec::kDolbyVision:
++    case VideoCodec::kUnknown:
++      return false;
++  }
++
++  size_t pos = allowed.find(codec_name);
++  if (pos != std::string::npos) {
++    // The format for the allowed string codec_name[.PLl]
++    // Where:
++    //    P = profile (in hex) using those in media/base/video_codecs.h
++    //    L = major level (in hex)
++    //    l = minor level (in hex)
++    //
++    // e.g. --video-codecs-supported="mpeg2,avc.352,hevc.151,vp9.351"
++    pos += codec_name.length();
++    if ((pos + 4) <= allowed.length()) {
++      if (allowed[pos] == '.') {
++        ++pos;
++
++        // Parse out the profile and level constraints
++        int value = strtoul(allowed.c_str() + pos, NULL, 16);
++        int max_level = (((value >> 4) & 0x0f) * 10) + (value & 0x0f);
++        if ((value >> 8) >= profile) {
++          if (max_level >= level) {
++            // Profile and level are supported
++            return true;
++          }
++        }
++        return false;
++      }
++      return false;
++    }
++
++    // Codec supported
++    return true;
++  }
++
++  return false;
++}
++
++static bool AudioCodecEnabledOnCommandLine(AudioCodec codec) {
++  const base::CommandLine* cmd_line = base::CommandLine::ForCurrentProcess();
++  std::string allowed =
++      cmd_line->GetSwitchValueASCII(switches::kAudioCodecsSupported);
++
++  std::string codec_name;
++  switch (codec) {
++    case AudioCodec::kAAC:
++      codec_name = "aac";
++      break;
++    case AudioCodec::kFLAC:
++      codec_name = "flac";
++      break;
++    case AudioCodec::kMP3:
++      codec_name = "mpeg";
++      break;
++    case AudioCodec::kOpus:
++      codec_name = "opus";
++      break;
++    case AudioCodec::kPCM:
++    case AudioCodec::kPCM_MULAW:
++    case AudioCodec::kPCM_S16BE:
++    case AudioCodec::kPCM_S24BE:
++    case AudioCodec::kPCM_ALAW:
++      codec_name = "pcm";
++      break;
++    case AudioCodec::kVorbis:
++      codec_name = "vorbis";
++      break;
++    case AudioCodec::kAC3:
++      codec_name = "ac3";
++      break;
++    case AudioCodec::kEAC3:
++      codec_name = "eac3";
++      break;
++    case AudioCodec::kAMR_NB:
++    case AudioCodec::kAMR_WB:
++    case AudioCodec::kGSM_MS:
++    case AudioCodec::kALAC:
++    case AudioCodec::kMpegHAudio:
++    case AudioCodec::kDTS:
++    case AudioCodec::kDTSXP2:
++    case AudioCodec::kDTSE:
++    case AudioCodec::kAC4:
++    case AudioCodec::kUnknown:
++      return false;
++  }
++
++  size_t pos = allowed.find(codec_name);
++  if (pos != std::string::npos) {
++    // Codec supported
++    return true;
++  }
++
++  return false;
++}
++
+ bool IsSupportedHdrMetadata(const gfx::HdrMetadataType& hdr_metadata_type) {
+   switch (hdr_metadata_type) {
+     case gfx::HdrMetadataType::kNone:
+@@ -345,11 +479,22 @@ bool IsDefaultSupportedVideoType(const VideoType& type) {
+   if (!IsSupportedHdrMetadata(type.hdr_metadata_type))
+     return false;
+ 
++  // If command-line switch is provided with a non-empty value, use it to determine support
++  // This bypasses proprietary codec restrictions to allow BrightSign to enable codecs
++  const base::CommandLine* cmd_line = base::CommandLine::ForCurrentProcess();
++  if (cmd_line->HasSwitch(switches::kVideoCodecsSupported)) {
++    std::string value = cmd_line->GetSwitchValueASCII(switches::kVideoCodecsSupported);
++    if (!value.empty()) {
++      return VideoCodecEnabledOnCommandLine(type.codec, type);
++    }
++  }
++
+ #if !BUILDFLAG(USE_PROPRIETARY_CODECS)
+   if (IsVideoCodecProprietary(type.codec))
+     return false;
+ #endif
+ 
++  // Otherwise use default platform logic
+   switch (type.codec) {
+     case VideoCodec::kTheora:
+       return IsBuiltInVideoCodec(type.codec);
+@@ -377,11 +522,22 @@ bool IsDefaultSupportedAudioType(const AudioType& type) {
+   if (type.spatial_rendering)
+     return false;
+ 
++  // If command-line switch is provided with a non-empty value, use it to determine support
++  // This bypasses proprietary codec restrictions to allow BrightSign to enable codecs
++  const base::CommandLine* cmd_line = base::CommandLine::ForCurrentProcess();
++  if (cmd_line->HasSwitch(switches::kAudioCodecsSupported)) {
++    std::string value = cmd_line->GetSwitchValueASCII(switches::kAudioCodecsSupported);
++    if (!value.empty()) {
++      return AudioCodecEnabledOnCommandLine(type.codec);
++    }
++  }
++
+ #if !BUILDFLAG(USE_PROPRIETARY_CODECS)
+   if (IsAudioCodecProprietary(type.codec))
+     return false;
+ #endif
+ 
++  // Otherwise use default platform logic
+   switch (type.codec) {
+     case AudioCodec::kAAC:
+       return IsAACSupported(type);
