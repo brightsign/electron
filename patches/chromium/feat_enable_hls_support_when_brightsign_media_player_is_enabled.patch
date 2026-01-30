@@ -1,0 +1,55 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Caner Altinbasak <cal@brightsign.biz>
+Date: Fri, 30 Jan 2026 12:14:33 +0000
+Subject: feat: Enable HLS support when Brightsign media player is enabled
+ OS-20673
+
+Brightsign media player can play HLS streams, enable mimetype support
+to enable Youtube live streams through HLS
+
+diff --git a/media/base/BUILD.gn b/media/base/BUILD.gn
+index 0a4e2c55b6e298996107376dc110aee5e1d63fc4..89c8d6c964f044c55454ac2acb82938da5cd8150 100644
+--- a/media/base/BUILD.gn
++++ b/media/base/BUILD.gn
+@@ -416,6 +416,10 @@ source_set("base") {
+     deps += [ "//third_party/libvpx" ]
+   }
+ 
++  if (enable_brightsign_media_player) {
++    defines = ["ENABLE_BRIGHTSIGN_MEDIA_PLAYER"]
++  }
++
+   if (is_linux && !is_castos) {
+     sources += [ "user_input_monitor_linux.cc" ]
+   } else if (is_mac) {
+diff --git a/media/base/mime_util_internal.cc b/media/base/mime_util_internal.cc
+index b2d6ca38c4aefad37d6260f796a931ee7b303d5c..a46a2d93bb1f2850f55c19ead847f9374d17d69e 100644
+--- a/media/base/mime_util_internal.cc
++++ b/media/base/mime_util_internal.cc
+@@ -407,6 +407,26 @@ void MimeUtil::AddSupportedMediaFormats() {
+   video_3gpp_codecs.emplace(H264);
+   AddContainerWithCodecs("video/3gpp", video_3gpp_codecs);
+ 
++#if defined(ENABLE_BRIGHTSIGN_MEDIA_PLAYER)
++  bool is_brightsign_player = base::CommandLine::ForCurrentProcess()->HasSwitch(switches::kUseBrightsignMediaPlayer);
++  if (is_brightsign_player) {
++    CodecSet hls_codecs{H264,
++                        // TODO(ddorwin): Is any MP3 codec string variant
++                        // included in real queries?
++                        MP3,
++                        // Android HLS only supports MPEG4_AAC (missing demuxer
++                        // support for MPEG2_AAC)
++                        MPEG4_AAC};
++    AddContainerWithCodecs("application/x-mpegurl", hls_codecs);
++    AddContainerWithCodecs("application/vnd.apple.mpegurl", hls_codecs);
++    AddContainerWithCodecs("audio/mpegurl", hls_codecs);
++    // Not documented by Apple, but unfortunately used extensively by Apple and
++    // others for both audio-only and audio+video playlists. See
++    // https://crbug.com/675552 for details and examples.
++    AddContainerWithCodecs("audio/x-mpegurl", hls_codecs);
++  }
++#endif
++
+ #if BUILDFLAG(IS_ANDROID)
+   if (base::FeatureList::IsEnabled(kCanPlayHls)) {
+     // HTTP Live Streaming (HLS).
