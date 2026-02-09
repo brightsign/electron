@@ -196,3 +196,5 @@ fix_overlay_strategy_for_html_pages_with_transparency_os-19250.patch
 feat_nexus-window_implement_setopacity_support_for_nexus_platform.patch
 ozone_nexus_implement_setfullscreen_for_nexuswindow_os-19899.patch
 os-20183-move-z-order-management-to-the-compositor.patch
+nexus_window-Only-update-window-properties-that-actu.patch
+nexus_window-Add-full-z-order-support-OS-20183.patch
