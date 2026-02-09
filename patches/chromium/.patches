@@ -201,3 +201,5 @@ add_mse_support_to_brightsign_video_player_os-19598.patch
 feat_enable_hls_support_when_brightsign_media_player_is_enabled.patch
 feat_add_video_audio-codecs-supported_flag_support.patch
 os-20183-move-z-order-management-to-the-compositor.patch
+nexus_window-Only-update-window-properties-that-actu.patch
+nexus_window-Add-full-z-order-support-OS-20183.patch
