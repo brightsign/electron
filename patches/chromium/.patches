@@ -206,3 +206,5 @@ feat_brightsign_keep_compositing_active_for_window-level_zero.patch
 fix_brightsign_set_root_surface_opacity_when_window_level_opacity_is.patch
 brightsign_nexus_update_window_visibility_flag_on_opacity_change.patch
 os-20183-move-z-order-management-to-the-compositor.patch
+nexus_window-Only-update-window-properties-that-actu.patch
+nexus_window-Add-full-z-order-support-OS-20183.patch
