@@ -54,6 +54,7 @@
   V(electron_browser_event_emitter)      \
   V(electron_browser_global_shortcut)    \
   V(electron_browser_in_app_purchase)    \
+  V(electron_browser_memory_pressure_monitor) \
   V(electron_browser_menu)               \
   V(electron_browser_message_port)       \
   V(electron_browser_native_theme)       \
