@@ -44,10 +44,10 @@ to `none` if no level has been set.
 * `level` string - The pressure level to set. Must be `none`, `moderate`, or
   `critical`.
 
-Broadcasts a memory pressure notification to all listeners in the main process.
-This causes Chromium internals (blink resource cache, V8 garbage collector,
-network cache, etc.) to release memory as if the OS had reported memory
-pressure.
+Broadcasts a memory pressure notification to all listeners in both the main
+process and all renderer processes. This causes Chromium internals (blink
+resource cache, V8 garbage collector, network cache, decoded image cache, etc.)
+to release memory as if the OS had reported memory pressure.
 
 When called with `none`, the level is stored (so `getCurrentPressureLevel()`
 reflects it) but no notification is broadcast, since Chromium does not support
@@ -55,10 +55,11 @@ notifying "no pressure".
 
 Use this when your application knows that external resources held by the
 Electron process are causing system-wide memory pressure, and you want Electron
-to proactively release caches and run garbage collection.
+to proactively release caches and run garbage collection across all processes.
 
-This respects the notification-suppressed flag — if notifications are suppressed
-(e.g. during memory measurement), the notification will be silently dropped.
+In the main process, this respects the notification-suppressed flag — if
+notifications are suppressed (e.g. during memory measurement), the main-process
+notification will be silently dropped. Renderer processes are always notified.
 
 ```js
 const { memoryPressureMonitor } = require('electron')

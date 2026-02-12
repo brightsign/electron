@@ -1,0 +1,53 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Caner Altinbasak <cal@brightsign.biz>
+Date: Thu, 12 Feb 2026 15:33:09 +0000
+Subject: feat: Enable cross-process memory pressure notification on all
+ platforms
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Chromium's browser-to-renderer memory pressure IPC (via
+mojom::ChildProcess::OnMemoryPressure) is gated behind IS_ANDROID. This
+patch removes the platform guard so that the browser process can
+programmatically trigger memory pressure notifications in renderer
+processes on all platforms.
+
+This enables Electron's memoryPressureMonitor.notifyMemoryPressure() API
+to propagate pressure signals to all renderer processes, causing blink,
+V8, and other subsystems to release cached memory.
+
+The infrastructure is identical to what ships on Android — we are simply
+enabling it on Linux, macOS, and Windows.
+
+diff --git a/content/browser/renderer_host/render_process_host_impl.cc b/content/browser/renderer_host/render_process_host_impl.cc
+index de5b4e88f20d8f98253799bdf0c85c08feb07c2e..60e913f989beedb65d9a269e17159d07eb69702c 100644
+--- a/content/browser/renderer_host/render_process_host_impl.cc
++++ b/content/browser/renderer_host/render_process_host_impl.cc
+@@ -6261,6 +6261,11 @@ void RenderProcessHostImpl::ProvideSwapFileForRenderer() {
+           std::move(allocator)));
+ }
+ 
++void RenderProcessHostImpl::NotifyMemoryPressureToRenderer(
++    base::MemoryPressureLevel level) {
++  child_process_->OnMemoryPressure(level);
++}
++
+ void RenderProcessHostImpl::GetBoundInterfacesForTesting(
+     std::vector<std::string>& out) {
+   io_thread_host_impl_->AsyncCall(&IOThreadHostImpl::GetInterfacesForTesting)
+diff --git a/content/browser/renderer_host/render_process_host_impl.h b/content/browser/renderer_host/render_process_host_impl.h
+index 3f5d4fc3777ae71b4bf652f02afca72f9b2e5c39..1701577b0cc94ac40fc570ce1d138e4ee225b150 100644
+--- a/content/browser/renderer_host/render_process_host_impl.h
++++ b/content/browser/renderer_host/render_process_host_impl.h
+@@ -894,6 +894,10 @@ class CONTENT_EXPORT RenderProcessHostImpl
+       GlobalRenderFrameHostId render_frame_host_id);
+ #endif  // BUILDFLAG(IS_P2P_ENABLED)
+ 
++   // Notifies the renderer process of memory pressure level.
++   void NotifyMemoryPressureToRenderer(
++       base::MemoryPressureLevel level);
++
+ #if BUILDFLAG(ALLOW_OOP_VIDEO_DECODER)
+   using VideoDecoderFactoryCreationCB = base::RepeatingCallback<void(
+       mojo::PendingReceiver<media::mojom::InterfaceFactory>)>;
