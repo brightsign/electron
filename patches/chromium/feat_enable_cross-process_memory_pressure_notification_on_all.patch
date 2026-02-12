@@ -1,0 +1,121 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Caner Altinbasak <cal@brightsign.biz>
+Date: Thu, 12 Feb 2026 15:33:09 +0000
+Subject: feat: Enable cross-process memory pressure notification on all
+ platforms
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Chromium's browser-to-renderer memory pressure IPC (via
+mojom::ChildProcess::OnMemoryPressure) is gated behind IS_ANDROID. This
+patch removes the platform guard so that the browser process can
+programmatically trigger memory pressure notifications in renderer
+processes on all platforms.
+
+This enables Electron's memoryPressureMonitor.notifyMemoryPressure() API
+to propagate pressure signals to all renderer processes, causing blink,
+V8, and other subsystems to release cached memory.
+
+The infrastructure is identical to what ships on Android — we are simply
+enabling it on Linux, macOS, and Windows.
+
+diff --git a/content/browser/renderer_host/render_process_host_impl.cc b/content/browser/renderer_host/render_process_host_impl.cc
+index 0685a0d06c7d376033e651766a7a5c68aeb506a4..c4a30d2f262f806f9cde8603fa21cc9bd1c3c46f 100644
+--- a/content/browser/renderer_host/render_process_host_impl.cc
++++ b/content/browser/renderer_host/render_process_host_impl.cc
+@@ -5873,15 +5873,11 @@ void RenderProcessHostImpl::ProvideSwapFileForRenderer() {
+           std::move(allocator)));
+ }
+ 
+-#if BUILDFLAG(IS_ANDROID)
+-
+ void RenderProcessHostImpl::NotifyMemoryPressureToRenderer(
+     base::MemoryPressureListener::MemoryPressureLevel level) {
+   child_process_->OnMemoryPressure(level);
+ }
+ 
+-#endif
+-
+ void RenderProcessHostImpl::GetBoundInterfacesForTesting(
+     std::vector<std::string>& out) {
+   io_thread_host_impl_->AsyncCall(&IOThreadHostImpl::GetInterfacesForTesting)
+diff --git a/content/browser/renderer_host/render_process_host_impl.h b/content/browser/renderer_host/render_process_host_impl.h
+index b4ecd1aa5c351c1a2f5ca3fc379d98c0debe67b9..f6667ef05ba9297b19b5ed13958fbf090d116060 100644
+--- a/content/browser/renderer_host/render_process_host_impl.h
++++ b/content/browser/renderer_host/render_process_host_impl.h
+@@ -864,11 +864,9 @@ class CONTENT_EXPORT RenderProcessHostImpl
+   }
+ #endif
+ 
+-#if BUILDFLAG(IS_ANDROID)
+   // Notifies the renderer process of memory pressure level.
+   void NotifyMemoryPressureToRenderer(
+       base::MemoryPressureListener::MemoryPressureLevel level);
+-#endif
+ 
+ #if BUILDFLAG(ALLOW_OOP_VIDEO_DECODER)
+   using VideoDecoderFactoryCreationCB = base::RepeatingCallback<void(
+diff --git a/content/child/child_thread_impl.cc b/content/child/child_thread_impl.cc
+index de4efeb0192f25eee940a0b938ca70d54ba12ef6..d776acfec88644d6e6e2f0650dc05df8cb93f0b3 100644
+--- a/content/child/child_thread_impl.cc
++++ b/content/child/child_thread_impl.cc
+@@ -458,7 +458,6 @@ class ChildThreadImpl::IOThreadState
+   }
+ #endif
+ 
+-#if BUILDFLAG(IS_ANDROID)
+   void OnMemoryPressure(
+       base::MemoryPressureListener::MemoryPressureLevel level) override {
+     main_thread_task_runner_->PostTask(
+@@ -466,7 +465,6 @@ class ChildThreadImpl::IOThreadState
+         base::BindOnce(&ChildThreadImpl::OnMemoryPressureFromBrowserReceived,
+                        weak_main_thread_, level));
+   }
+-#endif
+ 
+   void SetBatterySaverMode(bool battery_saver_mode_enabled) override {
+     if (battery_saver_mode_enabled) {
+@@ -993,7 +991,6 @@ bool ChildThreadImpl::IsInBrowserProcess() const {
+   return static_cast<bool>(browser_process_io_runner_);
+ }
+ 
+-#if BUILDFLAG(IS_ANDROID)
+ void ChildThreadImpl::OnMemoryPressureFromBrowserReceived(
+     base::MemoryPressureListener::MemoryPressureLevel level) {
+   // Generate no memory pressure signals when --single-process is specified.
+@@ -1005,6 +1002,5 @@ void ChildThreadImpl::OnMemoryPressureFromBrowserReceived(
+   // Forward the notification to the registry of MemoryPressureListeners.
+   base::MemoryPressureListener::NotifyMemoryPressure(level);
+ }
+-#endif
+ 
+ }  // namespace content
+diff --git a/content/child/child_thread_impl.h b/content/child/child_thread_impl.h
+index baaec2ed649fd06aaa5da307510699b19b1db659..2a4307f3406e4c24d226a5c90b207784e19b9693 100644
+--- a/content/child/child_thread_impl.h
++++ b/content/child/child_thread_impl.h
+@@ -171,11 +171,9 @@ class ChildThreadImpl : public IPC::Listener, virtual public ChildThread {
+ 
+   bool IsInBrowserProcess() const;
+ 
+-#if BUILDFLAG(IS_ANDROID)
+   // Received memory pressure signal sent by the browser process.
+   virtual void OnMemoryPressureFromBrowserReceived(
+       base::MemoryPressureListener::MemoryPressureLevel level);
+-#endif
+ 
+  private:
+   class IOThreadState;
+diff --git a/content/common/child_process.mojom b/content/common/child_process.mojom
+index 588ec1497d3df79f8538bb0cd41abbe8ea5cb075..fc5e5c20f91add3dbf4f3756d3d77eb71575345b 100644
+--- a/content/common/child_process.mojom
++++ b/content/common/child_process.mojom
+@@ -120,7 +120,6 @@ interface ChildProcess {
+   // This method is only for an experimental feature, and may be removed
+   // shortly. Other code should not use this method.
+   // See https://crbug.com/1393283 for details.
+-  [EnableIf=is_android]
+   OnMemoryPressure(mojo_base.mojom.MemoryPressureLevel memory_pressure_level);
+ 
+   // Asks the child process to modify its internal settings to bias towards
