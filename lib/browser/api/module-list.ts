@@ -15,6 +15,7 @@ export const browserModuleList: ElectronInternal.ModuleEntry[] = [
   { name: 'globalShortcut', loader: () => require('./global-shortcut') },
   { name: 'ipcMain', loader: () => require('./ipc-main') },
   { name: 'inAppPurchase', loader: () => require('./in-app-purchase') },
+  { name: 'memoryPressureMonitor', loader: () => require('./memory-pressure-monitor') },
   { name: 'Menu', loader: () => require('./menu') },
   { name: 'MenuItem', loader: () => require('./menu-item') },
   { name: 'MessageChannelMain', loader: () => require('./message-channel') },
