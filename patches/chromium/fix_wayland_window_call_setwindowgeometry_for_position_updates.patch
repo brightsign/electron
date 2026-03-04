@@ -6,19 +6,38 @@ Subject: fix(wayland_window): Call SetWindowGeometry for position updates
 
 Our wayland compositor is modified to accept position updates. Chromium
 ignores position updates, and only calls xdg_surface_set_window_geometry
-when size changes. Modified the code to call Wayland for both
-position and size changes.
+when size changes. Handle position-only changes in
+WaylandToplevelWindow::SetBoundsInDIP by calling SetWindowGeometry and
+committing directly, avoiding the need for a new frame or buffer
+reallocation. The base class RequestStateFromClient is synchronous
+(force=true), so by the time it returns the state is already latched
+and GetBoundsInDIP() reflects the new position.
 
-diff --git a/ui/ozone/platform/wayland/host/wayland_window.cc b/ui/ozone/platform/wayland/host/wayland_window.cc
-index 826f51c06d2c4b8e27dc994be15a35ad56147e1c..a33b888a35070cc25f9dd325e8373c99c3681bb5 100644
---- a/ui/ozone/platform/wayland/host/wayland_window.cc
-+++ b/ui/ozone/platform/wayland/host/wayland_window.cc
-@@ -1332,7 +1332,7 @@ void WaylandWindow::LatchStateRequest(const StateRequest& req) {
-   auto old_state = latched_state_;
-   latched_state_ = req.state;
+diff --git a/ui/ozone/platform/wayland/host/wayland_toplevel_window.cc b/ui/ozone/platform/wayland/host/wayland_toplevel_window.cc
+index 66f7c8e535bc178753e0d028bc4b0640d6362603..0c34b98fe54803e06f0963ea27fdb68b1a5abf2d 100644
+--- a/ui/ozone/platform/wayland/host/wayland_toplevel_window.cc
++++ b/ui/ozone/platform/wayland/host/wayland_toplevel_window.cc
+@@ -636,9 +636,22 @@ void WaylandToplevelWindow::SetBoundsInPixels(const gfx::Rect& bounds) {
+ }
  
--  if (req.state.bounds_dip.size() != old_state.bounds_dip.size()) {
-+  if (req.state.bounds_dip != old_state.bounds_dip) {
-     SetWindowGeometry(req.state.bounds_dip.size());
-   }
-   UpdateWindowMask();
+ void WaylandToplevelWindow::SetBoundsInDIP(const gfx::Rect& bounds_dip) {
++  auto old_bounds = GetBoundsInDIP();
+   WaylandWindow::SetBoundsInDIP(bounds_dip);
+-  if (shell_toplevel_ && screen_coordinates_enabled_)
++  if (shell_toplevel_ && screen_coordinates_enabled_) {
+     shell_toplevel_->RequestWindowBounds(bounds_dip);
++  } else if (shell_toplevel_ &&
++             bounds_dip.origin() != old_bounds.origin() &&
++             bounds_dip.size() == old_bounds.size() &&
++             connection()->SupportsSetWindowGeometry()) {
++    // BrightSign: For position-only changes, update the window geometry and
++    // commit directly. This avoids waiting for the next frame to commit the
++    // geometry, and avoids triggering a new frame or buffer reallocation.
++    // This is needed because we don't support aura shell and hence cannot use
++    // RequestWindowBounds to set the window position.
++    SetWindowGeometry(bounds_dip.size());
++    root_surface()->Commit(true);
++  }
+ }
+ 
+ void WaylandToplevelWindow::SetOrigin(const gfx::Point& origin) {
