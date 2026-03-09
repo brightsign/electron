@@ -1,0 +1,23 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Tariq Bashir <tbashir@brightsign.biz>
+Date: Mon, 9 Mar 2026 11:05:41 +0000
+Subject: Brightsign: Nexus update window visibility flag on opacity change
+
+We now use opacity 0.0 for hide and any opacity > 0.0 for show, so we need
+to update the visible flag appropriately.
+
+diff --git a/ui/ozone/platform/nexus/nexus_window.cc b/ui/ozone/platform/nexus/nexus_window.cc
+index e126a07d15fbf050785d954e7d31843d8a1be125..ee43b7719418c2a080f37f09afa35bb92e3b4538 100644
+--- a/ui/ozone/platform/nexus/nexus_window.cc
++++ b/ui/ozone/platform/nexus/nexus_window.cc
+@@ -449,6 +449,10 @@ bool NexusWindow::ShouldWindowContentsBeTransparent() const {
+ 
+ void NexusWindow::SetOpacity(float opacity) {
+   BS_DEBUG( "%s opacity: %f\n", __PRETTY_FUNCTION__, opacity);
++  if (opacity > 0.0f)
++    visible_ = true;
++  else
++    visible_ = false;
+ 
+   opacity_ = opacity;
+ 
