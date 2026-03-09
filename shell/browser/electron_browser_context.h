@@ -185,9 +185,6 @@ class ElectronBrowserContext : public content::BrowserContext {
 
 #if BUILDFLAG(ENABLE_ELECTRON_EXTENSIONS)
   extensions::ElectronExtensionSystem* extension_system() {
-    // Guard usages of extension_system() with !IsOffTheRecord()
-    // There is no extension system for in-memory sessions
-    DCHECK(!IsOffTheRecord());
     return extension_system_;
   }
 #endif
