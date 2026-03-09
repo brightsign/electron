@@ -1,0 +1,306 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Tariq Bashir <tbashir@brightsign.biz>
+Date: Wed, 4 Mar 2026 20:58:35 +0000
+Subject: feat: Brightsign optimisations for showing window using opacity
+ change
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+The main changes of this patch are:
+
+1) In Chromium, EffectTree::UpdateIsDrawn() sets is_drawn=false
+for any EffectNode with screen_space_opacity==0. This cascades through
+the entire rendering pipeline:
+
+  - LayerShouldBeSkippedForDrawPropertiesComputation() skips the layer
+  - contributes_to_drawn_render_surface is set to false
+  - HasValidTilePriorities() returns false
+  - UpdateTiles() is never called (no raster work scheduled)
+  - Tile resources may be released entirely
+
+On BrightSign, windows are set to opacity=0 to hide them while content
+loads, then restored to opacity=255 to reveal the page. With the
+above mentioned optimization, setting opacity=0 causes all compositing, tiling,
+and raster work to stop. When opacity is restored, the compositor must
+re-rasterize all tiles from scratch, causing a visible delay before the
+page appears.
+
+This change adds an exception for "window-level" effect nodes — those
+whose parent is the root (kRootPropertyNodeId, id=0) or secondary root
+(kSecondaryRootPropertyNodeId, id=1) of the effect tree. These nodes
+correspond to the browser compositor's content window layer, whose
+opacity is set via DesktopWindowTreeHostPlatform::SetOpacity() ->
+ui::Layer::SetOpacity() -> cc::Layer::SetOpacity().
+
+CSS element opacity (e.g. a <div> with opacity:0) creates effect nodes
+deeper in the renderer compositor's tree (parent_id > 1), so those
+still receive the is_drawn=false optimization as before.
+
+The net effect is:
+  - Window opacity=0: is_drawn stays true, compositor continues to
+    composite and rasterize tiles. The output is still visually
+    transparent (screen_space_opacity=0 is still computed). When
+    opacity is restored, the page displays on the next frame.
+  - CSS element opacity=0: is_drawn=false as usual, tiles are skipped.
+    No behavior change from upstream.
+
+2) This fix makes sure that when the opacity is set to 0 that both the
+top level surface and subsurfaces end up with opacity 0 in weston,
+so we don't end up assigning planes to them.
+
+3) Setting the Aura layer to transparent makes the GPU compositor produce a
+transparent buffer. With immediate alpha commits, that stale transparent
+buffer can be briefly shown when the window is made visible again.
+
+Keep the Aura layer opacity always set to fully opaque to avoid this.
+The window transparency is now completely handled by nexus or weston.
+
+4) Add an explicit CommitOpacity() path in WaylandSurface to flush pending
+alpha/blending updates without waiting for the next frame submission.
+
+Use this in WaylandToplevelWindow::SetOpacity() to update both the primary
+subsurface (where content is rendered) and the root surface. Commit the
+subsurface first and the root last so synchronized subsurface state is
+applied in the same repaint cycle.
+
+This avoids stale subsurface opacity until a later GPU frame and improves
+show/hide coordination across related surfaces.
+
+In order to ensure that the first frame displayed after calling Show is
+not transparent a separate patch has been added to change the Aura compositor
+layer opacity to always be 1.0. I.e. we are now completely controlling window
+opacity through the Wayland surface. PlatformWindow::SetOpacity will get called
+with the Aura window compositor opacity (i.e. with 1.0 and not the requested
+opacity) when there is a compositor update and we ignore this by removing the
+updates in WaylandSurface::ApplyPendingState. The only way to update the window
+opacity is through the WaylandToplevelWindow::SetOpacity call.
+
+diff --git a/cc/trees/property_tree.cc b/cc/trees/property_tree.cc
+index 3cf47ba591409e3a74b30f1696015d5249bdd666..5dbcd2b3241522ec06c8faa4e869aedabf7efc73 100644
+--- a/cc/trees/property_tree.cc
++++ b/cc/trees/property_tree.cc
+@@ -1200,13 +1200,24 @@ void EffectTree::UpdateIsDrawn(EffectNode* node, EffectNode* parent_node) {
+   // 3) Nodes that have a backdrop filter.
+   // 4) Nodes with animating screen space opacity on main thread or pending tree
+   //    are drawn if their parent is drawn irrespective of their opacity.
++  // 5) BrightSign: Nodes whose parent is the root or secondary root of the
++  //    effect tree (i.e. window-level opacity nodes from the browser compositor).
++  //    These must keep compositing/tiling/raster work active so the page is
++  //    ready to display instantly when window opacity is restored.
++  //    CSS element opacity=0 (deeper in the renderer compositor's tree) still
++  //    gets the is_drawn=false optimization as usual.
++  bool is_window_level_node =
++      parent_node &&
++      (parent_node->id == kRootPropertyNodeId ||
++       parent_node->id == kSecondaryRootPropertyNodeId);
+   if (node->has_copy_request || node->cache_render_surface ||
+       node->subtree_capture_id.is_valid()) {
+     node->is_drawn = true;
+   } else if (EffectiveOpacity(node) == 0.f &&
+              (!node->has_potential_opacity_animation ||
+               property_trees()->is_active()) &&
+-             node->backdrop_filters.IsEmpty()) {
++             node->backdrop_filters.IsEmpty() &&
++             !is_window_level_node) {
+     node->is_drawn = false;
+   } else if (parent_node) {
+     node->is_drawn = parent_node->is_drawn;
+diff --git a/ui/ozone/platform/wayland/host/wayland_frame_manager.cc b/ui/ozone/platform/wayland/host/wayland_frame_manager.cc
+index 96448ba03b1bffd662299950d68e61db3e02395b..fa15de1db7d04a5e5f3823314221fc11e113d6cb 100644
+--- a/ui/ozone/platform/wayland/host/wayland_frame_manager.cc
++++ b/ui/ozone/platform/wayland/host/wayland_frame_manager.cc
+@@ -420,7 +420,7 @@ std::optional<bool> WaylandFrameManager::ApplySurfaceConfigure(
+   surface->set_surface_buffer_scale(surface_buffer_scale);
+   surface->set_buffer_crop(config.crop_rect);
+   surface->set_viewport_destination(config.bounds_rect.size());
+-  surface->set_opacity(config.opacity);
++  surface->set_opacity(window_->IsWindowHidden() ? 0.0f : config.opacity);
+   surface->set_blending(config.enable_blend);
+   surface->set_overlay_priority(config.priority_hint);
+   surface->set_contains_video(
+diff --git a/ui/ozone/platform/wayland/host/wayland_surface.cc b/ui/ozone/platform/wayland/host/wayland_surface.cc
+index a8cac5a7123f98a4276cd07f09989a77699e3aa5..5c2d31f5c583ca16eeb33c1a1b9a4be8fe7b1148 100644
+--- a/ui/ozone/platform/wayland/host/wayland_surface.cc
++++ b/ui/ozone/platform/wayland/host/wayland_surface.cc
+@@ -296,6 +296,26 @@ void WaylandSurface::Commit(bool flush) {
+   }
+ }
+ 
++void WaylandSurface::CommitOpacity() {
++  if (!blending())
++    return;
++
++  if (pending_state_.opacity != state_.opacity) {
++    zcr_blending_v1_set_alpha(blending(),
++                              wl_fixed_from_double(pending_state_.opacity));
++    state_.opacity = pending_state_.opacity;
++  }
++  if (pending_state_.use_blending != state_.use_blending) {
++    zcr_blending_v1_set_blending(
++        blending(),
++        pending_state_.use_blending
++            ? ZCR_BLENDING_V1_BLENDING_EQUATION_PREMULT
++            : ZCR_BLENDING_V1_BLENDING_EQUATION_NONE);
++    state_.use_blending = pending_state_.use_blending;
++  }
++  Commit(true);
++}
++
+ void WaylandSurface::set_surface_buffer_scale(float scale) {
+   pending_state_.buffer_scale_float = scale;
+ 
+@@ -560,21 +580,6 @@ std::optional<bool> WaylandSurface::ApplyPendingState() {
+     needs_commit = true;
+   }
+ 
+-  if (pending_state_.opacity != state_.opacity) {
+-    DCHECK(blending());
+-    zcr_blending_v1_set_alpha(blending(),
+-                              wl_fixed_from_double(pending_state_.opacity));
+-    needs_commit = true;
+-  }
+-  if (pending_state_.use_blending != state_.use_blending) {
+-    DCHECK(blending());
+-    zcr_blending_v1_set_blending(blending(),
+-                                 pending_state_.use_blending
+-                                     ? ZCR_BLENDING_V1_BLENDING_EQUATION_PREMULT
+-                                     : ZCR_BLENDING_V1_BLENDING_EQUATION_NONE);
+-    needs_commit = true;
+-  }
+-
+   if (pending_state_.priority_hint != state_.priority_hint) {
+     DCHECK(overlay_priority_surface());
+     overlay_prioritized_surface_set_overlay_priority(
+diff --git a/ui/ozone/platform/wayland/host/wayland_surface.h b/ui/ozone/platform/wayland/host/wayland_surface.h
+index 05a27d1ab70f0e582d7080923867a0dec60d6596..9673fe3e1b0c083377c289cd2383887e2c02a4a7 100644
+--- a/ui/ozone/platform/wayland/host/wayland_surface.h
++++ b/ui/ozone/platform/wayland/host/wayland_surface.h
+@@ -165,6 +165,12 @@ class WaylandSurface {
+       pending_state_.use_blending = use_blending;
+   }
+ 
++  // Immediately commit any pending opacity/blending changes to the wayland
++  // server without waiting for the next frame submission. This is needed
++  // when opacity changes must reach the compositor synchronously (e.g. to
++  // coordinate show/hide of multiple surfaces in the same repaint cycle).
++  void CommitOpacity();
++
+   // Set the destination size of the associated wl_surface according to
+   // |dest_size_px|, which should be in physical pixels.
+   // Note this method sends corresponding wayland requests immediately because
+diff --git a/ui/ozone/platform/wayland/host/wayland_toplevel_window.cc b/ui/ozone/platform/wayland/host/wayland_toplevel_window.cc
+index 5f5390ee8a0ca29cabddafaec7a6e2bbfb501e00..9c4509919893ed26f43403a261f6d48650a02b4c 100644
+--- a/ui/ozone/platform/wayland/host/wayland_toplevel_window.cc
++++ b/ui/ozone/platform/wayland/host/wayland_toplevel_window.cc
+@@ -359,6 +359,27 @@ void WaylandToplevelWindow::SizeConstraintsChanged() {
+ void WaylandToplevelWindow::SetOpacity(float opacity) {
+   root_surface()->set_opacity(opacity);
+   root_surface()->set_blending(true);
++
++  if (opacity > 0.0f)
++    window_hidden_ = false;
++  else
++    window_hidden_ = true;
++
++  // Also immediately commit opacity on the primary subsurface (where actual
++  // content lives). Without this, the subsurface opacity stays stale until
++  // the GPU process submits the next frame.
++  if (auto* subsurface = primary_subsurface()) {
++    auto* surface = subsurface->wayland_surface();
++    surface->set_opacity(opacity);
++    surface->set_blending(true);
++    surface->CommitOpacity();
++  }
++
++  // Commit the root surface LAST. Subsurfaces default to synchronized mode,
++  // meaning their committed state only takes effect when the parent surface
++  // commits. By committing the root after the subsurface, we trigger the
++  // subsurface's pending state to apply immediately.
++  root_surface()->CommitOpacity();
+ }
+ 
+ void WaylandToplevelWindow::SetZOrderLevel(ZOrderLevel order) {
+@@ -785,6 +806,10 @@ void WaylandToplevelWindow::OnSessionDestroying() {
+   session_ = nullptr;
+ }
+ 
++bool WaylandToplevelWindow::IsWindowHidden() const {
++  return window_hidden_;
++}
++
+ void WaylandToplevelWindow::UpdateSystemModal() {
+   if (xdg_toplevel_) {
+     xdg_toplevel_->SetSystemModal(system_modal_);
+diff --git a/ui/ozone/platform/wayland/host/wayland_toplevel_window.h b/ui/ozone/platform/wayland/host/wayland_toplevel_window.h
+index 235f0e5b178943d5e0962d2f9ea4fa2dbe510fee..f29295d402ab96431fda655a2ae07cb6063d0200 100644
+--- a/ui/ozone/platform/wayland/host/wayland_toplevel_window.h
++++ b/ui/ozone/platform/wayland/host/wayland_toplevel_window.h
+@@ -149,6 +149,9 @@ class WaylandToplevelWindow : public WaylandWindow,
+   // XdgSession::Observer:
+   void OnSessionDestroying() override;
+ 
++  // WaylandWindow:
++  bool IsWindowHidden() const override;
++
+  private:
+   // XdgToplevelSession instances are owned by toplevel windows, given their
+   // close lifecycle, though ownership might be transferred to the associated
+@@ -255,6 +258,8 @@ class WaylandToplevelWindow : public WaylandWindow,
+   // The z order for the window.
+   ZOrderLevel z_order_ = ZOrderLevel::kNormal;
+ 
++  bool window_hidden_ = false;
++
+   // Activation will only be done if the surface is configured.
+   // If it is requested before, it is stored and executed in ack configure.
+   std::optional<std::string> pending_configure_activation_token_ = std::nullopt;
+diff --git a/ui/ozone/platform/wayland/host/wayland_window.cc b/ui/ozone/platform/wayland/host/wayland_window.cc
+index 0847bb07db27e36478fea20d886c7d2d78d39110..f0596d30f27c1ed44431271b7711165125bc0461 100644
+--- a/ui/ozone/platform/wayland/host/wayland_window.cc
++++ b/ui/ozone/platform/wayland/host/wayland_window.cc
+@@ -1074,6 +1074,10 @@ bool WaylandWindow::IsSuspended() const {
+   return false;
+ }
+ 
++bool WaylandWindow::IsWindowHidden() const {
++  return false;
++}
++
+ WaylandBubble* WaylandWindow::AsWaylandBubble() {
+   return nullptr;
+ }
+diff --git a/ui/ozone/platform/wayland/host/wayland_window.h b/ui/ozone/platform/wayland/host/wayland_window.h
+index be0d06da6a5d6748cfc44d8453469ae00b159949..d379f813141ff629175b6c140562fdf68e991c2e 100644
+--- a/ui/ozone/platform/wayland/host/wayland_window.h
++++ b/ui/ozone/platform/wayland/host/wayland_window.h
+@@ -372,6 +372,8 @@ class WaylandWindow : public PlatformWindow,
+   virtual bool IsActive() const;
+   virtual bool IsSuspended() const;
+ 
++  virtual bool IsWindowHidden() const;
++
+   // WaylandWindow can be any type of object - WaylandBubble,
+   // WaylandToplevelWindow, WaylandPopup. The following methods cast itself to
+   // WaylandBubble, WaylandPopup or WaylandToplevelWindow, if |this| is
+diff --git a/ui/views/widget/desktop_aura/desktop_window_tree_host_platform.cc b/ui/views/widget/desktop_aura/desktop_window_tree_host_platform.cc
+index 942e685096b8577bd0e48918aa65a4d15b4f51bc..47018fb1e86c5f290cd12a3b78f73a6f353d5ec1 100644
+--- a/ui/views/widget/desktop_aura/desktop_window_tree_host_platform.cc
++++ b/ui/views/widget/desktop_aura/desktop_window_tree_host_platform.cc
+@@ -820,7 +820,15 @@ bool DesktopWindowTreeHostPlatform::IsFullscreen() const {
+ }
+ 
+ void DesktopWindowTreeHostPlatform::SetOpacity(float opacity) {
+-  GetContentWindow()->layer()->SetOpacity(opacity);
++  // We don't change the opacity of the content window's layer
++  // because we are completely controlling it from the platform side
++  // (e.g. in ozone wayland and ozone nexus). We do this to ensure that
++  // when the platform window is made visible, the content window is also
++  // visible. If we set the opacity of the content window's layer, then
++  // when the platform window is made visible we can sometimes get a flash
++  // due to a fully transparent content window buffer being displayed.
++  //  GetContentWindow()->layer()->SetOpacity(opacity);
++
+   platform_window()->SetOpacity(opacity);
+ }
+ 
