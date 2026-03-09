@@ -1,0 +1,38 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Tariq Bashir <tbashir@brightsign.biz>
+Date: Tue, 24 Feb 2026 09:41:28 +0000
+Subject: feat: Add Perfetto trace to VideoHoleDraw
+
+Add Perfetto trace event to the VideoHoleDraw function in the OverlayStrategyUnderlayBrightsign class.
+This will help in debugging and performance analysis of video overlay rendering on BrightSign devices.
+
+diff --git a/components/viz/service/display/overlay_strategy_underlay_brightsign.cc b/components/viz/service/display/overlay_strategy_underlay_brightsign.cc
+index bda69e19a679cbedf35e0fc2b6cf7440a5d38369..214c781a0b44bf5ae065fe2b7db16a6b1cddb0b1 100644
+--- a/components/viz/service/display/overlay_strategy_underlay_brightsign.cc
++++ b/components/viz/service/display/overlay_strategy_underlay_brightsign.cc
+@@ -9,6 +9,7 @@
+ #include "base/lazy_instance.h"
+ #include "base/logging.h"
+ #include "base/threading/platform_thread.h"
++#include "base/trace_event/trace_event.h"
+ #include "base/unguessable_token.h"
+ #include "build/chromecast_buildflags.h"
+ #include "components/viz/common/quads/aggregated_render_pass_draw_quad.h"
+@@ -119,7 +120,16 @@ bool OverlayStrategyUnderlayBrightsign::VideoHoleDraw(
+       std::string overlay_plane_id = VideoHoleDrawQuad::MaterialCast(*quad)->overlay_plane_id.ToString();
+       std::string factory_name = VideoHoleDrawQuad::MaterialCast(*quad)->factory_name;
+ 
+-
++      TRACE_EVENT1(TRACE_DISABLED_BY_DEFAULT("viz.debug.overlay_planes"),
++                   "OverlayStrategyUnderlayBrightsign::VideoHoleDraw",
++                   "info",
++                   base::StringPrintf("%s: %dx%d @ %d,%d  clip:%dx%d @ %d,%d, opacity:%f",
++                                      factory_name.c_str(),
++                                      b_display_rect.width, b_display_rect.height,
++                                      b_display_rect.x, b_display_rect.y,
++                                      b_clip_rect.width, b_clip_rect.height,
++                                      b_clip_rect.x, b_clip_rect.y,
++                                      quad->shared_quad_state->opacity * opacity));
+       vid_player_set_geometry(factory_name.c_str(), overlay_plane_id.c_str(),
+                               b_display_rect, b_clip_rect);
+       vid_player_set_opacity(factory_name.c_str(), overlay_plane_id.c_str(),
