@@ -1,0 +1,75 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Tariq Bashir <tbashir@brightsign.biz>
+Date: Wed, 4 Mar 2026 20:58:35 +0000
+Subject: feat: Brightsign Keep compositing active for window-level zero
+ opacity nodes
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+In Chromium, EffectTree::UpdateIsDrawn() sets is_drawn=false
+for any EffectNode with screen_space_opacity==0. This cascades through
+the entire rendering pipeline:
+
+  - LayerShouldBeSkippedForDrawPropertiesComputation() skips the layer
+  - contributes_to_drawn_render_surface is set to false
+  - HasValidTilePriorities() returns false
+  - UpdateTiles() is never called (no raster work scheduled)
+  - Tile resources may be released entirely
+
+On BrightSign, windows are set to opacity=0 to hide them while content
+loads, then restored to opacity=255 to reveal the page. With the
+above mentioned optimization, setting opacity=0 causes all compositing, tiling,
+and raster work to stop. When opacity is restored, the compositor must
+re-rasterize all tiles from scratch, causing a visible delay before the
+page appears.
+
+This change adds an exception for "window-level" effect nodes — those
+whose parent is the root (kRootPropertyNodeId, id=0) or secondary root
+(kSecondaryRootPropertyNodeId, id=1) of the effect tree. These nodes
+correspond to the browser compositor's content window layer, whose
+opacity is set via DesktopWindowTreeHostPlatform::SetOpacity() ->
+ui::Layer::SetOpacity() -> cc::Layer::SetOpacity().
+
+CSS element opacity (e.g. a <div> with opacity:0) creates effect nodes
+deeper in the renderer compositor's tree (parent_id > 1), so those
+still receive the is_drawn=false optimization as before.
+
+The net effect is:
+  - Window opacity=0: is_drawn stays true, compositor continues to
+    composite and rasterize tiles. The output is still visually
+    transparent (screen_space_opacity=0 is still computed). When
+    opacity is restored, the page displays on the next frame.
+  - CSS element opacity=0: is_drawn=false as usual, tiles are skipped.
+    No behavior change from upstream.
+
+diff --git a/cc/trees/property_tree.cc b/cc/trees/property_tree.cc
+index b2255f837d3d94ec8741eb4efc3103563206ddc3..891251b19f946a2be45d97a978c6f83f9be62d71 100644
+--- a/cc/trees/property_tree.cc
++++ b/cc/trees/property_tree.cc
+@@ -870,13 +870,24 @@ void EffectTree::UpdateIsDrawn(EffectNode* node, EffectNode* parent_node) {
+   // 3) Nodes that have a backdrop filter.
+   // 4) Nodes with animating screen space opacity on main thread or pending tree
+   //    are drawn if their parent is drawn irrespective of their opacity.
++  // 5) BrightSign: Nodes whose parent is the root or secondary root of the
++  //    effect tree (i.e. window-level opacity nodes from the browser compositor).
++  //    These must keep compositing/tiling/raster work active so the page is
++  //    ready to display instantly when window opacity is restored.
++  //    CSS element opacity=0 (deeper in the renderer compositor's tree) still
++  //    gets the is_drawn=false optimization as usual.
++  bool is_window_level_node =
++      parent_node &&
++      (parent_node->id == kRootPropertyNodeId ||
++       parent_node->id == kSecondaryRootPropertyNodeId);
+   if (node->has_copy_request || node->cache_render_surface ||
+       node->subtree_capture_id.is_valid()) {
+     node->is_drawn = true;
+   } else if (EffectiveOpacity(node) == 0.f &&
+              (!node->has_potential_opacity_animation ||
+               property_trees()->is_active()) &&
+-             node->backdrop_filters.IsEmpty()) {
++             node->backdrop_filters.IsEmpty() &&
++             !is_window_level_node) {
+     node->is_drawn = false;
+   } else if (parent_node) {
+     node->is_drawn = parent_node->is_drawn;

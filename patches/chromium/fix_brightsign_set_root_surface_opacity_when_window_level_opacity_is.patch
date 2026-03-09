@@ -1,0 +1,101 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Tariq Bashir <tbashir@brightsign.biz>
+Date: Wed, 4 Mar 2026 21:14:17 +0000
+Subject: fix: Brightsign set root surface opacity when window level opacity is
+ 0
+
+This fix makes sure that when the opacity is set to 0 that both the
+top level surface and subsurfaces end up with opacity 0 in weston,
+so we don't end up assigning planes to them.
+
+diff --git a/ui/ozone/platform/wayland/host/wayland_frame_manager.cc b/ui/ozone/platform/wayland/host/wayland_frame_manager.cc
+index 82b87281b85a045e882e73d8427f5e249fe5ef05..82e8b3b5e5b6edc09ed9bae7871ee61caecf3537 100644
+--- a/ui/ozone/platform/wayland/host/wayland_frame_manager.cc
++++ b/ui/ozone/platform/wayland/host/wayland_frame_manager.cc
+@@ -360,7 +360,7 @@ void WaylandFrameManager::ApplySurfaceConfigure(
+   surface->set_surface_buffer_scale(config.surface_scale_factor);
+   surface->set_buffer_crop(config.crop_rect);
+   surface->set_viewport_destination(config.bounds_rect.size());
+-  surface->set_opacity(config.opacity);
++  surface->set_opacity(window_->IsWindowHidden() ? 0.0f : config.opacity);
+   surface->set_blending(config.enable_blend);
+   surface->set_overlay_priority(config.priority_hint);
+   surface->set_background_color(config.background_color);
+diff --git a/ui/ozone/platform/wayland/host/wayland_toplevel_window.cc b/ui/ozone/platform/wayland/host/wayland_toplevel_window.cc
+index 0c34b98fe54803e06f0963ea27fdb68b1a5abf2d..d722d2ba5acae28f29041fe19b6a71d58918b147 100644
+--- a/ui/ozone/platform/wayland/host/wayland_toplevel_window.cc
++++ b/ui/ozone/platform/wayland/host/wayland_toplevel_window.cc
+@@ -321,6 +321,11 @@ void WaylandToplevelWindow::SizeConstraintsChanged() {
+ void WaylandToplevelWindow::SetOpacity(float opacity) {
+   root_surface()->set_opacity(opacity);
+   root_surface()->set_blending(true);
++
++  if (opacity > 0.0f)
++    window_hidden_ = false;
++  else
++    window_hidden_ = true;
+ }
+ 
+ void WaylandToplevelWindow::SetZOrderLevel(ZOrderLevel order) {
+@@ -1024,6 +1029,10 @@ void WaylandToplevelWindow::DumpState(std::ostream& out) const {
+       << ", system_modal=" << ToBoolString(system_modal_);
+ }
+ 
++bool WaylandToplevelWindow::IsWindowHidden() const {
++  return window_hidden_;
++}
++
+ void WaylandToplevelWindow::UpdateSystemModal() {
+   if (shell_toplevel_)
+     shell_toplevel_->SetSystemModal(system_modal_);
+diff --git a/ui/ozone/platform/wayland/host/wayland_toplevel_window.h b/ui/ozone/platform/wayland/host/wayland_toplevel_window.h
+index 09159b7726f92efe60f4c3262359ffbb2f41437c..ff30b8fb5f9077a43776cee4a3b424de990c1d1b 100644
+--- a/ui/ozone/platform/wayland/host/wayland_toplevel_window.h
++++ b/ui/ozone/platform/wayland/host/wayland_toplevel_window.h
+@@ -193,6 +193,9 @@ class WaylandToplevelWindow : public WaylandWindow,
+ 
+   void DumpState(std::ostream& out) const override;
+ 
++  // WaylandWindow:
++  bool IsWindowHidden() const override;
++
+  private:
+   // WaylandWindow protected overrides:
+   // Calls UpdateWindowShape, set_input_region and set_opaque_region for this
+@@ -329,6 +332,8 @@ class WaylandToplevelWindow : public WaylandWindow,
+   // The z order for the window.
+   ZOrderLevel z_order_ = ZOrderLevel::kNormal;
+ 
++  bool window_hidden_ = false;
++
+   // True when screen coordinates is enabled.
+   bool screen_coordinates_enabled_;
+ 
+diff --git a/ui/ozone/platform/wayland/host/wayland_window.cc b/ui/ozone/platform/wayland/host/wayland_window.cc
+index 826f51c06d2c4b8e27dc994be15a35ad56147e1c..451b988cdea4492dfce4a150bd02bb07217805aa 100644
+--- a/ui/ozone/platform/wayland/host/wayland_window.cc
++++ b/ui/ozone/platform/wayland/host/wayland_window.cc
+@@ -913,6 +913,10 @@ bool WaylandWindow::IsActive() const {
+   return false;
+ }
+ 
++bool WaylandWindow::IsWindowHidden() const {
++  return false;
++}
++
+ WaylandPopup* WaylandWindow::AsWaylandPopup() {
+   return nullptr;
+ }
+diff --git a/ui/ozone/platform/wayland/host/wayland_window.h b/ui/ozone/platform/wayland/host/wayland_window.h
+index 06ae8e94456872055aabce362cd5650a7d692f45..ecf935748cab8db38c6f1b2af662496e03ca8c51 100644
+--- a/ui/ozone/platform/wayland/host/wayland_window.h
++++ b/ui/ozone/platform/wayland/host/wayland_window.h
+@@ -338,6 +338,8 @@ class WaylandWindow : public PlatformWindow,
+   // do not support that).
+   virtual bool IsActive() const;
+ 
++  virtual bool IsWindowHidden() const;
++
+   // WaylandWindow can be any type of object - WaylandToplevelWindow,
+   // WaylandPopup. The following methods cast itself to WaylandPopup or
+   // WaylandToplevelWindow, if |this| is of that type.
