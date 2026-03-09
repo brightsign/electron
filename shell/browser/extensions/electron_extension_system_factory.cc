@@ -7,6 +7,7 @@
 #include "components/keyed_service/content/browser_context_dependency_manager.h"
 #include "extensions/browser/extension_prefs_factory.h"
 #include "extensions/browser/extension_registry_factory.h"
+#include "extensions/browser/extensions_browser_client.h"
 #include "shell/browser/extensions/electron_extension_system.h"
 
 using content::BrowserContext;
@@ -40,8 +41,11 @@ KeyedService* ElectronExtensionSystemFactory::BuildServiceInstanceFor(
 
 BrowserContext* ElectronExtensionSystemFactory::GetBrowserContextToUse(
     BrowserContext* context) const {
-  // Use a separate instance for incognito.
-  return context;
+  // Redirect incognito/in-memory contexts to the original so they share the
+  // fully-initialized extension system (and its component extensions like the
+  // PDF viewer) rather than getting an uninitialized instance of their own.
+  return ExtensionsBrowserClient::Get()->GetContextRedirectedToOriginal(
+      context, /*force_guest_profile=*/true);
 }
 
 bool ElectronExtensionSystemFactory::ServiceIsCreatedWithBrowserContext()

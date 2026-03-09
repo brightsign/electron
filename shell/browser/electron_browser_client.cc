@@ -719,18 +719,16 @@ void ElectronBrowserClient::SiteInstanceGotProcess(
 #if BUILDFLAG(ENABLE_ELECTRON_EXTENSIONS)
   auto* browser_context =
       static_cast<ElectronBrowserContext*>(site_instance->GetBrowserContext());
-  if (!browser_context->IsOffTheRecord()) {
-    extensions::ExtensionRegistry* registry =
-        extensions::ExtensionRegistry::Get(browser_context);
-    const extensions::Extension* extension =
-        registry->enabled_extensions().GetExtensionOrAppByURL(
-            site_instance->GetSiteURL());
-    if (!extension)
-      return;
+  extensions::ExtensionRegistry* registry =
+      extensions::ExtensionRegistry::Get(browser_context);
+  const extensions::Extension* extension =
+      registry->enabled_extensions().GetExtensionOrAppByURL(
+          site_instance->GetSiteURL());
+  if (!extension)
+    return;
 
-    extensions::ProcessMap::Get(browser_context)
-        ->Insert(extension->id(), site_instance->GetProcess()->GetID());
-  }
+  extensions::ProcessMap::Get(browser_context)
+      ->Insert(extension->id(), site_instance->GetProcess()->GetID());
 #endif  // BUILDFLAG(ENABLE_ELECTRON_EXTENSIONS)
 }
 
@@ -1505,6 +1503,22 @@ std::string ElectronBrowserClient::GetApplicationLocale() {
 bool ElectronBrowserClient::ShouldEnableStrictSiteIsolation() {
   // Enable site isolation. It is off by default in Chromium <= 69.
   return true;
+}
+
+bool ElectronBrowserClient::DoesSiteRequireDedicatedProcess(
+    content::BrowserContext* browser_context,
+    const GURL& effective_site_url) {
+#if BUILDFLAG(ENABLE_ELECTRON_EXTENSIONS)
+  // Ensure extension URLs get dedicated processes even when strict site
+  // isolation is disabled (e.g. via --disable-site-isolation-trials).
+  // Without this, extensions use the default SiteInstance with
+  // "http://unisolated.invalid/" as site URL, preventing the extension
+  // system from identifying and activating extensions in their renderer
+  // processes.
+  if (effective_site_url.SchemeIs(extensions::kExtensionScheme))
+    return true;
+#endif
+  return false;
 }
 
 void ElectronBrowserClient::BindHostReceiverForRenderer(
