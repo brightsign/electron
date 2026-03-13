@@ -1,0 +1,56 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Tariq Bashir <tbashir@brightsign.biz>
+Date: Thu, 12 Mar 2026 16:40:14 +0000
+Subject: putil: Correct time zone deficiencies OS-20888
+
+This change has been taken from the OS-16298 patch.
+
+Correct the zone IDs for Australian and Aleutian time zones so they
+match the ones used by CascadeTime (and by Olson.)
+
+Add non-daylight-saving EST and MST zones so that we can check against
+them in the unit test.
+
+diff --git a/source/common/putil.cpp b/source/common/putil.cpp
+index 42e8be1170af1de2151a2434b5459923825bb6eb..0e1b29d390415b1aee8d1acff5e0c66b2e3b6db5 100644
+--- a/source/common/putil.cpp
++++ b/source/common/putil.cpp
+@@ -806,16 +806,16 @@ static const struct OffsetZoneMapping OFFSET_ZONE_MAPPINGS[] = {
+     {-43200, 1, "ANAT", "ANAST", "Asia/Anadyr"},
+     {-39600, 1, "MAGT", "MAGST", "Asia/Magadan"},
+     {-37800, 2, "LHST", "LHST", "Australia/Lord_Howe"},
+-    {-36000, 2, "EST", "EST", "Australia/Sydney"},
++    {-36000, 2, "AEST", "AEDT", "Australia/Sydney"},
+     {-36000, 1, "SAKT", "SAKST", "Asia/Sakhalin"},
+     {-36000, 1, "VLAT", "VLAST", "Asia/Vladivostok"},
+-    {-34200, 2, "CST", "CST", "Australia/South"},
++    {-34200, 2, "ACST", "ACDT", "Australia/South"},
+     {-32400, 1, "YAKT", "YAKST", "Asia/Yakutsk"},
+     {-32400, 1, "CHOT", "CHOST", "Asia/Choibalsan"},
+     {-31500, 2, "CWST", "CWST", "Australia/Eucla"},
+     {-28800, 1, "IRKT", "IRKST", "Asia/Irkutsk"},
+     {-28800, 1, "ULAT", "ULAST", "Asia/Ulaanbaatar"},
+-    {-28800, 2, "WST", "WST", "Australia/West"},
++    {-28800, 0, "AWST", "AWST", "Australia/West"},
+     {-25200, 1, "HOVT", "HOVST", "Asia/Hovd"},
+     {-25200, 1, "KRAT", "KRAST", "Asia/Krasnoyarsk"},
+     {-21600, 1, "NOVT", "NOVST", "Asia/Novosibirsk"},
+@@ -850,15 +850,17 @@ static const struct OffsetZoneMapping OFFSET_ZONE_MAPPINGS[] = {
+     {14400, 2, "PYT", "PYST", "America/Asuncion"},
+     {18000, 1, "CST", "CDT", "America/Havana"},
+     {18000, 1, "EST", "EDT", "US/Eastern"}, /* Conflicts with America/Grand_Turk */
++    {18000, 0, "EST", "EDT", "US/East-Indiana"},
+     {21600, 2, "EAST", "EASST", "Chile/EasterIsland"},
+     {21600, 0, "CST", "MDT", "Canada/Saskatchewan"},
+     {21600, 0, "CST", "CDT", "America/Guatemala"},
+     {21600, 1, "CST", "CDT", "US/Central"}, /* Conflicts with Mexico/General */
+     {25200, 1, "MST", "MDT", "US/Mountain"}, /* Conflicts with Mexico/BajaSur */
++    {25200, 0, "MST", "MST", "US/Arizona"},
+     {28800, 0, "PST", "PST", "Pacific/Pitcairn"},
+     {28800, 1, "PST", "PDT", "US/Pacific"}, /* Conflicts with Mexico/BajaNorte */
+     {32400, 1, "AKST", "AKDT", "US/Alaska"},
+-    {36000, 1, "HAST", "HADT", "US/Aleutian"}
++    {36000, 1, "HST", "HDT", "US/Aleutian"}
+ };
+ 
+ /*#define DEBUG_TZNAME*/
