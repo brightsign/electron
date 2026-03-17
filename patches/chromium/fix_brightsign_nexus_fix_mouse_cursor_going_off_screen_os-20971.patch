@@ -1,0 +1,81 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Tariq Bashir <tbashir@brightsign.biz>
+Date: Tue, 17 Mar 2026 17:40:41 +0000
+Subject: fix: Brightsign nexus fix mouse cursor going off screen OS-20971
+
+Fix to prevent the mouse cursor from going off screen on Brightsign Nexus devices.
+This is done by clamping the cursor position to the bounds of the primary display
+when moving the cursor.
+
+diff --git a/ui/ozone/platform/nexus/nexus_cursor.cc b/ui/ozone/platform/nexus/nexus_cursor.cc
+index 37315bfe81f5c651c4114aa19ccb191b44142984..b9bb6224043ee1ebcf5f58bc6ab958fc4fc1232c 100644
+--- a/ui/ozone/platform/nexus/nexus_cursor.cc
++++ b/ui/ozone/platform/nexus/nexus_cursor.cc
+@@ -1,5 +1,8 @@
+ #include "include/core/SkPixmap.h"
+ #include "ui/ozone/platform/nexus/nexus_cursor.h"
++
++#include "nexus_core_utils.h"
++#include "nxclient.h"
+ #include "ui/gfx/geometry/rect.h"
+ 
+ #define BS_DEBUG(...) \
+@@ -7,6 +10,31 @@
+ 
+ namespace ui {
+ 
++namespace {
++
++gfx::Rect GetPrimaryDisplayBounds() {
++  NxClient_DisplaySettings settings;
++  NxClient_GetDisplaySettings(&settings);
++
++  NEXUS_VideoFormatInfo format_info;
++  NEXUS_VideoFormat_GetInfo(settings.format, &format_info);
++  return gfx::Rect(gfx::Size(format_info.width, format_info.height));
++}
++
++gfx::PointF ClampCursorLocation(const gfx::PointF& location,
++                               const gfx::Rect& confined_bounds) {
++  if (confined_bounds.IsEmpty())
++    return location;
++
++  gfx::PointF clamped_location = location;
++  clamped_location.SetToMax(gfx::PointF(confined_bounds.origin()));
++  clamped_location.SetToMin(gfx::PointF(confined_bounds.right() - 1,
++                                        confined_bounds.bottom() - 1));
++  return clamped_location;
++}
++
++}  // namespace
++
+ BrightsignCursorDelegateEvdev::BrightsignCursorDelegateEvdev() {
+   BS_DEBUG("%s:%d\n", __PRETTY_FUNCTION__, __LINE__);
+   cursor_client_ = std::make_unique<CursorClient>();
+@@ -16,12 +44,14 @@ BrightsignCursorDelegateEvdev::BrightsignCursorDelegateEvdev() {
+ void BrightsignCursorDelegateEvdev::MoveCursorTo(gfx::AcceleratedWidget widget,
+                                                  const gfx::PointF& location) {
+   BS_DEBUG("%s:%d\n", __PRETTY_FUNCTION__, __LINE__);
+-  cursor_client_->SetCursorPosition(location.x(), location.y());
++  MoveCursorTo(location);
+ }
+ 
+ void BrightsignCursorDelegateEvdev::MoveCursorTo(const gfx::PointF& location) {
+   BS_DEBUG("%s:%d\n", __PRETTY_FUNCTION__, __LINE__);
+-  cursor_client_->SetCursorPosition(location.x(), location.y());
++  const gfx::PointF clamped_location =
++      ClampCursorLocation(location, GetCursorConfinedBounds());
++  cursor_client_->SetCursorPosition(clamped_location.x(), clamped_location.y());
+ }
+ 
+ void BrightsignCursorDelegateEvdev::MoveCursor(const gfx::Vector2dF& delta) {
+@@ -38,8 +68,7 @@ bool BrightsignCursorDelegateEvdev::IsCursorVisible() {
+ 
+ gfx::Rect BrightsignCursorDelegateEvdev::GetCursorConfinedBounds() {
+   BS_DEBUG("%s:%d\n", __PRETTY_FUNCTION__, __LINE__);
+-  NOTIMPLEMENTED();
+-  return gfx::Rect();
++  return GetPrimaryDisplayBounds();
+ }
+ 
+ gfx::PointF BrightsignCursorDelegateEvdev::GetLocation() {
