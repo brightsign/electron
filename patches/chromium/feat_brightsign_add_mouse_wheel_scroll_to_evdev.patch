@@ -1,0 +1,92 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Tariq Bashir <tbashir@brightsign.biz>
+Date: Tue, 17 Mar 2026 17:06:03 +0000
+Subject: feat: Brightsign add mouse wheel scroll to evdev
+
+Changes needed to get mouse wheel scroll events working on Brightsign series 3 & 4 devices.
+
+diff --git a/ui/events/ozone/evdev/event_converter_evdev_impl.cc b/ui/events/ozone/evdev/event_converter_evdev_impl.cc
+index 0ad3f73f9cb812c8b6e0213ac768b28a566d9d18..74b7db45d60cfa2db13812394f74ac0fec2848ec 100644
+--- a/ui/events/ozone/evdev/event_converter_evdev_impl.cc
++++ b/ui/events/ozone/evdev/event_converter_evdev_impl.cc
+@@ -267,14 +267,20 @@ void EventConverterEvdevImpl::ConvertKeyEvent(const input_event& input) {
+ }
+ 
+ void EventConverterEvdevImpl::ConvertMouseMoveEvent(const input_event& input) {
+-  if (!cursor_)
+-    return;
+   switch (input.code) {
+     case REL_X:
+-      x_offset_ = input.value;
++      if (cursor_)
++        x_offset_ += input.value;
+       break;
+     case REL_Y:
+-      y_offset_ = input.value;
++      if (cursor_)
++        y_offset_ += input.value;
++      break;
++    case REL_WHEEL:
++      wheel_y_offset_ += input.value;
++      break;
++    case REL_HWHEEL:
++      wheel_x_offset_ += input.value;
+       break;
+   }
+ }
+@@ -400,18 +406,32 @@ void EventConverterEvdevImpl::SetReceivedValidInputCallback(
+ }
+ 
+ void EventConverterEvdevImpl::FlushEvents(const input_event& input) {
+-  if (!cursor_ || (x_offset_ == 0 && y_offset_ == 0))
++  if (!cursor_)
+     return;
+ 
+-  cursor_->MoveCursor(gfx::Vector2dF(x_offset_, y_offset_));
++  if (x_offset_ != 0 || y_offset_ != 0) {
++    cursor_->MoveCursor(gfx::Vector2dF(x_offset_, y_offset_));
+ 
+-  dispatcher_->DispatchMouseMoveEvent(MouseMoveEventParams(
+-      input_device_.id, EF_NONE, cursor_->GetLocation(),
+-      nullptr /* ordinal_delta*/, PointerDetails(EventPointerType::kMouse),
+-      TimeTicksFromInputEvent(input)));
++    dispatcher_->DispatchMouseMoveEvent(MouseMoveEventParams(
++        input_device_.id, EF_NONE, cursor_->GetLocation(),
++        nullptr /* ordinal_delta*/, PointerDetails(EventPointerType::kMouse),
++        TimeTicksFromInputEvent(input)));
+ 
+-  x_offset_ = 0;
+-  y_offset_ = 0;
++    x_offset_ = 0;
++    y_offset_ = 0;
++  }
++
++  if (wheel_x_offset_ != 0 || wheel_y_offset_ != 0) {
++    // Scale from evdev notch count to Chromium's wheel-delta units (120 per
++    // notch, matching the Windows / Web standard).
++    dispatcher_->DispatchMouseWheelEvent(MouseWheelEventParams(
++        input_device_.id, cursor_->GetLocation(),
++        gfx::Vector2d(wheel_x_offset_ * 120, wheel_y_offset_ * 120),
++        TimeTicksFromInputEvent(input)));
++
++    wheel_x_offset_ = 0;
++    wheel_y_offset_ = 0;
++  }
+ }
+ 
+ std::ostream& EventConverterEvdevImpl::DescribeForLog(std::ostream& os) const {
+diff --git a/ui/events/ozone/evdev/event_converter_evdev_impl.h b/ui/events/ozone/evdev/event_converter_evdev_impl.h
+index 3f28dcd86dd35313208920aa0e417a1b4e483efb..09c7b1d1ea9fe68bdab8ca78edcd514717eedb80 100644
+--- a/ui/events/ozone/evdev/event_converter_evdev_impl.h
++++ b/ui/events/ozone/evdev/event_converter_evdev_impl.h
+@@ -117,6 +117,10 @@ class COMPONENT_EXPORT(EVDEV) EventConverterEvdevImpl
+   // Save y-axis events of relative devices to be flushed at EV_SYN time.
+   int y_offset_ = 0;
+ 
++  // Save scroll wheel events of relative devices to be flushed at EV_SYN time.
++  int wheel_x_offset_ = 0;
++  int wheel_y_offset_ = 0;
++
+   // Saves the last scan code seen in order to attach it to the next key event.
+   // The scan code is sent as a separate event message EV_MSC with subtype
+   // MSC_SCAN prior to the EV_KEY message that contains the key code.
