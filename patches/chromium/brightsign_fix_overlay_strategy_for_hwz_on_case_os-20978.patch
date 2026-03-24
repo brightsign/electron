@@ -1,0 +1,143 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Tariq Bashir <tbashir@brightsign.biz>
+Date: Mon, 23 Mar 2026 13:04:04 +0000
+Subject: Brightsign fix overlay strategy for hwz on case OS-20978
+
+This change restores BrightSign underlay behavior so handled VideoHoleDrawQuads
+become true compositor holes and do not darken the primary plane when video opacity
+is applied.
+
+Background:
+
+In the older QtWebEngine-based implementation, the BrightSign underlay path
+effectively behaved like a side-effect-driven overlay strategy: it positioned the
+external video plane and the compositor result matched the expected transparent-hole
+behavior. In the newer Chromium overlay pipeline, BrightSign now participates in
+the generic propose/attempt/commit overlay flow. In that newer flow, the handled
+VideoHoleDrawQuad could still contribute visually in the non-negative z_index case,
+which caused exposed video to not be blended correctly with the background, i.e
+the primary plane of the HTML content.
+
+Fix:
+
+* Only propagate clip_rect into the copied shared quad state when the source quad is
+actually clipped.
+* Explicitly replace handled underlay VideoHoleDrawQuads with a transparent compositor
+hole for the z_index >= 0 path.
+* Keep the negative-z_index handling intact.
+* Keep CommitCandidate() transparent so candidate commit does not reintroduce
+destination darkening.
+* Refactor the hole-punch logic into a local helper to keep the behavior centralized
+and easier to reason about.
+
+diff --git a/components/viz/service/display/overlay_strategy_underlay_brightsign.cc b/components/viz/service/display/overlay_strategy_underlay_brightsign.cc
+index 2e5f03671d26a0871a41b3846f88e67159c65487..6570ea0561e32553794acff361f1ca4228a35183 100644
+--- a/components/viz/service/display/overlay_strategy_underlay_brightsign.cc
++++ b/components/viz/service/display/overlay_strategy_underlay_brightsign.cc
+@@ -46,6 +46,24 @@ bool OverlayStrategyUnderlayBrightsign::VideoHoleDraw(
+   auto render_pass = (*render_pass_list)[index].get();
+   QuadList& quad_list = render_pass->quad_list;
+   bool found_underlay = false;
++  auto replace_with_underlay_hole = [&](auto quad_iterator) {
++    auto* video_hole_quad = VideoHoleDrawQuad::MaterialCast(*quad_iterator);
++    if (video_hole_quad->z_index >= 0) {
++      render_pass->ReplaceExistingQuadWithSolidColor(
++          quad_iterator, SkColors::kTransparent, SkBlendMode::kSrcOver);
++      return;
++    }
++
++    if (!quad_iterator->ShouldDrawWithBlending() &&
++        quad_iterator->shared_quad_state->blend_mode == SkBlendMode::kSrcOver) {
++      render_pass->ReplaceExistingQuadWithSolidColor(
++          quad_iterator, SkColors::kBlack, SkBlendMode::kDstOut);
++      return;
++    }
++
++    render_pass->ReplaceExistingQuadWithSolidColor(
++        quad_iterator, SkColors::kTransparent, SkBlendMode::kSrcOut);
++  };
+ 
+   for (auto quad = quad_list.begin(); quad != quad_list.end(); ++quad) {
+     BS_DEBUG("OVERLAY: QUAD MATERIAL:%2d, OPACITY:%f, Location:%s\n",
+@@ -82,17 +100,7 @@ bool OverlayStrategyUnderlayBrightsign::VideoHoleDraw(
+         for (auto temp_quad : child_tokens) {
+           quad = quad_list.InsertAfterAndInvalidateAllPointers<VideoHoleDrawQuad>(
+               quad, 1, temp_quad);
+-
+-          if (VideoHoleDrawQuad::MaterialCast(*quad)->z_index < 0) {
+-            if (!quad->ShouldDrawWithBlending() &&
+-                quad->shared_quad_state->blend_mode == SkBlendMode::kSrcOver) {
+-              render_pass->ReplaceExistingQuadWithSolidColor(quad, SkColors::kBlack,
+-                                                             SkBlendMode::kDstOut);
+-            } else {
+-              render_pass->ReplaceExistingQuadWithSolidColor(
+-                  quad, SkColors::kTransparent, SkBlendMode::kSrcOut);
+-            }
+-          }
++          replace_with_underlay_hole(quad);
+         }
+ 
+         tokens->insert(tokens->end(), child_tokens.begin(), child_tokens.end());
+@@ -104,6 +112,7 @@ bool OverlayStrategyUnderlayBrightsign::VideoHoleDraw(
+     }
+     else if (quad->material == DrawQuad::Material::kVideoHole)
+     {
++      auto* video_hole_quad = VideoHoleDrawQuad::MaterialCast(*quad);
+       gfx::Rect content_rect;
+       BS_DEBUG("OVERLAY: APPLYING UNDERLAY:%d, opacity:%f\n", quad->material, quad->shared_quad_state->opacity * opacity);
+       BS_DEBUG("OVERLAY transform: \n %s\n", transform.ToString().c_str());
+@@ -116,8 +125,9 @@ bool OverlayStrategyUnderlayBrightsign::VideoHoleDraw(
+       BS_DEBUG("OVERLAY q_transform: \n %s\n", q_transform.ToString().c_str());
+ 
+       VidPlayerRect b_clip_rect;
++      const bool has_clip_rect = quad->shared_quad_state->clip_rect.has_value();
+       gfx::Rect c_rect;
+-      if (quad->shared_quad_state->clip_rect) {
++      if (has_clip_rect) {
+         c_rect = transform.MapRect(*quad->shared_quad_state->clip_rect);
+         b_clip_rect.x = c_rect.x();
+         b_clip_rect.y = c_rect.y();
+@@ -133,8 +143,8 @@ bool OverlayStrategyUnderlayBrightsign::VideoHoleDraw(
+                b_clip_rect.width,
+                b_clip_rect.height);
+ 
+-      std::string overlay_plane_id = VideoHoleDrawQuad::MaterialCast(*quad)->overlay_plane_id.ToString();
+-      std::string factory_name = VideoHoleDrawQuad::MaterialCast(*quad)->factory_name;
++      std::string overlay_plane_id = video_hole_quad->overlay_plane_id.ToString();
++      std::string factory_name = video_hole_quad->factory_name;
+ 
+       TRACE_EVENT1(TRACE_DISABLED_BY_DEFAULT("viz.debug.overlay_planes"),
+                    "OverlayStrategyUnderlayBrightsign::VideoHoleDraw",
+@@ -151,10 +161,12 @@ bool OverlayStrategyUnderlayBrightsign::VideoHoleDraw(
+       vid_player_set_opacity(factory_name.c_str(), overlay_plane_id.c_str(),
+                              quad->shared_quad_state->opacity * opacity);
+ 
+-      VideoHoleDrawQuad temp_quad = *VideoHoleDrawQuad::MaterialCast(*quad);
++      VideoHoleDrawQuad temp_quad = *video_hole_quad;
+       auto sqs = render_pass->CreateAndAppendSharedQuadState();
+       sqs->quad_to_target_transform = q_transform;
+-      sqs->clip_rect = c_rect;
++      if (has_clip_rect) {
++        sqs->clip_rect = c_rect;
++      }
+       sqs->opacity = temp_quad.shared_quad_state->opacity * opacity;
+       temp_quad.shared_quad_state = sqs;
+       tokens->push_back(temp_quad);
+@@ -162,16 +174,7 @@ bool OverlayStrategyUnderlayBrightsign::VideoHoleDraw(
+       content_bounds->push_back(content_rect);
+       found_underlay = true;
+ 
+-      if (VideoHoleDrawQuad::MaterialCast(*quad)->z_index < 0) {
+-        if (!quad->ShouldDrawWithBlending() &&
+-            quad->shared_quad_state->blend_mode == SkBlendMode::kSrcOver) {
+-            render_pass->ReplaceExistingQuadWithSolidColor(quad, SkColors::kBlack,
+-                                                           SkBlendMode::kDstOut);
+-        } else {
+-            render_pass->ReplaceExistingQuadWithSolidColor(quad, SkColors::kTransparent,
+-                                                           SkBlendMode::kSrcOut);
+-        }
+-      }
++      replace_with_underlay_hole(quad);
+     }
+   }
+   return found_underlay;

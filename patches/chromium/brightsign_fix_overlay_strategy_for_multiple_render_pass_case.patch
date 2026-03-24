@@ -1,0 +1,95 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Tariq Bashir <tbashir@brightsign.biz>
+Date: Thu, 19 Mar 2026 15:40:13 +0000
+Subject: Brightsign fix overlay strategy for multiple render pass case
+ OS-20978
+
+The original implementation of VideoHoleDraw in overlay_strategy_underlay_brightsign.cc
+had several issues when handling multiple render passes. We get into this scenario if an html
+page has two or more video elements, which both have opacity less than 1.0.
+In this case the code was only able to find the first referenced render pass, and then it
+would stop searching for any more. This is because:
+* It mutated the shared index while searching for a referenced render pass, which affects
+subsequent traversal.
+* It returned immediately after the first recursive success, so later aggregated quads in
+the same quad list were never checked.
+* It iterated over the full shared tokens list when inserting, instead of only the child
+pass tokens.
+
+The fix involves the following changes:
+* Use local search_index instead of modifying index.
+* Remove the early return after the first aggregated match.
+* Recurse into each child pass with child_tokens and child_content_bounds, then merge
+into parent outputs.
+* Compose opacity through nesting as opacity * child_opacity.
+
+diff --git a/components/viz/service/display/overlay_strategy_underlay_brightsign.cc b/components/viz/service/display/overlay_strategy_underlay_brightsign.cc
+index 214c781a0b44bf5ae065fe2b7db16a6b1cddb0b1..2e5f03671d26a0871a41b3846f88e67159c65487 100644
+--- a/components/viz/service/display/overlay_strategy_underlay_brightsign.cc
++++ b/components/viz/service/display/overlay_strategy_underlay_brightsign.cc
+@@ -61,29 +61,45 @@ bool OverlayStrategyUnderlayBrightsign::VideoHoleDraw(
+       BS_DEBUG("AGGREGATEDRENDERPASSQUAD transform:\n%s\n",
+                agg_quad->shared_quad_state->quad_to_target_transform.ToString().c_str());
+ 
+-      auto agg_transform = transform * agg_quad->shared_quad_state->quad_to_target_transform;
+-      auto agg_opacity = agg_quad->shared_quad_state->opacity;
+-      while (index > 0) {
+-        index--;
+-        if ((*render_pass_list)[index]->id == agg_quad->render_pass_id) {
+-          if (VideoHoleDraw(render_pass_list, index, agg_transform, agg_opacity, tokens, content_bounds)) {
+-            for (auto temp_quad : *tokens) {
+-              quad = quad_list.InsertAfterAndInvalidateAllPointers<VideoHoleDrawQuad>(quad, 1, temp_quad);
+-
+-              if (VideoHoleDrawQuad::MaterialCast(*quad)->z_index < 0) {
+-                if (!quad->ShouldDrawWithBlending() &&
+-                    quad->shared_quad_state->blend_mode == SkBlendMode::kSrcOver) {
+-                  render_pass->ReplaceExistingQuadWithSolidColor(quad, SkColors::kBlack,
+-                                                                 SkBlendMode::kDstOut);
+-                } else {
+-                  render_pass->ReplaceExistingQuadWithSolidColor(quad, SkColors::kTransparent,
+-                                                                 SkBlendMode::kSrcOut);
+-                }
+-              }
++      auto agg_transform =
++          transform * agg_quad->shared_quad_state->quad_to_target_transform;
++      auto agg_opacity = opacity * agg_quad->shared_quad_state->opacity;
++
++      size_t search_index = index;
++      while (search_index > 0) {
++        search_index--;
++        if ((*render_pass_list)[search_index]->id != agg_quad->render_pass_id)
++          continue;
++
++        std::vector<VideoHoleDrawQuad> child_tokens;
++        std::vector<gfx::Rect> child_content_bounds;
++        if (!VideoHoleDraw(render_pass_list, search_index, agg_transform,
++                           agg_opacity, &child_tokens,
++                           &child_content_bounds)) {
++          break;
++        }
++
++        for (auto temp_quad : child_tokens) {
++          quad = quad_list.InsertAfterAndInvalidateAllPointers<VideoHoleDrawQuad>(
++              quad, 1, temp_quad);
++
++          if (VideoHoleDrawQuad::MaterialCast(*quad)->z_index < 0) {
++            if (!quad->ShouldDrawWithBlending() &&
++                quad->shared_quad_state->blend_mode == SkBlendMode::kSrcOver) {
++              render_pass->ReplaceExistingQuadWithSolidColor(quad, SkColors::kBlack,
++                                                             SkBlendMode::kDstOut);
++            } else {
++              render_pass->ReplaceExistingQuadWithSolidColor(
++                  quad, SkColors::kTransparent, SkBlendMode::kSrcOut);
+             }
+-            return !tokens->empty();
+           }
+         }
++
++        tokens->insert(tokens->end(), child_tokens.begin(), child_tokens.end());
++        content_bounds->insert(content_bounds->end(), child_content_bounds.begin(),
++                               child_content_bounds.end());
++        found_underlay = true;
++        break;
+       }
+     }
+     else if (quad->material == DrawQuad::Material::kVideoHole)
