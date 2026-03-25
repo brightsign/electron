@@ -278,6 +278,8 @@ filenames = {
     "shell/browser/api/electron_api_in_app_purchase.h",
     "shell/browser/api/electron_api_menu.cc",
     "shell/browser/api/electron_api_menu.h",
+    "shell/browser/api/electron_api_memory_pressure_monitor.cc",
+    "shell/browser/api/electron_api_memory_pressure_monitor.h",
     "shell/browser/api/electron_api_native_theme.cc",
     "shell/browser/api/electron_api_native_theme.h",
     "shell/browser/api/electron_api_net_log.cc",
