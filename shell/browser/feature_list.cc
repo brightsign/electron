@@ -64,7 +64,14 @@ void InitializeFeatureList() {
       // failures.
       // TODO(codebytere): Figure out how to properly wait for paint-hold.
       std::string(",") +
-      blink::features::kDropInputEventsWhilePaintHolding.name;
+      blink::features::kDropInputEventsWhilePaintHolding.name +
+      // BTM (Bounce Tracking Mitigations, formerly DIPS) is a Chrome browser
+      // anti-bounce-tracking feature that does not apply to Electron apps.
+      // Its SQLite database uses exclusive locking by default, which causes a
+      // FATAL crash ("database is locked") when multiple Electron processes
+      // share the same user data directory and both try to open the BTM DB
+      // concurrently. Disabling it prevents the DB from ever being created.
+      std::string(",") + features::kBtm.name;
 
 #if BUILDFLAG(IS_WIN)
   // See https://chromium-review.googlesource.com/c/chromium/src/+/7204292
