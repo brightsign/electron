@@ -53,7 +53,14 @@ void InitializeFeatureList() {
       std::string(",") + features::kSpareRendererForSitePerProcess.name +
       // See https://chromium-review.googlesource.com/c/chromium/src/+/6487926
       // this breaks PDFs locally as we don't have GLIC infra enabled.
-      std::string(",") + ax::mojom::features::kScreenAIOCREnabled.name;
+      std::string(",") + ax::mojom::features::kScreenAIOCREnabled.name +
+      // BTM (Bounce Tracking Mitigations, formerly DIPS) is a Chrome browser
+      // anti-bounce-tracking feature that does not apply to Electron apps.
+      // Its SQLite database uses exclusive locking by default, which causes a
+      // FATAL crash ("database is locked") when multiple Electron processes
+      // share the same user data directory and both try to open the BTM DB
+      // concurrently. Disabling it prevents the DB from ever being created.
+      std::string(",") + features::kBtm.name;
 
 #if BUILDFLAG(IS_WIN)
   disable_features +=
