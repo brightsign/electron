@@ -182,10 +182,10 @@ index 1386ea2f0c39822b2c9990040f217ab469d4ee4d..014e0c6dfee91d792cc603a20ff239c3
    // EventTarget
    const AtomicString& InterfaceName() const override;
 diff --git a/third_party/blink/renderer/platform/media/brightsign/web_media_player_brightsign.cc b/third_party/blink/renderer/platform/media/brightsign/web_media_player_brightsign.cc
-index 27d98a283a2f523fa822ec2a86c98734cedb4914..e69aafdc8108811cdf3ef72f7a6398888d58f50d 100644
+index 45a686e3519d16be2d612c7caf6b71e24d10981d..c4821a0224b478311f0c901a77aa2c388f406269 100644
 --- a/third_party/blink/renderer/platform/media/brightsign/web_media_player_brightsign.cc
 +++ b/third_party/blink/renderer/platform/media/brightsign/web_media_player_brightsign.cc
-@@ -214,9 +214,6 @@ WebMediaPlayerBrightsign::~WebMediaPlayerBrightsign() {
+@@ -216,9 +216,6 @@ WebMediaPlayerBrightsign::~WebMediaPlayerBrightsign() {
    SetVideoFrameProviderClient(nullptr);
    client_->SetCcLayer(nullptr);
  
@@ -195,7 +195,7 @@ index 27d98a283a2f523fa822ec2a86c98734cedb4914..e69aafdc8108811cdf3ef72f7a639888
    vid_player_destroy(vid_player_);
    main_task_runner_->DeleteSoon(FROM_HERE,
                                  std::move(vid_player_listener_proxy_));
-@@ -610,39 +607,44 @@ void WebMediaPlayerBrightsign::PlaybackCompletedCallback() {
+@@ -612,39 +609,44 @@ void WebMediaPlayerBrightsign::PlaybackCompletedCallback() {
    }
  }
  
@@ -269,7 +269,7 @@ index 27d98a283a2f523fa822ec2a86c98734cedb4914..e69aafdc8108811cdf3ef72f7a639888
  
  void WebMediaPlayerBrightsign::LoadCallback(
      std::chrono::microseconds duration,
-@@ -683,6 +685,18 @@ void WebMediaPlayerBrightsign::LoadCallback(
+@@ -685,6 +687,18 @@ void WebMediaPlayerBrightsign::LoadCallback(
                  t.find("selected") != t.end()));
    }
  
@@ -289,7 +289,7 @@ index 27d98a283a2f523fa822ec2a86c98734cedb4914..e69aafdc8108811cdf3ef72f7a639888
    SetReadyState(WebMediaPlayer::kReadyStateHaveEnoughData);
    SetNetworkState(WebMediaPlayer::kNetworkStateIdle);
 diff --git a/third_party/blink/renderer/platform/media/brightsign/web_media_player_brightsign.h b/third_party/blink/renderer/platform/media/brightsign/web_media_player_brightsign.h
-index 43ee6ba5fa2617b4d71b7f1290058683a1351aeb..5f1295b3dc09aeab0d595a7131cd7b87ad7d37e4 100644
+index 10584de869fb40e7980fa5bdac190bef6056763a..c7e95ac9a8535db8c1d84b7a590a9847867168f8 100644
 --- a/third_party/blink/renderer/platform/media/brightsign/web_media_player_brightsign.h
 +++ b/third_party/blink/renderer/platform/media/brightsign/web_media_player_brightsign.h
 @@ -8,6 +8,7 @@
@@ -308,7 +308,7 @@ index 43ee6ba5fa2617b4d71b7f1290058683a1351aeb..5f1295b3dc09aeab0d595a7131cd7b87
  
  namespace cc {
  class PaintCanvas;
-@@ -207,6 +207,8 @@ class WebMediaPlayerBrightsign
+@@ -208,6 +208,8 @@ class WebMediaPlayerBrightsign
    // they've changed.
    void SetNetworkState(blink::WebMediaPlayer::NetworkState state);
    void SetReadyState(blink::WebMediaPlayer::ReadyState state);
@@ -317,7 +317,7 @@ index 43ee6ba5fa2617b4d71b7f1290058683a1351aeb..5f1295b3dc09aeab0d595a7131cd7b87
  
    blink::WebLocalFrame* frame_;
    blink::MediaPlayerClient* client_;
-@@ -244,9 +246,6 @@ class WebMediaPlayerBrightsign
+@@ -246,9 +248,6 @@ class WebMediaPlayerBrightsign
    base::Lock video_frame_provider_client_lock_;
    base::RepeatingTimer frame_ready_timer_;
  
@@ -327,7 +327,7 @@ index 43ee6ba5fa2617b4d71b7f1290058683a1351aeb..5f1295b3dc09aeab0d595a7131cd7b87
    // The compositor layer for displaying the video content when using composited
    // playback
    scoped_refptr<cc::VideoLayer> video_layer_;
-@@ -264,6 +263,7 @@ class WebMediaPlayerBrightsign
+@@ -266,6 +265,7 @@ class WebMediaPlayerBrightsign
    std::unique_ptr<media::VideoOverlayFactory> video_overlay_factory_;
    VidPlayerWrapper* vid_player_;
    cc::VideoFrameProvider::Client* video_frame_provider_client_;

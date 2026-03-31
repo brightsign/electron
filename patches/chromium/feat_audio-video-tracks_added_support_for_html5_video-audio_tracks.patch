@@ -71,7 +71,7 @@ index c34d368be76dcbe5ae2c366e29d7449209bee5ab..7f9dabb4a3b459f5519cf774298bf77b
  
   private:
 diff --git a/third_party/blink/renderer/platform/media/brightsign/web_media_player_brightsign.cc b/third_party/blink/renderer/platform/media/brightsign/web_media_player_brightsign.cc
-index 6758f4755611873eacd74a5203170527ac5dc4d9..27d98a283a2f523fa822ec2a86c98734cedb4914 100644
+index 9e6312654653ccf311a1ff85b9e93d79705e1f70..45a686e3519d16be2d612c7caf6b71e24d10981d 100644
 --- a/third_party/blink/renderer/platform/media/brightsign/web_media_player_brightsign.cc
 +++ b/third_party/blink/renderer/platform/media/brightsign/web_media_player_brightsign.cc
 @@ -8,6 +8,7 @@
@@ -82,7 +82,7 @@ index 6758f4755611873eacd74a5203170527ac5dc4d9..27d98a283a2f523fa822ec2a86c98734
  #include "media/base/media_switches.h"
  #include "media/base/video_frame.h"
  #include "media/renderers/paint_canvas_video_renderer.h"
-@@ -22,6 +23,29 @@
+@@ -23,6 +24,29 @@
  #include "gpu/GLES2/gl2extchromium.h"
  #include "gpu/command_buffer/client/gles2_interface.h"
  
@@ -112,7 +112,7 @@ index 6758f4755611873eacd74a5203170527ac5dc4d9..27d98a283a2f523fa822ec2a86c98734
  namespace blink {
  
  static void VidPlayerErrorCallback(void* context,
-@@ -51,8 +75,8 @@ static void VidPlayerLoadCallback(void* context,
+@@ -52,8 +76,8 @@ static void VidPlayerLoadCallback(void* context,
                                    const StringMapVector& text_tracks) {
    VidPlayerListenerProxy* vid_player_listener =
        static_cast<VidPlayerListenerProxy*>(context);
@@ -123,7 +123,7 @@ index 6758f4755611873eacd74a5203170527ac5dc4d9..27d98a283a2f523fa822ec2a86c98734
  }
  
  static void VidPlayerVideoSizeChangedCallback(void* context,
-@@ -110,7 +134,7 @@ static void VidPlayerSubtitleUpdatedCallback(
+@@ -111,7 +135,7 @@ static void VidPlayerSubtitleUpdatedCallback(
      const StringMapVector& text_tracks) {
    VidPlayerListenerProxy* vid_player_listener =
        static_cast<VidPlayerListenerProxy*>(context);
@@ -132,7 +132,7 @@ index 6758f4755611873eacd74a5203170527ac5dc4d9..27d98a283a2f523fa822ec2a86c98734
  }
  
  static void VidPlayerTextureMailboxReadyCallback(
-@@ -587,7 +611,7 @@ void WebMediaPlayerBrightsign::PlaybackCompletedCallback() {
+@@ -589,7 +613,7 @@ void WebMediaPlayerBrightsign::PlaybackCompletedCallback() {
  }
  
  void WebMediaPlayerBrightsign::SubtitleUpdatedCallback(
@@ -141,7 +141,7 @@ index 6758f4755611873eacd74a5203170527ac5dc4d9..27d98a283a2f523fa822ec2a86c98734
    /*
  for (auto t : text_tracks) {
    // We have ownership of the text track objects, so keep them in a map and
-@@ -619,11 +643,12 @@ for (auto t : text_tracks) {
+@@ -621,11 +645,12 @@ for (auto t : text_tracks) {
  */
  }
  
@@ -157,7 +157,7 @@ index 6758f4755611873eacd74a5203170527ac5dc4d9..27d98a283a2f523fa822ec2a86c98734
    VLOG(1) << __func__;
    DCHECK(main_task_runner_->BelongsToCurrentThread());
    DurationChangedCallback(duration);  // Before we declare HaveMetadata
-@@ -633,6 +658,31 @@ void WebMediaPlayerBrightsign::LoadCallback(
+@@ -635,6 +660,31 @@ void WebMediaPlayerBrightsign::LoadCallback(
    if ((natural_size_.height() == 0) && (natural_size_.width() == 0)) {
      natural_size_ = gfx::Size(640, 360);
    }
@@ -190,10 +190,10 @@ index 6758f4755611873eacd74a5203170527ac5dc4d9..27d98a283a2f523fa822ec2a86c98734
    SetReadyState(WebMediaPlayer::kReadyStateHaveEnoughData);
    SetNetworkState(WebMediaPlayer::kNetworkStateIdle);
 diff --git a/third_party/blink/renderer/platform/media/brightsign/web_media_player_brightsign.h b/third_party/blink/renderer/platform/media/brightsign/web_media_player_brightsign.h
-index ef0eb7c98f705a7579d0780b18d5071cc217cd69..43ee6ba5fa2617b4d71b7f1290058683a1351aeb 100644
+index fd2c8a881208af4dd8638c283e056d7063512c35..10584de869fb40e7980fa5bdac190bef6056763a 100644
 --- a/third_party/blink/renderer/platform/media/brightsign/web_media_player_brightsign.h
 +++ b/third_party/blink/renderer/platform/media/brightsign/web_media_player_brightsign.h
-@@ -152,9 +152,9 @@ class WebMediaPlayerBrightsign
+@@ -153,9 +153,9 @@ class WebMediaPlayerBrightsign
    void PlaybackStartedCallback();
    void PlaybackCompletedCallback();
    void LoadCallback(std::chrono::microseconds duration,
@@ -206,7 +206,7 @@ index ef0eb7c98f705a7579d0780b18d5071cc217cd69..43ee6ba5fa2617b4d71b7f1290058683
    void VideoSizeChangedCallback(uint32_t width,
                                  uint32_t height,
                                  int32_t z_index);
-@@ -165,7 +165,7 @@ class WebMediaPlayerBrightsign
+@@ -166,7 +166,7 @@ class WebMediaPlayerBrightsign
    void SeekCompletedCallback(std::chrono::microseconds current_time);
    void ReleasedCallback();
    void FrameReadyCallback();
