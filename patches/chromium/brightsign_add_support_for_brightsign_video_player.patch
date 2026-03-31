@@ -1482,10 +1482,10 @@ index 0000000000000000000000000000000000000000..c34d368be76dcbe5ae2c366e29d74492
 +#endif
 diff --git a/third_party/blink/renderer/platform/media/brightsign/web_media_player_brightsign.cc b/third_party/blink/renderer/platform/media/brightsign/web_media_player_brightsign.cc
 new file mode 100644
-index 0000000000000000000000000000000000000000..6758f4755611873eacd74a5203170527ac5dc4d9
+index 0000000000000000000000000000000000000000..9e6312654653ccf311a1ff85b9e93d79705e1f70
 --- /dev/null
 +++ b/third_party/blink/renderer/platform/media/brightsign/web_media_player_brightsign.cc
-@@ -0,0 +1,836 @@
+@@ -0,0 +1,838 @@
 +// Copyright 2017 The Chromium Authors
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
@@ -1505,6 +1505,7 @@ index 0000000000000000000000000000000000000000..6758f4755611873eacd74a5203170527
 +#include "third_party/blink/public/web/web_local_frame.h"
 +#include "third_party/blink/renderer/platform/media/media_player_client.h"
 +#include "third_party/blink/renderer/platform/media/brightsign/video_player_proxy.h"
++#include "third_party/blink/renderer/platform/media/player_id_generator.h"
 +#include "third_party/blink/renderer/platform/media/web_media_source_impl.h"
 +
 +#include "gpu/GLES2/gl2extchromium.h"
@@ -1623,6 +1624,7 @@ index 0000000000000000000000000000000000000000..6758f4755611873eacd74a5203170527
 +    : frame_(frame),
 +      client_(client),
 +      delegate_(delegate),
++      player_id_(GetNextMediaPlayerId()),
 +      main_task_runner_(frame->GetTaskRunner(TaskType::kMediaElementEvent)),
 +      media_task_runner_(std::move(media_task_runner)),
 +      compositor_task_runner_(std::move(compositor_task_runner)),
@@ -2324,10 +2326,10 @@ index 0000000000000000000000000000000000000000..6758f4755611873eacd74a5203170527
 +} // namespace blink
 diff --git a/third_party/blink/renderer/platform/media/brightsign/web_media_player_brightsign.h b/third_party/blink/renderer/platform/media/brightsign/web_media_player_brightsign.h
 new file mode 100644
-index 0000000000000000000000000000000000000000..ef0eb7c98f705a7579d0780b18d5071cc217cd69
+index 0000000000000000000000000000000000000000..fd2c8a881208af4dd8638c283e056d7063512c35
 --- /dev/null
 +++ b/third_party/blink/renderer/platform/media/brightsign/web_media_player_brightsign.h
-@@ -0,0 +1,271 @@
+@@ -0,0 +1,273 @@
 +// Copyright 2017 The Chromium Authors
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
@@ -2437,6 +2439,7 @@ index 0000000000000000000000000000000000000000..ef0eb7c98f705a7579d0780b18d5071c
 +  double Duration() const override;
 +  double CurrentTime() const override;
 +  bool IsEnded() const override;
++  int GetPlayerId() override { return player_id_; }
 +
 +  // Internal states of loading and network.
 +  blink::WebMediaPlayer::NetworkState GetNetworkState() const override;
@@ -2543,6 +2546,7 @@ index 0000000000000000000000000000000000000000..ef0eb7c98f705a7579d0780b18d5071c
 +
 +  WebMediaPlayerDelegate* delegate_;
 +  int delegate_id_ = 0;
++  const int player_id_;
 +
 +  VidPlayerDecodeStatistics decode_stats_;
 +
