@@ -1,0 +1,395 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Caner Altinbasak <cal@brightsign.biz>
+Date: Tue, 7 Apr 2026 16:10:19 +0100
+Subject: fix(wayland): Use surface activation control protocol for unfocusable
+ windows
+
+Instead of manually tracking keyboard focus with GrabKeyboardEvents
+(which was reverted due to regressions), use the Weston-side
+zwp_surface_activation_control_v1 protocol to tell the compositor
+that non-activatable surfaces should not steal keyboard focus.
+
+When a WaylandWindow is created with activatable=false, we now:
+1. Bind to zwp_surface_activation_control_manager_v1 in WaylandConnection
+2. Get an activation control object for the surface
+3. Call set_no_activate on it
+
+This prevents Weston from sending wl_keyboard.leave to the previously
+focused window when an unfocusable window is clicked, so physical
+keyboard input continues working alongside virtual keyboard windows.
+
+Also cleans up the orphaned GrabKeyboardEvents/UngrabKeyboardEvents
+code from the previous workaround.
+
+diff --git a/third_party/wayland-protocols/BUILD.gn b/third_party/wayland-protocols/BUILD.gn
+index 24258a6b21e5ea5104e587b7d16f5d9abc9cb935..41175e64ab3309483a1e509358b170be7d783e9b 100644
+--- a/third_party/wayland-protocols/BUILD.gn
++++ b/third_party/wayland-protocols/BUILD.gn
+@@ -15,6 +15,10 @@ wayland_protocol("bs_z_order_protocol") {
+   sources = [ "unstable/bs-z-order/bs-z-order-unstable-v1.xml" ]
+ }
+ 
++wayland_protocol("surface_activation_protocol") {
++  sources = [ "unstable/surface-activation/surface-activation-unstable-v1.xml" ]
++}
++
+ wayland_protocol("color_management_protocol") {
+   sources = [ "src/staging/color-management/color-management-v1.xml" ]
+ }
+diff --git a/third_party/wayland-protocols/unstable/surface-activation/surface-activation-unstable-v1.xml b/third_party/wayland-protocols/unstable/surface-activation/surface-activation-unstable-v1.xml
+new file mode 100644
+index 0000000000000000000000000000000000000000..c55fcaa6d4b19217b94957b1e569df5bc0994a5b
+--- /dev/null
++++ b/third_party/wayland-protocols/unstable/surface-activation/surface-activation-unstable-v1.xml
+@@ -0,0 +1,100 @@
++<?xml version="1.0" encoding="UTF-8"?>
++<protocol name="surface_activation_unstable_v1">
++  <copyright>
++    Copyright © 2025 BrightSign LLC
++
++    Permission is hereby granted, free of charge, to any person obtaining a
++    copy of this software and associated documentation files (the "Software"),
++    to deal in the Software without restriction, including without limitation
++    the rights to use, copy, modify, merge, publish, distribute, sublicense,
++    and/or sell copies of the Software, and to permit persons to whom the
++    Software is furnished to do so, subject to the following conditions:
++
++    The above copyright notice and this permission notice (including the next
++    paragraph) shall be included in all copies or substantial portions of the
++    Software.
++
++    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
++    IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
++    FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
++    THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
++    LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
++    FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
++    DEALINGS IN THE SOFTWARE.
++  </copyright>
++
++  <description summary="Protocol for controlling surface activation behavior">
++    This protocol allows clients to control whether their surfaces should
++    automatically receive input focus when they are mapped or updated.
++
++    This is particularly useful for media players and other applications
++    that should not steal focus from other applications when they start
++    playing content or when they update their content.
++
++    Warning! The protocol described in this file is experimental and backward
++    incompatible changes may be made. Backward compatible changes may be added
++    together with the corresponding interface version bump. Backward
++    incompatible changes are done by bumping the version number in the protocol
++    and interface names and resetting the interface version. Once the protocol
++    is to be declared stable, the 'z' prefix and the version number in the
++    protocol and interface names are removed and the interface version number is
++    reset.
++  </description>
++
++  <interface name="zwp_surface_activation_control_manager_v1" version="1">
++    <description summary="manager for activation control">
++      This interface allows clients to create activation control objects
++      for their surfaces.
++    </description>
++
++    <request name="get_activation_control">
++      <description summary="create an activation control object for a surface">
++        Create an activation control object for the given surface.
++        This allows the client to control whether the surface should
++        automatically receive focus.
++      </description>
++      <arg name="id" type="new_id" interface="zwp_surface_activation_control_v1"/>
++      <arg name="surface" type="object" interface="wl_surface"/>
++    </request>
++
++    <request name="destroy" type="destructor">
++      <description summary="destroy the manager">
++        Destroy the activation control manager. This does not affect
++        any existing activation control objects.
++      </description>
++    </request>
++  </interface>
++
++  <interface name="zwp_surface_activation_control_v1" version="1">
++    <description summary="control activation behavior of a surface">
++      This interface allows a client to control whether a surface should
++      automatically receive input focus when it is mapped or when certain
++      events occur.
++    </description>
++
++    <request name="set_no_activate">
++      <description summary="prevent surface from automatically receiving focus">
++        Prevent this surface from automatically receiving input focus.
++        The surface can still be focused manually by the user or compositor,
++        but it will not steal focus when mapped or updated.
++
++        This setting persists until explicitly changed or the surface is destroyed.
++      </description>
++    </request>
++
++    <request name="set_activate_normal">
++      <description summary="restore normal activation behavior">
++        Restore normal activation behavior for this surface.
++        The surface will behave according to the compositor's default
++        focus policy.
++      </description>
++    </request>
++
++    <request name="destroy" type="destructor">
++      <description summary="destroy the activation control object">
++        Destroy the activation control object. The surface will revert
++        to normal activation behavior.
++      </description>
++    </request>
++  </interface>
++</protocol>
+diff --git a/ui/ozone/platform/wayland/BUILD.gn b/ui/ozone/platform/wayland/BUILD.gn
+index a4039cd2ed12ed2e95dc876582998e83a6e05ee4..457db4b094b77bc2e828c93a55ea4e17b698b0a6 100644
+--- a/ui/ozone/platform/wayland/BUILD.gn
++++ b/ui/ozone/platform/wayland/BUILD.gn
+@@ -253,6 +253,7 @@ source_set("wayland") {
+     "//third_party/wayland:wayland_util",
+     "//third_party/wayland-protocols:alpha_compositing_protocol",
+     "//third_party/wayland-protocols:bs_z_order_protocol",
++    "//third_party/wayland-protocols:surface_activation_protocol",
+     "//third_party/wayland-protocols:color_management_protocol",
+     "//third_party/wayland-protocols:content_type_protocol",
+     "//third_party/wayland-protocols:cursor_shape_protocol",
+diff --git a/ui/ozone/platform/wayland/common/wayland_object.cc b/ui/ozone/platform/wayland/common/wayland_object.cc
+index d4c5b9c27377367526c51b4f9a3c5aff84ffd755..c41ea06c427e7638893f253c18c47854a91e6159 100644
+--- a/ui/ozone/platform/wayland/common/wayland_object.cc
++++ b/ui/ozone/platform/wayland/common/wayland_object.cc
+@@ -25,6 +25,7 @@
+ #include <primary-selection-unstable-v1-client-protocol.h>
+ #include <relative-pointer-unstable-v1-client-protocol.h>
+ #include <single-pixel-buffer-v1-client-protocol.h>
++#include <surface-activation-unstable-v1-client-protocol.h>
+ #include <tablet-unstable-v2-client-protocol.h>
+ #include <text-input-extension-unstable-v1-client-protocol.h>
+ #include <text-input-unstable-v1-client-protocol.h>
+@@ -150,6 +151,8 @@ void (*ObjectTraits<wl_proxy>::deleter)(void*) = &wl_proxy_wrapper_destroy;
+ 
+ // For convenience, keep aphabetical order in this list.
+ IMPLEMENT_WAYLAND_OBJECT_TRAITS(bs_z_order_v1)
++IMPLEMENT_WAYLAND_OBJECT_TRAITS(zwp_surface_activation_control_manager_v1)
++IMPLEMENT_WAYLAND_OBJECT_TRAITS(zwp_surface_activation_control_v1)
+ IMPLEMENT_WAYLAND_OBJECT_TRAITS(gtk_primary_selection_device)
+ IMPLEMENT_WAYLAND_OBJECT_TRAITS(gtk_primary_selection_device_manager)
+ IMPLEMENT_WAYLAND_OBJECT_TRAITS(gtk_primary_selection_offer)
+diff --git a/ui/ozone/platform/wayland/common/wayland_object.h b/ui/ozone/platform/wayland/common/wayland_object.h
+index 1c8bcacf3176ca491a8c4682d9cb276eb3fa1f87..1fee0ae28b03346c9208edddc8ed841ff756d6e6 100644
+--- a/ui/ozone/platform/wayland/common/wayland_object.h
++++ b/ui/ozone/platform/wayland/common/wayland_object.h
+@@ -7,6 +7,7 @@
+ 
+ #include <memory>
+ #include <bs-z-order-unstable-v1-client-protocol.h>
++#include <surface-activation-unstable-v1-client-protocol.h>
+ 
+ #include "base/check.h"
+ #include "ui/ozone/platform/wayland/common/wayland.h"
+@@ -105,6 +106,8 @@ bool CanBind(const std::string& interface,
+ 
+ // For convenience, keep aphabetical order in this list.
+ DECLARE_WAYLAND_OBJECT_TRAITS(bs_z_order_v1)
++DECLARE_WAYLAND_OBJECT_TRAITS(zwp_surface_activation_control_manager_v1)
++DECLARE_WAYLAND_OBJECT_TRAITS(zwp_surface_activation_control_v1)
+ DECLARE_WAYLAND_OBJECT_TRAITS(gtk_primary_selection_device)
+ DECLARE_WAYLAND_OBJECT_TRAITS(gtk_primary_selection_device_manager)
+ DECLARE_WAYLAND_OBJECT_TRAITS(gtk_primary_selection_offer)
+diff --git a/ui/ozone/platform/wayland/host/wayland_connection.cc b/ui/ozone/platform/wayland/host/wayland_connection.cc
+index 6a6bebe3929ff2cc308695c6da3f8d8f3f2acf8f..623195c01c346a214b5ab358ac586e7577da5a53 100644
+--- a/ui/ozone/platform/wayland/host/wayland_connection.cc
++++ b/ui/ozone/platform/wayland/host/wayland_connection.cc
+@@ -9,6 +9,7 @@
+ #include <presentation-time-client-protocol.h>
+ #include <xdg-shell-client-protocol.h>
+ #include <bs-z-order-unstable-v1-client-protocol.h>
++#include <surface-activation-unstable-v1-client-protocol.h>
+ 
+ #include <cstdint>
+ #include <thread>
+@@ -82,6 +83,7 @@ namespace {
+ // The version bound will be the minimum of the value and the version
+ // advertised by the server.
+ constexpr uint32_t kMaxBsZOrderVersion = 1;
++constexpr uint32_t kMaxSurfaceActivationControlVersion = 1;
+ constexpr uint32_t kMaxCompositorVersion = 4;
+ constexpr uint32_t kMaxKeyboardExtensionVersion = 2;
+ constexpr uint32_t kMaxXdgShellVersion = 6;
+@@ -637,6 +639,18 @@ void WaylandConnection::HandleGlobal(void* data,
+       LOG(ERROR) << "Failed to bind to bs_z_order_v1 global";
+       return;
+     }
++  } else if (!connection->surface_activation_control_manager_v1_ &&
++             UNSAFE_TODO(strcmp(interface,
++                    "zwp_surface_activation_control_manager_v1")) == 0) {
++    connection->surface_activation_control_manager_v1_ =
++        wl::Bind<zwp_surface_activation_control_manager_v1>(
++            registry, name,
++            std::min(version, kMaxSurfaceActivationControlVersion));
++    if (!connection->surface_activation_control_manager_v1_) {
++      LOG(ERROR)
++          << "Failed to bind to zwp_surface_activation_control_manager_v1";
++      return;
++    }
+   } else if (!compositor_ &&
+              UNSAFE_TODO(strcmp(interface, "wl_compositor")) == 0) {
+     compositor_ = wl::Bind<wl_compositor>(
+diff --git a/ui/ozone/platform/wayland/host/wayland_connection.h b/ui/ozone/platform/wayland/host/wayland_connection.h
+index 88c319881565344bf5444b9723480d3525dcf5bc..c551894436b9275d79354c083807f0813462f274 100644
+--- a/ui/ozone/platform/wayland/host/wayland_connection.h
++++ b/ui/ozone/platform/wayland/host/wayland_connection.h
+@@ -93,6 +93,11 @@ class WaylandConnection {
+ 
+   bs_z_order_v1* bs_z_order() const { return bs_z_order_v1_.get(); }
+ 
++  zwp_surface_activation_control_manager_v1*
++  surface_activation_control_manager() const {
++    return surface_activation_control_manager_v1_.get();
++  }
++
+   wl_compositor* compositor() const { return compositor_.get(); }
+   // The server version of the compositor interface (might be higher than the
+   // version binded).
+@@ -399,6 +404,8 @@ class WaylandConnection {
+ 
+   uint32_t compositor_version_ = 0;
+   wl::Object<bs_z_order_v1> bs_z_order_v1_;
++  wl::Object<zwp_surface_activation_control_manager_v1>
++      surface_activation_control_manager_v1_;
+   wl::Object<wl_display> display_;
+   // `event_queue_` must be declared before `wrapped_display_`, so that the
+   // latter is destroyed first. This prevents libwayland warnings about the
+diff --git a/ui/ozone/platform/wayland/host/wayland_window.cc b/ui/ozone/platform/wayland/host/wayland_window.cc
+index b25154d2140883fbadb34ff2c7085f0d43548257..0847bb07db27e36478fea20d886c7d2d78d39110 100644
+--- a/ui/ozone/platform/wayland/host/wayland_window.cc
++++ b/ui/ozone/platform/wayland/host/wayland_window.cc
+@@ -4,6 +4,7 @@
+ 
+ #include "ui/ozone/platform/wayland/host/wayland_window.h"
+ 
++#include <surface-activation-unstable-v1-client-protocol.h>
+ #include <stdint.h>
+ #include <wayland-cursor.h>
+ 
+@@ -696,16 +697,6 @@ bool WaylandWindow::CanDispatchEvent(const PlatformEvent& event) {
+ uint32_t WaylandWindow::DispatchEvent(const PlatformEvent& native_event) {
+   Event* event = static_cast<Event*>(native_event);
+ 
+-  if (event->IsMouseEvent()) {
+-    // If it is mouse button event, set window as keyboard grabber.
+-    if (event->AsMouseEvent()->IsAnyButton() && activatable_) {
+-      connection_->window_manager()->GrabKeyboardEvents(this);
+-    }
+-  } else if (event->IsTouchEvent() && activatable_) {
+-    // If it is touch event, set window as keyboard grabber.
+-    connection_->window_manager()->GrabKeyboardEvents(this);
+-  }
+-
+   if (event->IsLocatedEvent()) {
+     auto* event_grabber =
+         connection_->window_manager()->located_events_grabber();
+@@ -771,9 +762,6 @@ bool WaylandWindow::CanAcceptEvent(const Event& event) {
+     DCHECK(event.target());
+   }
+ #endif
+-  if(event.IsKeyEvent()) {
+-    return true;
+-  }
+   return this == event.target();
+ }
+ 
+@@ -984,8 +972,22 @@ bool WaylandWindow::Initialize(PlatformWindowInitProperties properties) {
+                       state.window_scale * state.ui_scale)
+                       .size();
+ 
+-  if (activatable_) {
+-    connection_->window_manager()->GrabKeyboardEvents(this);
++  // Tell Weston not to give keyboard focus to non-activatable surfaces.
++  // Without this, clicking an unfocusable window causes Weston to send
++  // wl_keyboard.leave to the previously focused window, breaking keyboard
++  // input.
++  if (!activatable_) {
++    auto* manager = connection_->surface_activation_control_manager();
++    if (manager) {
++      surface_activation_control_ =
++          wl::Object<zwp_surface_activation_control_v1>(
++              zwp_surface_activation_control_manager_v1_get_activation_control(
++                  manager, root_surface_->surface()));
++      if (surface_activation_control_) {
++        zwp_surface_activation_control_v1_set_no_activate(
++            surface_activation_control_.get());
++      }
++    }
+   }
+ 
+   applied_state_ = state;
+diff --git a/ui/ozone/platform/wayland/host/wayland_window.h b/ui/ozone/platform/wayland/host/wayland_window.h
+index 3866c5632aaa751e84d5432f331e1bc50a79122f..be0d06da6a5d6748cfc44d8453469ae00b159949 100644
+--- a/ui/ozone/platform/wayland/host/wayland_window.h
++++ b/ui/ozone/platform/wayland/host/wayland_window.h
+@@ -725,6 +725,10 @@ class WaylandWindow : public PlatformWindow,
+ 
+   bool activatable_ = false;
+ 
++  // Wayland protocol object that prevents this surface from stealing keyboard
++  // focus when clicked (for non-activatable windows).
++  wl::Object<zwp_surface_activation_control_v1> surface_activation_control_;
++
+ #if DCHECK_IS_ON()
+   bool disable_null_target_dcheck_for_test_ = false;
+ #endif
+diff --git a/ui/ozone/platform/wayland/host/wayland_window_manager.cc b/ui/ozone/platform/wayland/host/wayland_window_manager.cc
+index 1444abb8f80761e1047f7b24dd68126e0c99f552..8cd0bf0545f77b1e1667adb8d7d33a099b898647 100644
+--- a/ui/ozone/platform/wayland/host/wayland_window_manager.cc
++++ b/ui/ozone/platform/wayland/host/wayland_window_manager.cc
+@@ -14,7 +14,6 @@
+ #include "ui/ozone/platform/wayland/host/wayland_window.h"
+ #include "ui/ozone/platform/wayland/host/wayland_window_drag_controller.h"
+ #include "ui/ozone/platform/wayland/host/wayland_window_observer.h"
+-#include "wayland_window_manager.h"
+ 
+ namespace ui {
+ 
+@@ -96,14 +95,6 @@ void WaylandWindowManager::UngrabLocatedEvents(WaylandWindow* window) {
+   old_grabber->OnWindowLostCapture();
+ }
+ 
+-void WaylandWindowManager::GrabKeyboardEvents(WaylandWindow* window) {
+-  keyboard_events_grabber_ = window;
+-}
+-
+-void WaylandWindowManager::UngrabKeyboardEvents(WaylandWindow* window) {
+-  if (keyboard_events_grabber_ == window)
+-    keyboard_events_grabber_ = nullptr;
+-}
+ 
+ WaylandWindow* WaylandWindowManager::GetWindow(
+     gfx::AcceleratedWidget widget) const {
+diff --git a/ui/ozone/platform/wayland/host/wayland_window_manager.h b/ui/ozone/platform/wayland/host/wayland_window_manager.h
+index 7f80aa78d5823742f946adaf95c474c26f44fd10..7735975074d667ab2b8ff13dc385bc0ec3432272 100644
+--- a/ui/ozone/platform/wayland/host/wayland_window_manager.h
++++ b/ui/ozone/platform/wayland/host/wayland_window_manager.h
+@@ -56,14 +56,6 @@ class WaylandWindowManager {
+     return located_events_grabber_;
+   }
+ 
+-  void GrabKeyboardEvents(WaylandWindow* event_grabber);
+-  void UngrabKeyboardEvents(WaylandWindow* event_grabber);
+-
+-  // Returns the keyboard event grabber.
+-  WaylandWindow* keyboard_events_grabber() const {
+-    return keyboard_events_grabber_;
+-  }
+-
+   // Returns a window found by |widget|.
+   WaylandWindow* GetWindow(gfx::AcceleratedWidget widget) const;
+ 
+@@ -170,7 +162,6 @@ class WaylandWindowManager {
+   std::unique_ptr<WaylandSubsurface> subsurface_recycle_cache_;
+ 
+   raw_ptr<WaylandWindow> located_events_grabber_ = nullptr;
+-  raw_ptr<WaylandWindow, DanglingUntriaged> keyboard_events_grabber_ = nullptr;
+ 
+   // Stores strictly monotonically increasing counter for allocating unique
+   // AccelerateWidgets.
