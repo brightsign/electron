@@ -1,0 +1,229 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Ray Smith <rsmith@brightsign.biz>
+Date: Tue, 23 Dec 2025 19:46:23 +0000
+Subject: os-20183: move z-order management to the compositor
+
+Z-order is now managed in the compositor so that HTML and non-HTML
+graphics widgets can be interspersed.
+
+diff --git a/third_party/wayland-protocols/BUILD.gn b/third_party/wayland-protocols/BUILD.gn
+index 183f54a9f01fa8ee190223af10b3f74bd6940d82..f21b5e32b766c30b16c7ab2e7ceb18101f5fb051 100644
+--- a/third_party/wayland-protocols/BUILD.gn
++++ b/third_party/wayland-protocols/BUILD.gn
+@@ -12,7 +12,7 @@ wayland_protocol("alpha_compositing_protocol") {
+ }
+ 
+ wayland_protocol("bs_z_order_protocol") {
+-  sources = [ "unstable/bs-z-order/bs-z-order-unstable-v1.xml" ]
++  sources = [ "unstable/bs-z-order/bs-z-order-unstable-v2.xml" ]
+ }
+ 
+ wayland_protocol("surface_activation_protocol") {
+diff --git a/third_party/wayland-protocols/unstable/bs-z-order/bs-z-order-unstable-v1.xml b/third_party/wayland-protocols/unstable/bs-z-order/bs-z-order-unstable-v1.xml
+deleted file mode 100644
+index da7ae7a6e20242d1593d5cfcc4bb41ba16f2e775..0000000000000000000000000000000000000000
+--- a/third_party/wayland-protocols/unstable/bs-z-order/bs-z-order-unstable-v1.xml
++++ /dev/null
+@@ -1,14 +0,0 @@
+-<protocol name="bs_z_order">
+-
+-  <interface name="bs_z_order_v1" version="1">
+-    <request name="set_z_index">
+-      <arg name="surface" type="object" interface="wl_surface" />
+-      <arg name="z_index" type="int" />
+-    </request>
+-    <request name="set_background_color">
+-      <arg name="output" type="object" interface="wl_output" />
+-      <arg name="background_color" type="uint" />
+-    </request>
+-  </interface>
+-
+-</protocol>
+diff --git a/third_party/wayland-protocols/unstable/bs-z-order/bs-z-order-unstable-v2.xml b/third_party/wayland-protocols/unstable/bs-z-order/bs-z-order-unstable-v2.xml
+new file mode 100644
+index 0000000000000000000000000000000000000000..f961a47c67e00ec80e17cb08d4167ac2c07c74d9
+--- /dev/null
++++ b/third_party/wayland-protocols/unstable/bs-z-order/bs-z-order-unstable-v2.xml
+@@ -0,0 +1,31 @@
++<protocol name="bs_z_order">
++
++  <interface name="bs_z_order_v2" version="1">
++    <enum name="role">
++      <entry name="none" value="0" />
++      <entry name="graphics" value="1" />
++      <entry name="video" value="2" />
++      <entry name="ticker" value="3" />
++      <entry name="virtual_keyboard" value="4" />
++    </enum>
++
++    <request name="set_role">
++      <arg name="surface" type="object" interface="wl_surface" />
++      <arg name="role" type="uint" enum="role" />
++    </request>
++
++    <request name="raise">
++      <arg name="surface" type="object" interface="wl_surface" />
++    </request>
++
++    <request name="lower">
++      <arg name="surface" type="object" interface="wl_surface" />
++    </request>
++
++    <request name="set_z_index">
++      <arg name="surface" type="object" interface="wl_surface" />
++      <arg name="z_index" type="int" />
++    </request>
++  </interface>
++
++</protocol>
+diff --git a/ui/base/ui_base_types.h b/ui/base/ui_base_types.h
+index 73d32133228330684b35ef73bf4364395bcf93d1..183adefccc96302ef8ba3487148f724cdeca01cd 100644
+--- a/ui/base/ui_base_types.h
++++ b/ui/base/ui_base_types.h
+@@ -121,6 +121,12 @@ enum class ZOrderLevel {
+   // situations where window modality (as in ModalType) cannot or should not be
+   // used.
+   kSecuritySurface,
++
++  // TODO: BrightSign hacks - need to be turned into function calls and plumbed all the way through once they're stable
++  kRaise = 566,
++  kLower = 565,
++  kRoleVirtualKeyboard = 567,
++  kRoleGraphics = 568,
+ };
+ 
+ // TODO(varunjain): Remove MENU_SOURCE_NONE (crbug.com/250964)
+diff --git a/ui/ozone/platform/wayland/common/wayland_object.cc b/ui/ozone/platform/wayland/common/wayland_object.cc
+index fc177b53583e0fe6f7a432712020c21729b53b49..e1a38c7bb2b37390806389a3997472851b0a9b9b 100644
+--- a/ui/ozone/platform/wayland/common/wayland_object.cc
++++ b/ui/ozone/platform/wayland/common/wayland_object.cc
+@@ -191,7 +191,7 @@ void (*ObjectTraits<wl_proxy>::deleter)(void*) = &wl_proxy_wrapper_destroy;
+ // For convenience, keep aphabetical order in this list.
+ IMPLEMENT_WAYLAND_OBJECT_TRAITS(augmented_surface)
+ IMPLEMENT_WAYLAND_OBJECT_TRAITS(augmented_sub_surface)
+-IMPLEMENT_WAYLAND_OBJECT_TRAITS(bs_z_order_v1)
++IMPLEMENT_WAYLAND_OBJECT_TRAITS(bs_z_order_v2)
+ IMPLEMENT_WAYLAND_OBJECT_TRAITS(zwp_surface_activation_control_manager_v1)
+ IMPLEMENT_WAYLAND_OBJECT_TRAITS(zwp_surface_activation_control_v1)
+ IMPLEMENT_WAYLAND_OBJECT_TRAITS(gtk_primary_selection_device)
+diff --git a/ui/ozone/platform/wayland/common/wayland_object.h b/ui/ozone/platform/wayland/common/wayland_object.h
+index 475c85c2edf062b5b91146a4785aacbbff73cfc9..dca5575f330dd6de5853a1be7dbb09f7d7a030f9 100644
+--- a/ui/ozone/platform/wayland/common/wayland_object.h
++++ b/ui/ozone/platform/wayland/common/wayland_object.h
+@@ -6,7 +6,7 @@
+ #define UI_OZONE_PLATFORM_WAYLAND_COMMON_WAYLAND_OBJECT_H_
+ 
+ #include <memory>
+-#include <bs-z-order-unstable-v1-client-protocol.h>
++#include <bs-z-order-unstable-v2-client-protocol.h>
+ #include <surface-activation-unstable-v1-client-protocol.h>
+ 
+ #include "base/check.h"
+@@ -107,7 +107,7 @@ bool CanBind(const std::string& interface,
+ // For convenience, keep aphabetical order in this list.
+ DECLARE_WAYLAND_OBJECT_TRAITS(augmented_surface)
+ DECLARE_WAYLAND_OBJECT_TRAITS(augmented_sub_surface)
+-DECLARE_WAYLAND_OBJECT_TRAITS(bs_z_order_v1)
++DECLARE_WAYLAND_OBJECT_TRAITS(bs_z_order_v2)
+ DECLARE_WAYLAND_OBJECT_TRAITS(zwp_surface_activation_control_manager_v1)
+ DECLARE_WAYLAND_OBJECT_TRAITS(zwp_surface_activation_control_v1)
+ DECLARE_WAYLAND_OBJECT_TRAITS(gtk_primary_selection_device)
+diff --git a/ui/ozone/platform/wayland/host/wayland_connection.cc b/ui/ozone/platform/wayland/host/wayland_connection.cc
+index 043c561b34bd8e4b2468aaf905e9a6e1babebdbc..71583bb73877137343d5bfdd1a210dff089debff 100644
+--- a/ui/ozone/platform/wayland/host/wayland_connection.cc
++++ b/ui/ozone/platform/wayland/host/wayland_connection.cc
+@@ -8,7 +8,7 @@
+ #include <extended-drag-unstable-v1-client-protocol.h>
+ #include <presentation-time-client-protocol.h>
+ #include <xdg-shell-client-protocol.h>
+-#include <bs-z-order-unstable-v1-client-protocol.h>
++#include <bs-z-order-unstable-v2-client-protocol.h>
+ #include <surface-activation-unstable-v1-client-protocol.h>
+ 
+ #include <algorithm>
+@@ -554,12 +554,12 @@ void WaylandConnection::HandleGlobal(void* data,
+   auto factory_it = global_object_factories_.find(interface);
+   if (factory_it != global_object_factories_.end()) {
+     (*factory_it->second)(this, registry, name, interface, version);
+-  } else if (!connection->bs_z_order_v1_ &&
+-             strcmp(interface, "bs_z_order_v1") == 0) {
+-    connection->bs_z_order_v1_ = wl::Bind<bs_z_order_v1>(
++  } else if (!connection->bs_z_order_v2_ &&
++             strcmp(interface, "bs_z_order_v2") == 0) {
++    connection->bs_z_order_v2_ = wl::Bind<bs_z_order_v2>(
+         registry, name, std::min(version, kMaxBsZOrderVersion));
+-    if (!connection->bs_z_order_v1_) {
+-      LOG(ERROR) << "Failed to bind to bs_z_order_v1 global";
++    if (!connection->bs_z_order_v2_) {
++      LOG(ERROR) << "Failed to bind to bs_z_order_v2 global";
+       return;
+     }
+   } else if (!connection->surface_activation_control_manager_v1_ &&
+diff --git a/ui/ozone/platform/wayland/host/wayland_connection.h b/ui/ozone/platform/wayland/host/wayland_connection.h
+index 490c0946c3077fab704e207cf19c100b2322dcfa..6f5e55f03a2e71671c7d2c7e8c50b4aaa5796df8 100644
+--- a/ui/ozone/platform/wayland/host/wayland_connection.h
++++ b/ui/ozone/platform/wayland/host/wayland_connection.h
+@@ -110,7 +110,7 @@ class WaylandConnection {
+   // error. Called by WaylandEventWatcher.
+   void SetShutdownCb(base::OnceCallback<void()> shutdown_cb);
+ 
+-  bs_z_order_v1* bs_z_order() const { return bs_z_order_v1_.get(); }
++  bs_z_order_v2* bs_z_order() const { return bs_z_order_v2_.get(); }
+ 
+   zwp_surface_activation_control_manager_v1*
+   surface_activation_control_manager() const {
+@@ -438,7 +438,7 @@ class WaylandConnection {
+   base::flat_map<std::string, wl::GlobalObjectFactory> global_object_factories_;
+ 
+   uint32_t compositor_version_ = 0;
+-  wl::Object<bs_z_order_v1> bs_z_order_v1_;
++  wl::Object<bs_z_order_v2> bs_z_order_v2_;
+   wl::Object<zwp_surface_activation_control_manager_v1>
+       surface_activation_control_manager_v1_;
+   wl::Object<wl_display> display_;
+diff --git a/ui/ozone/platform/wayland/host/xdg_toplevel_wrapper_impl.cc b/ui/ozone/platform/wayland/host/xdg_toplevel_wrapper_impl.cc
+index dd66fd2e2a635f42978c895b66bc5983b1d319f6..9e48717f37fc479de2d51ce6f4037d556aea8cac 100644
+--- a/ui/ozone/platform/wayland/host/xdg_toplevel_wrapper_impl.cc
++++ b/ui/ozone/platform/wayland/host/xdg_toplevel_wrapper_impl.cc
+@@ -6,7 +6,7 @@
+ 
+ #include <aura-shell-client-protocol.h>
+ #include <xdg-decoration-unstable-v1-client-protocol.h>
+-#include <bs-z-order-unstable-v1-client-protocol.h>
++#include <bs-z-order-unstable-v2-client-protocol.h>
+ 
+ #include "base/logging.h"
+ #include "base/notreached.h"
+@@ -78,6 +78,8 @@ zaura_toplevel_z_order_level ToZauraToplevelZOrderLevel(
+       return ZAURA_TOPLEVEL_Z_ORDER_LEVEL_FLOATING_UI_ELEMENT;
+     case ZOrderLevel::kSecuritySurface:
+       return ZAURA_TOPLEVEL_Z_ORDER_LEVEL_SECURITY_SURFACE;
++    default: // TODO: BrightSign hack. These ZOrderLevels won't exist.
++      abort();
+   }
+ 
+   NOTREACHED();
+@@ -580,7 +582,22 @@ void XDGToplevelWrapperImpl::SetZOrder(ZOrderLevel z_order) {
+   }
+   else if (!aura_toplevel_ && connection_->bs_z_order()) {
+     // The z-index we get if we are using xdg on a BS device is an absolute value.
+-    bs_z_order_v1_set_z_index(connection_->bs_z_order(), wayland_window_->root_surface()->surface(), (int)z_order);
++    switch (z_order) {
++      case ZOrderLevel::kRaise:
++        bs_z_order_v2_raise(connection_->bs_z_order(), wayland_window_->root_surface()->surface());
++        break;
++      case ZOrderLevel::kLower:
++        bs_z_order_v2_lower(connection_->bs_z_order(), wayland_window_->root_surface()->surface());
++        break;
++      case ZOrderLevel::kRoleVirtualKeyboard:
++        bs_z_order_v2_set_role(connection_->bs_z_order(), wayland_window_->root_surface()->surface(), BS_Z_ORDER_V2_ROLE_VIRTUAL_KEYBOARD);
++        break;
++      case ZOrderLevel::kRoleGraphics:
++        bs_z_order_v2_set_role(connection_->bs_z_order(), wayland_window_->root_surface()->surface(), BS_Z_ORDER_V2_ROLE_GRAPHICS);
++        break;
++      default:
++        abort();
++    }
+   }
+ }
+ 
