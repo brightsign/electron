@@ -1,0 +1,75 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Ray Smith <rsmith@brightsign.biz>
+Date: Mon, 9 Feb 2026 13:07:52 +0000
+Subject: nexus_window: Add full z-order support OS-20183
+
+HTML and other graphics widget z-ordering is now handled in the
+compositor. Plumb through the raise/lower commands to the compositor.
+
+Since the virtual keyboard is always on top, we just have to set its
+special role and the compositor ensures it appears in the right place in
+the z-order.
+
+diff --git a/ui/ozone/platform/nexus/nexus_window.cc b/ui/ozone/platform/nexus/nexus_window.cc
+index ee43b7719418c2a080f37f09afa35bb92e3b4538..5c4e45df8465a941996873626ee288054bcc0117 100644
+--- a/ui/ozone/platform/nexus/nexus_window.cc
++++ b/ui/ozone/platform/nexus/nexus_window.cc
+@@ -55,9 +55,6 @@ const NEXUS_BlendEquation ShowSourceColor = {
+     NEXUS_BlendFactor_eZero
+ };
+ 
+-// Define z-order as constant
+-const int kZOrder = 100;
+-
+ namespace ui {
+ 
+ NexusWindow::NexusWindow(PlatformWindowDelegate* delegate,
+@@ -81,7 +78,6 @@ NexusWindow::NexusWindow(PlatformWindowDelegate* delegate,
+   win_info.y = bounds_.y();
+   win_info.width = bounds_.width();
+   win_info.height = bounds_.height();
+-  win_info.zOrder = kZOrder;
+   win_info.colorBlend = HideSourceColor;
+   win_info.alphaBlend = HideSourceAlpha;
+   native_window_ = NXPL_CreateNativeWindowEXT(&win_info);
+@@ -505,4 +501,28 @@ void NexusWindow::SetOpacity(float opacity) {
+   }
+ }
+ 
++void NexusWindow::SetZOrderLevel(ZOrderLevel order) {
++  BS_DEBUG( "%s order: %d\n", __PRETTY_FUNCTION__, static_cast<int>(order));
++
++  NXPL_NativeWindowInfoEXT win_info;
++  NXPL_GetNativeWindowInfoEXT(native_window_, &win_info);
++  switch (order) {
++    case ZOrderLevel::kRaise:
++      win_info.roleAction = NEXUS_BrightSignSurfaceAction_eRaise;
++      break;
++    case ZOrderLevel::kLower:
++      win_info.roleAction = NEXUS_BrightSignSurfaceAction_eLower;
++      break;
++    case ZOrderLevel::kRoleGraphics:
++      win_info.role = NEXUS_BrightSignSurfaceRole_eGraphics;
++      break;
++    case ZOrderLevel::kRoleVirtualKeyboard:
++      win_info.role = NEXUS_BrightSignSurfaceRole_eVirtualKeyboard;
++      break;
++    default:
++      break;
++  }
++  NXPL_UpdateNativeWindowEXT(native_window_, &win_info);
++}
++
+ }  // namespace ui
+diff --git a/ui/ozone/platform/nexus/nexus_window.h b/ui/ozone/platform/nexus/nexus_window.h
+index 9b3a965a8a697f1c45aa00dd94f914d362466c6b..3cf0278c0986ef07a3204e611bb42235093ceddb 100644
+--- a/ui/ozone/platform/nexus/nexus_window.h
++++ b/ui/ozone/platform/nexus/nexus_window.h
+@@ -79,6 +79,7 @@ class NexusWindow : public PlatformWindow, public PlatformEventDispatcher {
+   virtual bool IsTranslucentWindowOpacitySupported() const override;
+   virtual bool ShouldWindowContentsBeTransparent() const override;
+   virtual void SetOpacity(float opacity) override;
++  virtual void SetZOrderLevel(ZOrderLevel order) override;
+ 
+   void UpdateBounds(const gfx::Rect& bounds);
+   void OnMouseEnter();

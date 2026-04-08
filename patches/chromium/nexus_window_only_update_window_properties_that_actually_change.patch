@@ -1,0 +1,75 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Ray Smith <rsmith@brightsign.biz>
+Date: Mon, 9 Feb 2026 12:55:09 +0000
+Subject: nexus_window: Only update window properties that actually change
+
+Now that NXPL_GetNativeWindowInfoEXT works properly, we don't need to
+re-apply bounds, zorder etc. in unrelated functions.
+
+diff --git a/ui/ozone/platform/nexus/nexus_window.cc b/ui/ozone/platform/nexus/nexus_window.cc
+index 5c4e45df8465a941996873626ee288054bcc0117..e110d303339d823b235fc46bf85e05097049196c 100644
+--- a/ui/ozone/platform/nexus/nexus_window.cc
++++ b/ui/ozone/platform/nexus/nexus_window.cc
+@@ -106,12 +106,7 @@ void NexusWindow::Show(bool inactive) {
+   BS_DEBUG( "%s\n", __PRETTY_FUNCTION__);
+   visible_ = true;
+   NXPL_NativeWindowInfoEXT   win_info;
+-  NXPL_GetDefaultNativeWindowInfoEXT(&win_info);
+-  win_info.x = bounds_.x();
+-  win_info.y = bounds_.y();
+-  win_info.width = bounds_.width();
+-  win_info.height = bounds_.height();
+-  win_info.zOrder = kZOrder;
++  NXPL_GetNativeWindowInfoEXT(native_window_, &win_info);
+ 
+   // Apply current opacity when showing
+   if (opacity_ == 1.0f) {
+@@ -149,12 +144,7 @@ void NexusWindow::Hide() {
+   BS_DEBUG( "%s\n", __PRETTY_FUNCTION__);
+   visible_ = false;
+   NXPL_NativeWindowInfoEXT   win_info;
+-  NXPL_GetDefaultNativeWindowInfoEXT(&win_info);
+-  win_info.x = bounds_.x();
+-  win_info.y = bounds_.y();
+-  win_info.width = bounds_.width();
+-  win_info.height = bounds_.height();
+-  win_info.zOrder = kZOrder;
++  NXPL_GetNativeWindowInfoEXT(native_window_, &win_info);
+   win_info.colorBlend = HideSourceColor;
+   win_info.alphaBlend = HideSourceAlpha;
+   NXPL_UpdateNativeWindowEXT(native_window_, &win_info);
+@@ -196,19 +186,11 @@ void NexusWindow::SetBoundsInPixels(const gfx::Rect& bounds) {
+   if (adjusted_bounds != bounds_)
+   {
+     NXPL_NativeWindowInfoEXT   win_info;
+-    NXPL_GetDefaultNativeWindowInfoEXT(&win_info);
++    NXPL_GetNativeWindowInfoEXT(native_window_, &win_info);
+     win_info.x = adjusted_bounds.x();
+     win_info.y = adjusted_bounds.y();
+     win_info.width = adjusted_bounds.width();
+     win_info.height = adjusted_bounds.height();
+-    win_info.zOrder = kZOrder;
+-    if (!visible_ ) {
+-      win_info.colorBlend = HideSourceColor;
+-      win_info.alphaBlend = HideSourceAlpha;
+-    }
+-    else {
+-      win_info.colorBlend = ShowSourceColor;
+-    }
+     NXPL_UpdateNativeWindowEXT(native_window_, &win_info);
+ 
+     bounds_ = adjusted_bounds;
+@@ -455,12 +437,7 @@ void NexusWindow::SetOpacity(float opacity) {
+   // Update the window with new opacity settings
+   if (native_window_) {
+     NXPL_NativeWindowInfoEXT win_info;
+-    NXPL_GetDefaultNativeWindowInfoEXT(&win_info);
+-    win_info.x = bounds_.x();
+-    win_info.y = bounds_.y();
+-    win_info.width = bounds_.width();
+-    win_info.height = bounds_.height();
+-    win_info.zOrder = kZOrder;
++    NXPL_GetNativeWindowInfoEXT(native_window_, &win_info);
+ 
+     if (!visible_ || opacity_ == 0.0f) {
+       // Hidden or fully transparent
