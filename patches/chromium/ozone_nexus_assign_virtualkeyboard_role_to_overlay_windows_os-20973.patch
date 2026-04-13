@@ -1,0 +1,38 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Caner Altinbasak <cal@brightsign.biz>
+Date: Mon, 13 Apr 2026 09:37:51 +0100
+Subject: ozone/nexus: Assign VirtualKeyboard role to overlay windows OS-20973
+
+Tooltip, popup, and menu windows were created without a Nexus surface
+role (eNone). After the SetZOrderLevel changes gave the main window a
+Graphics role, libbscompositor's role-based z-ordering placed the
+role-less overlay windows behind the graphics surface.
+
+Fix by assigning NEXUS_BrightSignSurfaceRole_eVirtualKeyboard to
+tooltip, popup, and menu windows at creation time. In the compositor's
+arrangement order (video > graphics > subtitles > ticker > virtual
+keyboard > cursor), this ensures overlays appear above the main
+graphics content.
+
+diff --git a/ui/ozone/platform/nexus/nexus_window.cc b/ui/ozone/platform/nexus/nexus_window.cc
+index e110d303339d823b235fc46bf85e05097049196c..e1a012d9cf12b1d1d520a4d323fe9978140d6a4c 100644
+--- a/ui/ozone/platform/nexus/nexus_window.cc
++++ b/ui/ozone/platform/nexus/nexus_window.cc
+@@ -80,6 +80,17 @@ NexusWindow::NexusWindow(PlatformWindowDelegate* delegate,
+   win_info.height = bounds_.height();
+   win_info.colorBlend = HideSourceColor;
+   win_info.alphaBlend = HideSourceAlpha;
++
++  // Overlay window types (tooltips, popups, menus) need a role that sorts
++  // above graphics in the Nexus surface compositor's role-based z-ordering.
++  // Without a role they remain as eNone and get stuck behind role-bearing
++  // surfaces like the main graphics window.
++  if (properties.type == PlatformWindowType::kTooltip ||
++      properties.type == PlatformWindowType::kPopup ||
++      properties.type == PlatformWindowType::kMenu) {
++    win_info.role = NEXUS_BrightSignSurfaceRole_eVirtualKeyboard;
++  }
++
+   native_window_ = NXPL_CreateNativeWindowEXT(&win_info);
+ 
+   activatable_ = properties.activatable;
