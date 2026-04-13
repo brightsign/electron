@@ -1,7 +1,7 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Caner Altinbasak <cal@brightsign.biz>
 Date: Mon, 28 Apr 2025 14:16:54 +0100
-Subject: fix(ozone-nexus): Fix touch screen resolution  OS-19061
+Subject: fix(ozone-nexus): Fix touch screen resolution OS-19061
 
 DeviceDataManager should be configured with touch coordinates to
 display coordinates transform. This patch does the necassary
