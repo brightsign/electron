@@ -1,0 +1,35 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Tariq Bashir <tbashir@brightsign.biz>
+Date: Tue, 14 Apr 2026 16:07:19 +0100
+Subject: Brightsign: avoid transparent flash when restoring hidden windows
+ OS-20603
+
+When opacity is set to 0, stop applying 0-opacity to the Aura content layer
+and only update the platform window opacity.
+
+Setting the Aura layer to transparent makes the GPU compositor produce a
+transparent buffer. With immediate alpha commits, that stale transparent
+buffer can be briefly shown when the window is made visible again.
+
+Keep applying Aura layer opacity for non-zero values so partial transparency
+continues to render correctly.
+
+diff --git a/ui/views/widget/desktop_aura/desktop_window_tree_host_platform.cc b/ui/views/widget/desktop_aura/desktop_window_tree_host_platform.cc
+index 744c3cce9a65c75d2b802fb61c643c82018f0ab8..94e749bdd051a97c8fcfb0fb8876dea875b93c2e 100644
+--- a/ui/views/widget/desktop_aura/desktop_window_tree_host_platform.cc
++++ b/ui/views/widget/desktop_aura/desktop_window_tree_host_platform.cc
+@@ -757,7 +757,13 @@ bool DesktopWindowTreeHostPlatform::IsFullscreen() const {
+ }
+ 
+ void DesktopWindowTreeHostPlatform::SetOpacity(float opacity) {
+-  GetContentWindow()->layer()->SetOpacity(opacity);
++  // When hiding (opacity 0), don't set the Aura compositor layer opacity.
++  // That causes the GPU compositor to render transparent buffer content,
++  // which results in a transparent frame flash when re-shown because the
++  // immediate wayland alpha commit shows the stale transparent buffer.
++  // For non-zero opacity, set both so partial transparency renders correctly.
++  if (opacity > 0.0f)
++    GetContentWindow()->layer()->SetOpacity(opacity);
+   platform_window()->SetOpacity(opacity);
+ }
+ 
