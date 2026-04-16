@@ -1,0 +1,67 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Tariq Bashir <tbashir@brightsign.biz>
+Date: Thu, 16 Apr 2026 17:05:18 +0100
+Subject: Brightsign nexus fix window opacity handling for show/hide
+ transparency
+
+Fix two issues with NexusWindow opacity handling:
+
+1. Show() unconditionally applied ShowSourceColor blend equations,
+   overwriting a prior SetOpacity(0) call. This caused BrowserWindows
+   created with opacity 0 to be visible on Nexus. Show() now checks
+   the current opacity_ and applies HideSourceColor/HideSourceAlpha
+   when opacity is 0.
+
+2. HideSourceColor/HideSourceAlpha used eInverseSourceAlpha for the
+   destination blend factor. When the source buffer contained opaque
+   pixels (alpha=1), this zeroed out the destination (1-1=0), producing
+   black instead of transparency. Changed to eOne so the destination
+   is fully preserved when the source is hidden, allowing windows below
+   to show through.
+
+diff --git a/ui/ozone/platform/nexus/nexus_window.cc b/ui/ozone/platform/nexus/nexus_window.cc
+index e110d303339d823b235fc46bf85e05097049196c..2f3a01cde207533795dcee956e9e8b5660f5bfad 100644
+--- a/ui/ozone/platform/nexus/nexus_window.cc
++++ b/ui/ozone/platform/nexus/nexus_window.cc
+@@ -30,7 +30,7 @@ const NEXUS_BlendEquation HideSourceColor = {
+     NEXUS_BlendFactor_eZero,
+     false,
+     NEXUS_BlendFactor_eDestinationColor,
+-    NEXUS_BlendFactor_eInverseSourceAlpha,
++    NEXUS_BlendFactor_eOne,
+     false,
+     NEXUS_BlendFactor_eZero
+ };
+@@ -40,7 +40,7 @@ const NEXUS_BlendEquation HideSourceAlpha = {
+     NEXUS_BlendFactor_eZero,
+     false,
+     NEXUS_BlendFactor_eDestinationAlpha,
+-    NEXUS_BlendFactor_eInverseSourceAlpha,
++    NEXUS_BlendFactor_eOne,
+     false,
+     NEXUS_BlendFactor_eZero
+ };
+@@ -108,8 +108,12 @@ void NexusWindow::Show(bool inactive) {
+   NXPL_NativeWindowInfoEXT   win_info;
+   NXPL_GetNativeWindowInfoEXT(native_window_, &win_info);
+ 
+-  // Apply current opacity when showing
+-  if (opacity_ == 1.0f) {
++  // Respect current opacity - if SetOpacity(0) was called before Show(),
++  // keep the window hidden rather than overwriting with ShowSourceColor.
++  if (opacity_ == 0.0f) {
++    win_info.colorBlend = HideSourceColor;
++    win_info.alphaBlend = HideSourceAlpha;
++  } else if (opacity_ == 1.0f) {
+     // Fully opaque
+     win_info.colorBlend = ShowSourceColor;
+     NEXUS_BlendEquation showSourceAlpha = {
+@@ -123,7 +127,7 @@ void NexusWindow::Show(bool inactive) {
+     };
+     win_info.alphaBlend = showSourceAlpha;
+   } else {
+-    // Use current opacity value
++    // Partially transparent
+     win_info.colorBlend = ShowSourceColor;
+     NEXUS_BlendEquation blendAlpha = {
+       NEXUS_BlendFactor_eSourceAlpha,
