@@ -15,8 +15,19 @@ applied in the same repaint cycle.
 This avoids stale subsurface opacity until a later GPU frame and improves
 show/hide coordination across related surfaces.
 
+In order to ensure that the first frame displayed after calling Show is
+not transparent a separate patch has been added to change the Aura compositor
+layer opacity to always be 1.0. I.e. we are now completely controlling window
+opacity through the Wayland surface. PlatformWindow::SetOpacity will get called
+with the Aura window compositor opacity (i.e. with 1.0 and not the requested
+opacity) when there is a compositor update and we ignore this by removing the
+updates in WaylandSurface::ApplyPendingState. The only way to update the window
+opacity is through the WaylandToplevelWindow::SetOpacity call.
+
+get called when an html page update occurs
+
 diff --git a/ui/ozone/platform/wayland/host/wayland_surface.cc b/ui/ozone/platform/wayland/host/wayland_surface.cc
-index 26ff20d490ac34c20fcf86e2daf03ae87ac32201..c8c769433c0501da6241c3b13f5b20fa9b124705 100644
+index 26ff20d490ac34c20fcf86e2daf03ae87ac32201..82d62383377afd4b6d839cf481eae2d4a0c6be95 100644
 --- a/ui/ozone/platform/wayland/host/wayland_surface.cc
 +++ b/ui/ozone/platform/wayland/host/wayland_surface.cc
 @@ -308,6 +308,26 @@ void WaylandSurface::Commit(bool flush) {
@@ -46,6 +57,26 @@ index 26ff20d490ac34c20fcf86e2daf03ae87ac32201..c8c769433c0501da6241c3b13f5b20fa
  void WaylandSurface::set_surface_buffer_scale(float scale) {
    pending_state_.buffer_scale_float = scale;
  
+@@ -516,19 +536,6 @@ void WaylandSurface::ApplyPendingState() {
+     wl_surface_set_buffer_transform(surface_.get(), wl_transform);
+   }
+ 
+-  if (pending_state_.opacity != state_.opacity) {
+-    DCHECK(blending());
+-    zcr_blending_v1_set_alpha(blending(),
+-                              wl_fixed_from_double(pending_state_.opacity));
+-  }
+-  if (pending_state_.use_blending != state_.use_blending) {
+-    DCHECK(blending());
+-    zcr_blending_v1_set_blending(blending(),
+-                                 pending_state_.use_blending
+-                                     ? ZCR_BLENDING_V1_BLENDING_EQUATION_PREMULT
+-                                     : ZCR_BLENDING_V1_BLENDING_EQUATION_NONE);
+-  }
+-
+   if (pending_state_.priority_hint != state_.priority_hint) {
+     DCHECK(overlay_priority_surface());
+     overlay_prioritized_surface_set_overlay_priority(
 diff --git a/ui/ozone/platform/wayland/host/wayland_surface.h b/ui/ozone/platform/wayland/host/wayland_surface.h
 index fe78f9a94b153ff2398a74d63b617095339ba789..4cdca47edc8cc7314c50cb47d869e62b7f4f18e1 100644
 --- a/ui/ozone/platform/wayland/host/wayland_surface.h
