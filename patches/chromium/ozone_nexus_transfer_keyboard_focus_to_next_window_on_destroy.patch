@@ -1,0 +1,53 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Caner Altinbasak <cal@brightsign.biz>
+Date: Mon, 20 Apr 2026 10:15:20 +0100
+Subject: ozone/nexus: Transfer keyboard focus to next window on destroy
+
+When the topmost focused window is destroyed, keyboard_grabber_ was
+reset to kNullAcceleratedWidget with no fallback, causing all subsequent
+keyboard events to be silently dropped until a mouse click or touch
+reassigned focus.
+
+Fix RemoveWindow() to iterate the remaining windows in reverse order
+(topmost first) and transfer keyboard focus to the first activatable
+window. Also call Activate() on the new focus recipient so its delegate
+is notified via OnActivationChanged(true).
+
+Add NexusWindow::IsActivatable() accessor to support the check from
+the window manager.
+
+diff --git a/ui/ozone/platform/nexus/nexus_window.h b/ui/ozone/platform/nexus/nexus_window.h
+index 3cf0278c0986ef07a3204e611bb42235093ceddb..517122ba6bd6b921e54049682f3021973f464cc7 100644
+--- a/ui/ozone/platform/nexus/nexus_window.h
++++ b/ui/ozone/platform/nexus/nexus_window.h
+@@ -84,6 +84,7 @@ class NexusWindow : public PlatformWindow, public PlatformEventDispatcher {
+   void UpdateBounds(const gfx::Rect& bounds);
+   void OnMouseEnter();
+   void* GetNative() {return native_window_;}
++  bool IsActivatable() const { return activatable_; }
+ 
+   // PlatformEventDispatcher implementation:
+   bool CanDispatchEvent(const PlatformEvent& event) override;
+diff --git a/ui/ozone/platform/nexus/nexus_window_manager.cc b/ui/ozone/platform/nexus/nexus_window_manager.cc
+index 1bd9b271f35fa7445e377778c2c23e4393325527..ae5e7ee34f7e6eb4ab37f4aa3c5fa81b22bb2dae 100644
+--- a/ui/ozone/platform/nexus/nexus_window_manager.cc
++++ b/ui/ozone/platform/nexus/nexus_window_manager.cc
+@@ -41,8 +41,17 @@ void NexusWindowManager::RemoveWindow(gfx::AcceleratedWidget widget,
+   if (event_grabber_ == widget)
+     event_grabber_ = gfx::kNullAcceleratedWidget;
+ 
+-  if (keyboard_grabber_ == widget)
++  if (keyboard_grabber_ == widget) {
+     keyboard_grabber_ = gfx::kNullAcceleratedWidget;
++    // Transfer keyboard focus to the next topmost activatable window.
++    for (auto it = window_map_.rbegin(); it != window_map_.rend(); ++it) {
++      if (it->second->IsActivatable()) {
++        keyboard_grabber_ = it->first;
++        it->second->Activate();
++        break;
++      }
++    }
++  }
+ }
+ 
+ NexusWindow* NexusWindowManager::GetWindow(gfx::AcceleratedWidget widget) {
