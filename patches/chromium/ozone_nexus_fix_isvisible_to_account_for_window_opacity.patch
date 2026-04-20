@@ -1,0 +1,50 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Caner Altinbasak <cal@brightsign.biz>
+Date: Mon, 20 Apr 2026 09:30:05 +0100
+Subject: ozone/nexus: Fix IsVisible() to account for window opacity
+
+Windows with zero opacity (e.g. the virtual keyboard overlay when hidden)
+were still reporting as visible because Show() unconditionally sets
+visible_=true regardless of the current opacity. This caused the
+transparent keyboard window to intercept touch events meant for the
+underlying HTML widget on the Nexus platform.
+
+Fix IsVisible() to return visible_ && opacity_ > 0.0f so that
+zero-opacity windows are correctly treated as invisible for event
+dispatch in both CanDispatchEvent() and GetWindowAt().
+
+diff --git a/ui/ozone/platform/nexus/nexus_window.cc b/ui/ozone/platform/nexus/nexus_window.cc
+index e110d303339d823b235fc46bf85e05097049196c..91c9fc3d44a967c65fc05e2601b223979ddbbf17 100644
+--- a/ui/ozone/platform/nexus/nexus_window.cc
++++ b/ui/ozone/platform/nexus/nexus_window.cc
+@@ -103,7 +103,7 @@ NexusWindow::~NexusWindow() {
+ 
+ 
+ void NexusWindow::Show(bool inactive) {
+-  BS_DEBUG( "%s\n", __PRETTY_FUNCTION__);
++  BS_DEBUG2( "%s: title:%s visible:%d opacity:%f\n", __PRETTY_FUNCTION__, title_.c_str(), visible_, opacity_);
+   visible_ = true;
+   NXPL_NativeWindowInfoEXT   win_info;
+   NXPL_GetNativeWindowInfoEXT(native_window_, &win_info);
+@@ -141,7 +141,7 @@ void NexusWindow::Show(bool inactive) {
+ }
+ 
+ void NexusWindow::Hide() {
+-  BS_DEBUG( "%s\n", __PRETTY_FUNCTION__);
++  BS_DEBUG2( "%s: title:%s visible:%d opacity:%f\n", __PRETTY_FUNCTION__, title_.c_str(), visible_, opacity_);
+   visible_ = false;
+   NXPL_NativeWindowInfoEXT   win_info;
+   NXPL_GetNativeWindowInfoEXT(native_window_, &win_info);
+@@ -159,9 +159,9 @@ void NexusWindow::Close() {
+ 
+ 
+ bool NexusWindow::IsVisible() const {
+-  BS_DEBUG( "%s\n", __PRETTY_FUNCTION__);
+-  NOTIMPLEMENTED_LOG_ONCE();
+-  return visible_;
++  bool result = visible_ && opacity_ > 0.0f;
++  BS_DEBUG2( "%s: title:%s visible:%d opacity:%f result:%d\n", __PRETTY_FUNCTION__, title_.c_str(), visible_, opacity_, result);
++  return result;
+ }
+ 
+ void NexusWindow::PrepareForShutdown() {
