@@ -15,7 +15,7 @@ keyboard > cursor), this ensures overlays appear above the main
 graphics content.
 
 diff --git a/ui/ozone/platform/nexus/nexus_window.cc b/ui/ozone/platform/nexus/nexus_window.cc
-index e110d303339d823b235fc46bf85e05097049196c..e1a012d9cf12b1d1d520a4d323fe9978140d6a4c 100644
+index fc985bd218a477a7021adcf3bca8a05ee2d07a25..229c1298664b068eff1ebd9b7059c6230dadc612 100644
 --- a/ui/ozone/platform/nexus/nexus_window.cc
 +++ b/ui/ozone/platform/nexus/nexus_window.cc
 @@ -80,6 +80,17 @@ NexusWindow::NexusWindow(PlatformWindowDelegate* delegate,

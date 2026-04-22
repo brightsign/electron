@@ -1,0 +1,34 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Tariq Bashir <tbashir@brightsign.biz>
+Date: Tue, 14 Apr 2026 16:07:19 +0100
+Subject: Brightsign: avoid transparent flash when restoring hidden windows
+ OS-20603
+
+Setting the Aura layer to transparent makes the GPU compositor produce a
+transparent buffer. With immediate alpha commits, that stale transparent
+buffer can be briefly shown when the window is made visible again.
+
+Keep the Aura layer opacity always set to fully opaque to avoid this.
+The window transparency is now completely handled by nexus or weston.
+
+diff --git a/ui/views/widget/desktop_aura/desktop_window_tree_host_platform.cc b/ui/views/widget/desktop_aura/desktop_window_tree_host_platform.cc
+index 744c3cce9a65c75d2b802fb61c643c82018f0ab8..a7ae4b1e2594a3d12f346955e5e9f229b46d0e46 100644
+--- a/ui/views/widget/desktop_aura/desktop_window_tree_host_platform.cc
++++ b/ui/views/widget/desktop_aura/desktop_window_tree_host_platform.cc
+@@ -757,7 +757,15 @@ bool DesktopWindowTreeHostPlatform::IsFullscreen() const {
+ }
+ 
+ void DesktopWindowTreeHostPlatform::SetOpacity(float opacity) {
+-  GetContentWindow()->layer()->SetOpacity(opacity);
++  // We don't change the opacity of the content window's layer
++  // because we are completely controlling it from the platform side
++  // (e.g. in ozone wayland and ozone nexus). We do this to ensure that
++  // when the platform window is made visible, the content window is also
++  // visible. If we set the opacity of the content window's layer, then
++  // when the platform window is made visible we can sometimes get a flash
++  // due to a fully transparent content window buffer being displayed.
++  //  GetContentWindow()->layer()->SetOpacity(opacity);
++
+   platform_window()->SetOpacity(opacity);
+ }
+ 

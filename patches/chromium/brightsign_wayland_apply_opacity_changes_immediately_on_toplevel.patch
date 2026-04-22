@@ -1,0 +1,131 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Tariq Bashir <tbashir@brightsign.biz>
+Date: Tue, 14 Apr 2026 16:04:20 +0100
+Subject: Brightsign wayland: apply opacity changes immediately on toplevel
+ surfaces OS-20603
+
+Add an explicit CommitOpacity() path in WaylandSurface to flush pending
+alpha/blending updates without waiting for the next frame submission.
+
+Use this in WaylandToplevelWindow::SetOpacity() to update both the primary
+subsurface (where content is rendered) and the root surface. Commit the
+subsurface first and the root last so synchronized subsurface state is
+applied in the same repaint cycle.
+
+This avoids stale subsurface opacity until a later GPU frame and improves
+show/hide coordination across related surfaces.
+
+In order to ensure that the first frame displayed after calling Show is
+not transparent a separate patch has been added to change the Aura compositor
+layer opacity to always be 1.0. I.e. we are now completely controlling window
+opacity through the Wayland surface. PlatformWindow::SetOpacity will get called
+with the Aura window compositor opacity (i.e. with 1.0 and not the requested
+opacity) when there is a compositor update and we ignore this by removing the
+updates in WaylandSurface::ApplyPendingState. The only way to update the window
+opacity is through the WaylandToplevelWindow::SetOpacity call.
+
+get called when an html page update occurs
+
+diff --git a/ui/ozone/platform/wayland/host/wayland_surface.cc b/ui/ozone/platform/wayland/host/wayland_surface.cc
+index 26ff20d490ac34c20fcf86e2daf03ae87ac32201..82d62383377afd4b6d839cf481eae2d4a0c6be95 100644
+--- a/ui/ozone/platform/wayland/host/wayland_surface.cc
++++ b/ui/ozone/platform/wayland/host/wayland_surface.cc
+@@ -308,6 +308,26 @@ void WaylandSurface::Commit(bool flush) {
+     connection_->Flush();
+ }
+ 
++void WaylandSurface::CommitOpacity() {
++  if (!blending())
++    return;
++
++  if (pending_state_.opacity != state_.opacity) {
++    zcr_blending_v1_set_alpha(blending(),
++                              wl_fixed_from_double(pending_state_.opacity));
++    state_.opacity = pending_state_.opacity;
++  }
++  if (pending_state_.use_blending != state_.use_blending) {
++    zcr_blending_v1_set_blending(
++        blending(),
++        pending_state_.use_blending
++            ? ZCR_BLENDING_V1_BLENDING_EQUATION_PREMULT
++            : ZCR_BLENDING_V1_BLENDING_EQUATION_NONE);
++    state_.use_blending = pending_state_.use_blending;
++  }
++  Commit(true);
++}
++
+ void WaylandSurface::set_surface_buffer_scale(float scale) {
+   pending_state_.buffer_scale_float = scale;
+ 
+@@ -516,19 +536,6 @@ void WaylandSurface::ApplyPendingState() {
+     wl_surface_set_buffer_transform(surface_.get(), wl_transform);
+   }
+ 
+-  if (pending_state_.opacity != state_.opacity) {
+-    DCHECK(blending());
+-    zcr_blending_v1_set_alpha(blending(),
+-                              wl_fixed_from_double(pending_state_.opacity));
+-  }
+-  if (pending_state_.use_blending != state_.use_blending) {
+-    DCHECK(blending());
+-    zcr_blending_v1_set_blending(blending(),
+-                                 pending_state_.use_blending
+-                                     ? ZCR_BLENDING_V1_BLENDING_EQUATION_PREMULT
+-                                     : ZCR_BLENDING_V1_BLENDING_EQUATION_NONE);
+-  }
+-
+   if (pending_state_.priority_hint != state_.priority_hint) {
+     DCHECK(overlay_priority_surface());
+     overlay_prioritized_surface_set_overlay_priority(
+diff --git a/ui/ozone/platform/wayland/host/wayland_surface.h b/ui/ozone/platform/wayland/host/wayland_surface.h
+index fe78f9a94b153ff2398a74d63b617095339ba789..4cdca47edc8cc7314c50cb47d869e62b7f4f18e1 100644
+--- a/ui/ozone/platform/wayland/host/wayland_surface.h
++++ b/ui/ozone/platform/wayland/host/wayland_surface.h
+@@ -172,6 +172,12 @@ class WaylandSurface {
+       pending_state_.use_blending = use_blending;
+   }
+ 
++  // Immediately commit any pending opacity/blending changes to the wayland
++  // server without waiting for the next frame submission. This is needed
++  // when opacity changes must reach the compositor synchronously (e.g. to
++  // coordinate show/hide of multiple surfaces in the same repaint cycle).
++  void CommitOpacity();
++
+   // Set the destination size of the associated wl_surface according to
+   // |dest_size_px|, which should be in physical pixels.
+   // Note this method sends corresponding wayland requests immediately because
+diff --git a/ui/ozone/platform/wayland/host/wayland_toplevel_window.cc b/ui/ozone/platform/wayland/host/wayland_toplevel_window.cc
+index d722d2ba5acae28f29041fe19b6a71d58918b147..87fac1457aa8a8d69e2028ccef4cac26814b70e6 100644
+--- a/ui/ozone/platform/wayland/host/wayland_toplevel_window.cc
++++ b/ui/ozone/platform/wayland/host/wayland_toplevel_window.cc
+@@ -25,6 +25,7 @@
+ #include "ui/ozone/platform/wayland/host/gtk_surface1.h"
+ #include "ui/ozone/platform/wayland/host/shell_object_factory.h"
+ #include "ui/ozone/platform/wayland/host/shell_toplevel_wrapper.h"
++#include "ui/ozone/platform/wayland/host/wayland_subsurface.h"
+ #include "ui/ozone/platform/wayland/host/wayland_buffer_manager_host.h"
+ #include "ui/ozone/platform/wayland/host/wayland_connection.h"
+ #include "ui/ozone/platform/wayland/host/wayland_event_source.h"
+@@ -326,6 +327,22 @@ void WaylandToplevelWindow::SetOpacity(float opacity) {
+     window_hidden_ = false;
+   else
+     window_hidden_ = true;
++
++  // Also immediately commit opacity on the primary subsurface (where actual
++  // content lives). Without this, the subsurface opacity stays stale until
++  // the GPU process submits the next frame.
++  if (auto* subsurface = primary_subsurface()) {
++    auto* surface = subsurface->wayland_surface();
++    surface->set_opacity(opacity);
++    surface->set_blending(true);
++    surface->CommitOpacity();
++  }
++
++  // Commit the root surface LAST. Subsurfaces default to synchronized mode,
++  // meaning their committed state only takes effect when the parent surface
++  // commits. By committing the root after the subsurface, we trigger the
++  // subsurface's pending state to apply immediately.
++  root_surface()->CommitOpacity();
+ }
+ 
+ void WaylandToplevelWindow::SetZOrderLevel(ZOrderLevel order) {
