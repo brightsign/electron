@@ -1355,7 +1355,7 @@ void NativeWindowViews::SetOpacity(const double opacity) {
   SetLayered();
   ::SetLayeredWindowAttributes(hwnd, 0, boundedOpacity * 255, LWA_ALPHA);
   opacity_ = boundedOpacity;
-#elif BUILDFLAG(SUPPORTS_OZONE_WAYLAND)
+#elif BUILDFLAG(SUPPORTS_OZONE_WAYLAND) || BUILDFLAG(SUPPORTS_OZONE_NEXUS)
   const double boundedOpacity = std::ranges::clamp(opacity, 0.0, 1.0);
   widget()->SetOpacity(boundedOpacity);
   opacity_ = boundedOpacity;
