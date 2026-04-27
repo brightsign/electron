@@ -1,0 +1,980 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Tariq Bashir <tbashir@brightsign.biz>
+Date: Wed, 10 Dec 2025 15:30:25 +0000
+Subject: Add MSE support to Brightsign video player OS-19598
+
+This patch adds support for Media Source Extensions (MSE) to the
+Brightsign video player in Chromium. The changes have been ported from
+the implementation made for QtWebEngine for Brightsign devices.
+The two changes needed to adapt to the differences in the newer
+version of Chromium used in Electron are:
+1) PumpData: Calls are made to ChunkDemuxerStream::Read when the demuxer
+is not initialized yet, in the older Chromium this was just ignored with
+NOTREACHED, but in the newer version NOTREACHED_NORETURN gets called which
+crashes the renderer. We now check if the demuxer is initialized before calling
+ChunkDemuxerStream::Read.
+
+2) OnDemuxInitialized:
+The first_party_url was used in Chromium 87 but in Chromium 120 we don't have
+this and so like non-mse playback use the representative_url with the
+top_frame_origin.
+
+This change only implements MSE playback on series 3 & 4 devices.
+
+diff --git a/third_party/blink/renderer/platform/media/BUILD.gn b/third_party/blink/renderer/platform/media/BUILD.gn
+index 24a69ef889b31f01e531c1c2c687c6512ff0b307..bf3ddacbc2974469a45c6164eb0515caf3d0851d 100644
+--- a/third_party/blink/renderer/platform/media/BUILD.gn
++++ b/third_party/blink/renderer/platform/media/BUILD.gn
+@@ -132,7 +132,7 @@ if (enable_brightsign_media_player) {
+     packages = [ "vid_wrapper" ]
+   }
+   pkg_config("bvp") {
+-    packages = [ "bvp" ]
++    packages = [ "bvp_wrapper" ]
+   }
+ }
+ 
+diff --git a/third_party/blink/renderer/platform/media/brightsign/video_player_proxy.cc b/third_party/blink/renderer/platform/media/brightsign/video_player_proxy.cc
+index 3c6d777dd3aa516db4230d05fa7c1f6312db3109..c6578ef8f305f9822e370f64a6371c21dd4e3a77 100644
+--- a/third_party/blink/renderer/platform/media/brightsign/video_player_proxy.cc
++++ b/third_party/blink/renderer/platform/media/brightsign/video_player_proxy.cc
+@@ -5,8 +5,6 @@
+ #include "third_party/blink/public/web/web_local_frame.h"
+ #include "third_party/blink/renderer/platform/media/brightsign/web_media_player_brightsign.h"
+ 
+-using namespace brightsign;
+-
+ namespace blink {
+ 
+ VidPlayerListenerProxy::VidPlayerListenerProxy(
+diff --git a/third_party/blink/renderer/platform/media/brightsign/web_media_player_brightsign.cc b/third_party/blink/renderer/platform/media/brightsign/web_media_player_brightsign.cc
+index 74af9d4962dad0e86b3577d1a6d54f09a6434f55..26096d43c3cdaf1220244dea506f5ec2d297fd85 100644
+--- a/third_party/blink/renderer/platform/media/brightsign/web_media_player_brightsign.cc
++++ b/third_party/blink/renderer/platform/media/brightsign/web_media_player_brightsign.cc
+@@ -5,6 +5,7 @@
+ #include "third_party/blink/renderer/platform/media/brightsign/web_media_player_brightsign.h"
+ #include "base/functional/bind.h"
+ #include "base/command_line.h"
++#include "base/task/bind_post_task.h"
+ #include "base/task/thread_pool.h"
+ #include "base/time/time.h"
+ #include "cc/layers/video_layer.h"
+@@ -25,6 +26,18 @@
+ #include "gpu/GLES2/gl2extchromium.h"
+ #include "gpu/command_buffer/client/gles2_interface.h"
+ 
++template <typename... Args>
++inline base::RepeatingCallback<void(Args...)> BindToCurrentLoop(
++    base::RepeatingCallback<void(Args...)> cb) {
++  return base::BindPostTask(base::SequencedTaskRunner::GetCurrentDefault(), std::move(cb));
++}
++
++template <typename... Args>
++inline base::OnceCallback<void(Args...)> BindToCurrentLoop(
++    base::OnceCallback<void(Args...)> cb) {
++  return base::BindPostTask(base::SequencedTaskRunner::GetCurrentDefault(), std::move(cb));
++}
++
+ namespace {
+ std::vector<std::map<std::string, std::string>> convertStringMapVector(const StringMapVector &stringMapVector)
+ {
+@@ -158,15 +171,23 @@ WebMediaPlayerBrightsign::WebMediaPlayerBrightsign(
+     std::unique_ptr<VideoFrameCompositor> compositor,
+     std::unique_ptr<media::MediaLog> media_log,
+     scoped_refptr<viz::RasterContextProvider> raster_context_provider)
+-    : frame_(frame),
++    : bvp_stream_proxy_(nullptr),
++      last_video_pts_(0),
++      last_audio_pts_(0),
++      video_stream_(0),
++      audio_stream_(0),
++      frame_(frame),
+       client_(client),
+       delegate_(delegate),
+       player_id_(GetNextMediaPlayerId()),
++      chunk_demuxer_(NULL),
++      demux_initialized_(false),
+       main_task_runner_(frame->GetTaskRunner(TaskType::kMediaElementEvent)),
+       media_task_runner_(std::move(media_task_runner)),
+       compositor_task_runner_(std::move(compositor_task_runner)),
+       vfc_task_runner_(std::move(video_frame_compositor_task_runner)),
+       compositor_(std::move(compositor)),
++      media_log_(std::move(media_log)),
+       network_state_(WebMediaPlayer::kNetworkStateEmpty),
+       ready_state_(WebMediaPlayer::kReadyStateHaveNothing),
+       highest_ready_state_(WebMediaPlayer::kReadyStateHaveNothing),
+@@ -214,6 +235,7 @@ void WebMediaPlayerBrightsign::Shutdown() {
+   VLOG(1) << __func__;
+   DCHECK(main_task_runner_->BelongsToCurrentThread());
+   frame_ready_timer_.Stop();
++  pump_timer_.Stop();
+ 
+   delegate_->PlayerGone(delegate_id_);
+   delegate_->RemoveObserver(delegate_id_);
+@@ -222,12 +244,60 @@ void WebMediaPlayerBrightsign::Shutdown() {
+   SetVideoFrameProviderClient(nullptr);
+   client_->SetCcLayer(nullptr);
+ 
++  for (auto connection : bvp_connections_)
++  {
++    if (connection)
++    {
++       bvp_connection_disconnect(connection);
++       bvp_connection_destroy(connection);
++    }
++  }
++  bvp_connections_.clear();
++
++  if (chunk_demuxer_)
++  {
++    chunk_demuxer_->AbortPendingReads();
++
++    // Continue destruction of |chunk_demuxer_| on the |media_task_runner_| to
++    // avoid racing other pending tasks on |chunk_demuxer_| on that runner while
++    // not further blocking |main_task_runner_| to perform the destruction.
++    media_task_runner_->PostTask(
++        FROM_HERE, base::BindOnce(&WebMediaPlayerBrightsign::DemuxerDestructionHelper,
++                                  media_task_runner_, std::move(demuxer_)));
++  }
++
+   vid_player_destroy(vid_player_);
+   main_task_runner_->DeleteSoon(FROM_HERE,
+                                 std::move(vid_player_listener_proxy_));
+   vfc_task_runner_->DeleteSoon(FROM_HERE, std::move(compositor_));
+ }
+ 
++// static
++void WebMediaPlayerBrightsign::DemuxerDestructionHelper(
++    scoped_refptr<base::SequencedTaskRunner> task_runner,
++    std::unique_ptr<media::Demuxer> demuxer) {
++  DCHECK(task_runner->RunsTasksInCurrentSequence());
++  // ChunkDemuxer's streams may contain much buffered, compressed media that
++  // may need to be paged back in during destruction.  Paging delay may exceed
++  // the renderer hang monitor's threshold on at least Windows while also
++  // blocking other work on the renderer main thread, so we do the actual
++  // destruction in the background without blocking WMPI destruction or
++  // |task_runner|.  On advice of task_scheduler OWNERS, MayBlock() is not
++  // used because virtual memory overhead is not considered blocking I/O; and
++  // CONTINUE_ON_SHUTDOWN is used to allow process termination to not block on
++  // completing the task.  BS_DEBUG("DemuxerDestructionHelper\n");
++  base::ThreadPool::PostTask(
++      FROM_HERE,
++      {base::TaskPriority::BEST_EFFORT,
++       base::TaskShutdownBehavior::CONTINUE_ON_SHUTDOWN},
++      base::BindOnce(
++          [](std::unique_ptr<media::Demuxer> demuxer_to_destroy) {
++            VLOG(1) << __func__ << ": Destroy demux";
++            demuxer_to_destroy.reset();
++          },
++          std::move(demuxer)));
++}
++
+ WebMediaPlayer::LoadTiming WebMediaPlayerBrightsign::Load(
+     LoadType type,
+     const WebMediaPlayerSource& source,
+@@ -239,6 +309,131 @@ WebMediaPlayer::LoadTiming WebMediaPlayerBrightsign::Load(
+   return Load(type, source, cors, is_cache_disabled, attributes);
+ }
+ 
++void WebMediaPlayerBrightsign::StreamStop(const std::string id)
++{
++  VLOG(1) << __func__ << ": this:" << this << " " << id;
++}
++
++void WebMediaPlayerBrightsign::WebMediaPlayerBrightsign::StreamStart()
++{
++  VLOG(1) << __func__ << ": this:" << this;
++}
++
++void WebMediaPlayerBrightsign::WebMediaPlayerBrightsign::StreamPause()
++{
++  VLOG(1) << __func__ << ": this:" << this;
++}
++
++void WebMediaPlayerBrightsign::WebMediaPlayerBrightsign::StreamResume()
++{
++  VLOG(1) << __func__ << ": this:" << this;
++}
++
++void WebMediaPlayerBrightsign::StreamError(enum BvpError e, const std::string & msg)
++{
++  VLOG(1) << __func__ << ": this:" << this << " " << msg;
++}
++
++struct BvpVideoStreamProxyWrapper* WebMediaPlayerBrightsign::PlaybackRequested(const std::string &id, const std::string &url)
++{
++  if(url != url_)
++    return nullptr;
++
++  VLOG(1) << __func__ << ": this:" << this << " " << id << " " << url;
++
++  // Track the current stream id for callbacks that don't provide it
++  current_stream_id_ = id;
++
++  // Passing in a width/height of -1 forces the code to use the largest decoder available on this platform
++  std::string vconfig("");
++  if(video_decoder_config_.IsValidConfig())
++  {
++    std::ostringstream vs;
++    vs << "video/" << GetCodecName(video_decoder_config_.codec()) <<
++          ";width=(int)" << video_decoder_config_.coded_size().width() <<
++          ",height=(int)" << video_decoder_config_.coded_size().height();
++    vconfig = vs.str();
++  }
++
++  std::string aconfig("");
++  if(audio_decoder_config_.IsValidConfig())
++  {
++    std::ostringstream as;
++    as << "audio/" << GetCodecName(audio_decoder_config_.codec()) <<
++          ";rate=(int)" << audio_decoder_config_.samples_per_second() <<
++          ",channels=(int)" << audio_decoder_config_.channels();
++    aconfig = as.str();
++  }
++
++  char* error_string = nullptr;
++  struct BvpVideoStreamProxyWrapper* proxy = bvp_video_stream_proxy_create_no_except(
++      id.c_str(), vconfig.c_str(), aconfig.c_str(), &error_string);
++  if (error_string)
++  {
++    LOG(ERROR) << "Error creating VideoStreamProxy: " << error_string;
++    bvp_free_error_string(error_string);
++  }
++  if (!proxy)
++    return nullptr;
++
++  // Use STOP signal handler to get callback if Brightsign app stopped the stream.
++  bvp_connections_.push_back(
++    bvp_video_stream_proxy_connect(
++      proxy, BVP_SIGNAL_STOP,
++      [](void* context) {
++        WebMediaPlayerBrightsign* player = static_cast<WebMediaPlayerBrightsign*>(context);
++        player->StreamStop(player->current_stream_id_);
++      },
++      this)
++    );
++  bvp_connections_.push_back(
++    bvp_video_stream_proxy_connect(
++      proxy, BVP_SIGNAL_START,
++      [](void* context) {
++        WebMediaPlayerBrightsign* player = static_cast<WebMediaPlayerBrightsign*>(context);
++        player->StreamStart();
++      },
++      this)
++    );
++  bvp_connections_.push_back(
++    bvp_video_stream_proxy_connect(
++      proxy, BVP_SIGNAL_PAUSE,
++      [](void* context) {
++        WebMediaPlayerBrightsign* player = static_cast<WebMediaPlayerBrightsign*>(context);
++        player->StreamPause();
++      },
++      this)
++    );
++  bvp_connections_.push_back(
++    bvp_video_stream_proxy_connect(
++      proxy, BVP_SIGNAL_RESUME,
++      [](void* context) {
++        WebMediaPlayerBrightsign* player = static_cast<WebMediaPlayerBrightsign*>(context);
++        player->StreamResume();
++      },
++      this)
++    );
++  bvp_connections_.push_back(
++    bvp_video_stream_proxy_connect_error(
++      proxy,
++      [](void* context, enum BvpError error, const char* message) {
++        WebMediaPlayerBrightsign* player = static_cast<WebMediaPlayerBrightsign*>(context);
++        player->StreamError(error, std::string(message));
++      },
++      this)
++    );
++
++  base::AutoLock auto_lock(stream_proxy_lock_);
++  // Store the configurations that we've sent
++  video_decoder_config_sent_ = video_decoder_config_;
++  audio_decoder_config_sent_ = audio_decoder_config_;
++  bvp_stream_proxy_ = proxy;
++
++  return proxy;
++}
++
++struct BvpVideoHandlerProxyWrapper* WebMediaPlayerBrightsign::bvp_handler_proxy_ = nullptr;
++
+ WebMediaPlayer::LoadTiming WebMediaPlayerBrightsign::Load(
+     LoadType type,
+     const WebMediaPlayerSource& source,
+@@ -253,6 +448,99 @@ WebMediaPlayer::LoadTiming WebMediaPlayerBrightsign::Load(
+   playing_ = false;
+   ended_ = false;
+   seeking_ = false;
++
++  if(chunk_demuxer_)
++  {
++    VLOG(1) << "Destroy old ChunkDemuxer";
++    pump_timer_.Stop();
++
++    for (auto connection : bvp_connections_)
++    {
++      if (connection)
++      {
++        bvp_connection_disconnect(connection);
++        bvp_connection_destroy(connection);
++      }
++    }
++    bvp_connections_.clear();
++
++    chunk_demuxer_->AbortPendingReads();
++
++    // Continue destruction of old |chunk_demuxer_| on the |media_task_runner_| to
++    // avoid racing other pending tasks on |chunk_demuxer_| on that runner while
++    // not further blocking |main_task_runner_| to perform the destruction.
++    media_task_runner_->PostTask(
++        FROM_HERE, base::BindOnce(&WebMediaPlayerBrightsign::DemuxerDestructionHelper,
++                                  media_task_runner_, std::move(demuxer_)));
++
++    base::AutoLock auto_lock(stream_proxy_lock_);
++    video_decoder_config_sent_ = media::VideoDecoderConfig();
++    audio_decoder_config_sent_ = media::AudioDecoderConfig();
++    if (bvp_stream_proxy_)
++    {
++      bvp_video_stream_proxy_destroy(bvp_stream_proxy_);
++      bvp_stream_proxy_ = nullptr;
++    }
++  }
++
++  if (type == kLoadTypeMediaSource)
++  {
++    // Media Source Extensions
++
++    // Reset MSE member variables
++    last_video_pts_ = 0;
++    last_audio_pts_ = 0;
++    video_stream_ = 0;
++    audio_stream_ = 0;
++
++    highest_ready_state_ = WebMediaPlayer::kReadyStateHaveNothing;
++    network_state_ = WebMediaPlayer::kNetworkStateEmpty;
++    ready_state_ = WebMediaPlayer::kReadyStateHaveNothing;
++
++    VLOG(1) << "Create ChunkDemuxer";
++    demux_initialized_ = false;
++    chunk_demuxer_ = new media::ChunkDemuxer(
++        BindToCurrentLoop(
++            base::BindOnce(&WebMediaPlayerBrightsign::OnDemuxerOpened, weak_this_)),
++        BindToCurrentLoop(
++            base::BindRepeating(&WebMediaPlayerBrightsign::OnProgress, weak_this_)),
++        BindToCurrentLoop(
++            base::BindRepeating(&WebMediaPlayerBrightsign::OnEncryptedMediaInitData, weak_this_)),
++        media_log_.get());
++    demuxer_.reset(chunk_demuxer_);
++
++    chunk_demuxer_->Initialize(this, BindToCurrentLoop(base::BindOnce(&WebMediaPlayerBrightsign::OnDemuxInitialized, weak_this_)));
++
++    // Call into libbvp to enable MSE support
++    if(!bvp_handler_proxy_)
++    {
++      VLOG(1) << "Create VideoHandlerProxy for blob";
++      char* error_string = nullptr;
++      bvp_handler_proxy_ = bvp_video_handler_proxy_create_no_except("mseblob", &error_string);
++      if (error_string) {
++        LOG(ERROR) << "Error creating VideoHandlerProxy: " << error_string;
++        bvp_free_error_string(error_string);
++      }
++    }
++
++    bvp_connections_.push_back(
++      bvp_video_handler_proxy_connect_playback_requested(
++        bvp_handler_proxy_,
++        [](void* context, const char* id, const char* url) -> struct BvpVideoStreamProxyWrapper* {
++          WebMediaPlayerBrightsign* player = static_cast<WebMediaPlayerBrightsign*>(context);
++          return player->PlaybackRequested(std::string(id), std::string(url));
++        },
++        this)
++    );
++
++    // Store URL and attributes for use when OnDemuxInitialized is called. We prepend mse so that the protocol is now mseblob:
++    // This allows the application to distinguish between MSE blob playback, and regular blob playback.
++    url_ = "mse" + source.GetAsURL().GetString().Utf8();
++    attributes_ = attributes;
++
++    return LoadTiming::kDeferred;
++  }
++
+   // Non-MSE playback
+   SetNetworkState(WebMediaPlayer::kNetworkStateLoading);
+   SetReadyState(WebMediaPlayer::kReadyStateHaveNothing);
+@@ -311,8 +599,15 @@ void WebMediaPlayerBrightsign::Seek(double seconds) {
+   VLOG(1) << __func__;
+   DCHECK(main_task_runner_->BelongsToCurrentThread());
+ 
++  if(chunk_demuxer_)
++    chunk_demuxer_->StartWaitingForSeek(base::Seconds(seconds));
++
+   vid_player_seek(vid_player_, (uint64_t)(seconds * 1000000));
+ 
++  // Reset last PTS to seek position
++  last_video_pts_ = (uint64_t)(seconds * 90000);
++  last_audio_pts_ = (uint64_t)(seconds * 90000);
++
+   ended_ = false;
+   seeking_ = true;
+ }
+@@ -421,6 +716,14 @@ bool WebMediaPlayerBrightsign::Seeking() const {
+ double WebMediaPlayerBrightsign::Duration() const {
+   VLOG(1) << __func__;
+ 
++  // Use duration from ChunkDemuxer when present. MSE allows users to specify
++  // duration as a double. This propagates to the rest of the pipeline as a
++  // TimeDelta with potentially reduced precision (limited to Microseconds).
++  // ChunkDemuxer returns the full-precision user-specified double. This ensures
++  // users can "get" the exact duration they "set".
++  if (chunk_demuxer_)
++    return chunk_demuxer_->GetDuration();
++
+   DCHECK(main_task_runner_->BelongsToCurrentThread());
+   return duration_;
+ }
+@@ -561,8 +864,368 @@ void WebMediaPlayerBrightsign::OnEncryptedMediaInitData(
+     media::EmeInitDataType init_data_type,
+     const std::vector<uint8_t>& init_data) {}
+ 
++void WebMediaPlayerBrightsign::OnDemuxerOpened() {
++  DCHECK(main_task_runner_->BelongsToCurrentThread());
++  VLOG(1) << __func__ << ": this:" << this;
++  client_->MediaSourceOpened(std::make_unique<WebMediaSourceImpl>(chunk_demuxer_));
++}
++
+ void WebMediaPlayerBrightsign::OnProgress() {
+-  // This is called by the demuxer whenever there's some more data available
++  VLOG(2) << __func__ << ": this:" << this;
++}
++
++void WebMediaPlayerBrightsign::OnDemuxInitialized(media::PipelineStatus status) {
++  VLOG(1) << __func__ << ": this:" << this;
++
++  DCHECK(main_task_runner_->BelongsToCurrentThread());
++
++  // The streams are all present, so update with their configurations
++  std::vector<media::DemuxerStream*> streams = demuxer_->GetAllStreams();
++  for (auto* stream : streams)
++  {
++    switch(stream->type())
++    {
++      case media::DemuxerStream::VIDEO:
++      {
++        video_stream_ = static_cast<media::ChunkDemuxerStream *>(stream);
++
++        media::VideoDecoderConfig video_config = stream->video_decoder_config();
++        if(video_config.IsValidConfig())
++        {
++          gfx::Size sz = video_config.natural_size();
++          natural_size_ = gfx::Size(sz.width(), sz.height());
++        }
++
++        base::AutoLock auto_lock(stream_proxy_lock_);
++        UpdateVideoConfig(video_config);
++        break;
++      }
++      case media::DemuxerStream::AUDIO:
++      {
++        audio_stream_ = static_cast<media::ChunkDemuxerStream *>(stream);
++        media::AudioDecoderConfig audio_config = stream->audio_decoder_config();
++
++        base::AutoLock auto_lock(stream_proxy_lock_);
++        UpdateAudioConfig(audio_config);
++        break;
++      }
++      default:
++        break;
++    }
++  }
++
++  // Kick off the VideoPlayer load now that we know the video and audio configuration
++  SetNetworkState(WebMediaPlayer::kNetworkStateLoading);
++  SetReadyState(WebMediaPlayer::kReadyStateHaveNothing);
++  GURL representative_url =
++      frame_->GetDocument().SiteForCookies().RepresentativeUrl();
++  std::string top_frame_origin = frame_->GetDocument().TopFrameOrigin().ToString().Utf8();
++
++  StringPair *items = static_cast<StringPair *>(std::malloc(attributes_.size() * sizeof(StringPair)));
++  StringMap map = {items, 0};
++
++  for (const auto& attribute : attributes_)
++  {
++    // Allocate memory for key and value strings
++    items[map.length].key = static_cast<char *>(std::malloc((attribute.first.size() + 1) * sizeof(char)));
++    items[map.length].value = static_cast<char *>(std::malloc((attribute.second.size() + 1) * sizeof(char)));
++
++    // Copy key and value strings
++    std::strcpy(items[map.length].key, attribute.first.c_str());
++    std::strcpy(items[map.length].value, attribute.second.c_str());
++    map.length++;
++  }
++
++  vid_player_load(vid_player_, url_.c_str(),
++                  representative_url.spec().c_str(), top_frame_origin.c_str(),
++                  map, !client_->IsAudioElement());
++
++  // And declare that we have the metadata
++  VLOG(1) << "Demux has finished initializing, so set ready state\n";
++  if(kReadyStateHaveMetadata > highest_ready_state_)
++    SetReadyState(WebMediaPlayer::kReadyStateHaveMetadata);
++
++  demux_initialized_ = true;
++}
++
++static const char statusNames[][16] =
++{
++  "kOk",
++  "kAborted",
++  "kConfigChanged",
++  "kError",
++  "Unknown"
++};
++
++void WebMediaPlayerBrightsign::UpdateAudioConfig(const media::AudioDecoderConfig &config)
++{
++  audio_decoder_config_ = config;
++  if(bvp_stream_proxy_)
++  {
++    if(audio_decoder_config_sent_.AsHumanReadableString() != config.AsHumanReadableString())
++    {
++      audio_decoder_config_sent_ = config;
++      VLOG(1) << "Sending format for audio: " << audio_decoder_config_sent_.AsHumanReadableString();
++
++      enum BvpAudioCodec ac;
++      switch(audio_decoder_config_sent_.codec())
++      {
++        case media::AudioCodec::kAAC: ac = BVP_AAC; break;
++        case media::AudioCodec::kMP3: ac = BVP_MP3; break;
++        case media::AudioCodec::kPCM: ac = BVP_PCM; break;
++        case media::AudioCodec::kVorbis: ac = BVP_VORBIS; break;
++        case media::AudioCodec::kFLAC: ac = BVP_FLAC; break;
++        case media::AudioCodec::kOpus: ac = BVP_OPUS; break;
++        case media::AudioCodec::kAC3: ac = BVP_AC3; break;
++        default: ac = BVP_AAC; break;
++      }
++      char* error_string = nullptr;
++      bvp_video_stream_proxy_submit_audio_config_no_except(bvp_stream_proxy_, ac,
++                                                   audio_decoder_config_sent_.channels(),
++                                                   audio_decoder_config_sent_.samples_per_second(),
++                                                   &error_string);
++      if (error_string) {
++        LOG(ERROR) << "Error submitting audio config: " << error_string;
++        bvp_free_error_string(error_string);
++      }
++    }
++  }
++}
++
++void WebMediaPlayerBrightsign::UpdateVideoConfig(const media::VideoDecoderConfig &config)
++{
++  video_decoder_config_ = config;
++  if(bvp_stream_proxy_)
++  {
++    if(video_decoder_config_sent_.AsHumanReadableString() != config.AsHumanReadableString())
++    {
++      video_decoder_config_sent_ = config;
++      VLOG(1) << "New format for video: " << video_decoder_config_sent_.AsHumanReadableString();
++
++      enum BvpVideoCodec vc;
++      switch(video_decoder_config_sent_.codec())
++      {
++        case media::VideoCodec::kH264: vc = BVP_H264; break;
++        case media::VideoCodec::kHEVC: vc = BVP_H265; break;
++        case media::VideoCodec::kDolbyVision: vc = BVP_DBV; break;
++        case media::VideoCodec::kVC1: vc = BVP_VC1; break;
++        case media::VideoCodec::kMPEG2: vc = BVP_MPEG2; break;
++        case media::VideoCodec::kMPEG4: vc = BVP_MPEG4; break;
++        case media::VideoCodec::kVP8: vc = BVP_VP8; break;
++        case media::VideoCodec::kVP9: vc = BVP_VP9; break;
++        default: vc = BVP_H264; break;
++      }
++      gfx::Size sz = video_decoder_config_sent_.natural_size();
++      char* error_string = nullptr;
++      bvp_video_stream_proxy_submit_video_config_no_except(bvp_stream_proxy_, vc,
++                                                   sz.width(),
++                                                   sz.height(),
++                                                   &error_string);
++      if (error_string) {
++        LOG(ERROR) << "Error submitting video config: " << error_string;
++        bvp_free_error_string(error_string);
++      }
++    }
++  }
++}
++
++void WebMediaPlayerBrightsign::AudioReadCallback(media::DemuxerStream::Status status, media::DemuxerStream::DecoderBufferVector buffers)
++{
++  base::AutoLock auto_lock(stream_proxy_lock_);
++  audio_stream_callback_received_ = true;
++
++  if(status == media::DemuxerStream::kConfigChanged)
++  {
++    UpdateAudioConfig(audio_stream_->audio_decoder_config());
++  }
++  else if(status == media::DemuxerStream::kAborted)
++  {
++    audio_stream_->StartReturningData();
++  }
++  else if(status == media::DemuxerStream::kOk)
++  {
++    if(bvp_stream_proxy_ && !buffers.empty())
++    {
++      // Process the first buffer from the vector (we only request one buffer at a time)
++      const auto& buffer = buffers[0];
++      const std::vector<uint8_t> au(buffer->begin(), buffer->end());
++      // PTS is in terms of standard 90kHz clock, so convert from microseconds
++      last_audio_pts_ = (buffer->timestamp().InMicroseconds() * 9) / 100;
++      char* error_string = nullptr;
++      bvp_video_stream_proxy_submit_audio_au_no_except(bvp_stream_proxy_,
++                                                        au.data(),
++                                                        au.size(),
++                                                        last_audio_pts_,
++                                                        &error_string);
++      if (error_string) {
++        VLOG(1) << "Error submitting audio AU: " << error_string;
++        bvp_free_error_string(error_string);
++      }
++
++      VLOG(4) << "Audio: " << statusNames[status] << " " << (float)last_audio_pts_/90000.0;
++    }
++    else
++    {
++      VLOG(1) << "Drop Audio: " << statusNames[status];
++    }
++  }
++  else
++  {
++    VLOG(1) << "Audio status: " << statusNames[status];
++  }
++}
++
++void WebMediaPlayerBrightsign::VideoReadCallback(media::DemuxerStream::Status status, media::DemuxerStream::DecoderBufferVector buffers)
++{
++  base::AutoLock auto_lock(stream_proxy_lock_);
++  video_stream_callback_received_ = true;
++
++  if(status == media::DemuxerStream::kConfigChanged)
++  {
++    UpdateVideoConfig(video_stream_->video_decoder_config());
++  }
++  else if(status == media::DemuxerStream::kAborted)
++  {
++    video_stream_->StartReturningData();
++    VLOG(1) << "Video data restarted\n";
++  }
++  else if(status == media::DemuxerStream::kOk)
++  {
++    if(bvp_stream_proxy_ && !buffers.empty())
++    {
++      // Process the first buffer from the vector (we only request one buffer at a time)
++      const auto& buffer = buffers[0];
++      const std::vector<uint8_t> au(buffer->begin(), buffer->end());
++      last_video_pts_ = (buffer->timestamp().InMicroseconds() * 9) / 100;
++      char* error_string = nullptr;
++      bvp_video_stream_proxy_submit_video_au_no_except(bvp_stream_proxy_,
++                                                        au.data(),
++                                                        au.size(),
++                                                        last_video_pts_,
++                                                        &error_string);
++      if (error_string) {
++        VLOG(1) << "Error submitting video AU: " << error_string;
++        bvp_free_error_string(error_string);
++      }
++
++      VLOG(4) << "Video: " << statusNames[status] << " " << (float)last_video_pts_/90000.0;
++    }
++    else
++    {
++      VLOG(1) << "Drop Video: " << statusNames[status];
++    }
++  }
++  else
++  {
++    VLOG(1) << "Video status: " << statusNames[status];
++  }
++}
++
++void WebMediaPlayerBrightsign::OnBufferedTimeRangesChanged(const media::Ranges<base::TimeDelta>& ranges)
++{
++  DCHECK(main_task_runner_->BelongsToCurrentThread());
++
++  size_t count = ranges.size();
++
++  if(count)
++    VLOG(3) << "Ranges:\n";
++  for(size_t i = 0; i < count; ++i)
++  {
++    VLOG(3) << ranges.start(i).InSecondsF() << " -> " << ranges.end(i).InSecondsF();
++
++    if(ranges.end(i).InSecondsF() > latest_time_buffered_)
++      latest_time_buffered_ = ranges.end(i).InSecondsF();
++  }
++
++  if (!pump_timer_.IsRunning())
++  {
++    VLOG(1) << "Start PumpTimer\n";
++    pump_timer_.SetTaskRunner(main_task_runner_);
++    pump_timer_.Start(FROM_HERE, base::Microseconds(8000),
++                           this,
++                           &WebMediaPlayerBrightsign::PumpData);
++  }
++}
++
++void WebMediaPlayerBrightsign::PumpData()
++{
++  DCHECK(main_task_runner_->BelongsToCurrentThread());
++
++  if(demux_initialized_)
++  {
++    if(kReadyStateHaveEnoughData > highest_ready_state_)
++    {
++      SetReadyState(WebMediaPlayer::kReadyStateHaveEnoughData);
++      SetNetworkState(WebMediaPlayer::kNetworkStateIdle);
++    }
++  }
++  else
++  {
++    VLOG(1) << __func__ << ": Demux not initialized yet\n";
++    return;
++  }
++
++  std::vector<media::DemuxerStream*> streams = demuxer_->GetAllStreams();
++  uint64_t stc_time = (uint64_t)(current_time_ * 90000);
++  for (auto* stream : streams)
++  {
++    switch(stream->type())
++    {
++      case media::DemuxerStream::AUDIO:
++      {
++        if(audio_stream_callback_received_)
++        {
++          audio_stream_ = static_cast<media::ChunkDemuxerStream *>(stream);
++          if((stc_time + 450000) > last_audio_pts_)
++          {
++            VLOG(1) << __func__ << ": Audio Read: " << (float)stc_time/90000.0 << "/" << (float)last_audio_pts_/90000.0;
++            audio_stream_callback_received_ = false;
++            audio_stream_->Read(1, BindToCurrentLoop(base::BindOnce(&WebMediaPlayerBrightsign::AudioReadCallback, weak_this_)));
++          }
++          else
++            VLOG(1) << __func__ << ": AStall: " << (float)stc_time/90000.0 << "/" << (float)last_audio_pts_/90000.0;
++        }
++        break;
++      }
++
++      case media::DemuxerStream::VIDEO:
++      {
++        if(video_stream_callback_received_)
++        {
++          video_stream_ = static_cast<media::ChunkDemuxerStream *>(stream);
++          if((stc_time + 450000) > last_video_pts_)
++          {
++            VLOG(1) << __func__ << ": Video Read: " << (float)stc_time/90000.0 << "/" << (float)last_video_pts_/90000.0;
++            video_stream_callback_received_ = false;
++            video_stream_->Read(1, BindToCurrentLoop(base::BindOnce(&WebMediaPlayerBrightsign::VideoReadCallback, weak_this_)));
++          }
++          else
++            VLOG(1) << __func__ << ": VStall: " << (float)stc_time/90000.0 << "/" << (float)last_video_pts_/90000.0;
++        }
++        break;
++      }
++
++      default:
++        VLOG(1) << __func__ << ": unhandled data stream";
++        break;
++      }
++  }
++}
++
++void WebMediaPlayerBrightsign::SetDuration(base::TimeDelta duration)
++{
++  std::chrono::microseconds chrono_duration = std::chrono::milliseconds::zero();
++  if(!duration.is_max())
++    chrono_duration = std::chrono::microseconds(duration.InMicroseconds());
++
++  main_task_runner_->PostTask(
++      FROM_HERE,
++      base::BindOnce(&WebMediaPlayerBrightsign::DurationChangedCallback, weak_this_, chrono_duration));
++}
++
++void WebMediaPlayerBrightsign::OnDemuxerError(media::PipelineStatus error)
++{
++  VLOG(1) << __func__;
+ }
+ 
+ void WebMediaPlayerBrightsign::ErrorCallback(enum VidPlayerErrorCode code,
+@@ -705,9 +1368,12 @@ void WebMediaPlayerBrightsign::LoadCallback(
+     text_track_ids_.insert(track_id);
+   }
+ 
+-  SetReadyState(WebMediaPlayer::kReadyStateHaveMetadata);
+-  SetReadyState(WebMediaPlayer::kReadyStateHaveEnoughData);
+-  SetNetworkState(WebMediaPlayer::kNetworkStateIdle);
++  if(!chunk_demuxer_)
++  {
++    SetReadyState(WebMediaPlayer::kReadyStateHaveMetadata);
++    SetReadyState(WebMediaPlayer::kReadyStateHaveEnoughData);
++    SetNetworkState(WebMediaPlayer::kNetworkStateIdle);
++  }
+ }
+ 
+ void WebMediaPlayerBrightsign::TextureMailboxReadyCallback(
+@@ -759,6 +1425,16 @@ void WebMediaPlayerBrightsign::PlaybackPositionUpdatedCallback(
+   }
+ 
+   double current_time_d = std::chrono::duration<double>(current_time).count();
++  if(demuxer_)
++  {
++    // For MSE playback only, as latest_time_buffered_ doesn't get updated on non-MSE playback
++    if(current_time_d > latest_time_buffered_)
++    {
++      // Don't set the current time beyond what we have buffered (MSE conformance tests OS-11964)
++      current_time_d = latest_time_buffered_;
++    }
++  }
++
+   if (current_time_ != current_time_d) {
+     current_time_ = current_time_d;
+     client_->TimeChanged();
+diff --git a/third_party/blink/renderer/platform/media/brightsign/web_media_player_brightsign.h b/third_party/blink/renderer/platform/media/brightsign/web_media_player_brightsign.h
+index 511f36eb9c9636e05da125cf02106d8d8ef22819..e76defc753d478c64dbd4854ef5fc0c42a6cd853 100644
+--- a/third_party/blink/renderer/platform/media/brightsign/web_media_player_brightsign.h
++++ b/third_party/blink/renderer/platform/media/brightsign/web_media_player_brightsign.h
+@@ -6,7 +6,7 @@
+ #define THIRD_PARTY_BLINK_RENDERER_PLATFORM_MEDIA_BRIGHTSIGN_WEB_MEDIA_PLAYER_BRIGHTSIGN_H_
+ 
+ #include <chrono>
+-#include <libbvp/api.h>
++#include <libbvp/bvp_c_bindings.h>
+ #include <libvid/vid_player_c_bindings.h>
+ #include <set>
+ #include "base/functional/callback.h"
+@@ -14,6 +14,9 @@
+ #include "base/task/single_thread_task_runner.h"
+ #include "cc/layers/video_frame_provider.h"
+ #include "components/viz/common/gpu/raster_context_provider.h"
++#include "media/base/demuxer.h"
++#include "media/base/demuxer_stream.h"
++#include "media/filters/chunk_demuxer.h"
+ #include "media/renderers/video_overlay_factory.h"
+ #include "third_party/blink/renderer/platform/media/video_frame_compositor.h"
+ #include "third_party/blink/public/platform/media/web_media_player_delegate.h"
+@@ -39,7 +42,8 @@ class VidPlayerListenerProxy;
+ class WebMediaPlayerBrightsign
+     : public WebMediaPlayer,
+       public WebMediaPlayerDelegate::Observer,
+-      public cc::VideoFrameProvider {
++      public cc::VideoFrameProvider,
++      public media::DemuxerHost  {
+  public:
+   ~WebMediaPlayerBrightsign() override;
+   WebMediaPlayerBrightsign(
+@@ -58,6 +62,15 @@ class WebMediaPlayerBrightsign
+ 
+   void Shutdown() override;
+ 
++  // Destroys |demuxer| and records a UMA for the time taken to destroy it.
++  // |task_runner| is the expected runner on which this method is called, and is
++  // used as a parameter to ensure a scheduled task bound to this method is run
++  // (to prevent uncontrolled |demuxer| destruction if |task_runner| has no
++  // other references before such task is executed.)
++  static void DemuxerDestructionHelper(
++      scoped_refptr<base::SequencedTaskRunner> task_runner,
++      std::unique_ptr<media::Demuxer> demuxer);
++
+   LoadTiming Load(LoadType,
+                   const blink::WebMediaPlayerSource&,
+                   CorsMode cors_mode,
+@@ -177,6 +190,9 @@ class WebMediaPlayerBrightsign
+   void OnEncryptedMediaInitData(media::EmeInitDataType init_data_type,
+                                 const std::vector<uint8_t>& init_data);
+ 
++  void OnDemuxerOpened();
++  void OnDemuxInitialized(media::PipelineStatus status);
++
+   // Being a cc::VideoFrameProvider
+   void SetVideoFrameProviderClient(Client* client) override;
+   bool UpdateCurrentFrame(base::TimeTicks deadline_min,
+@@ -208,7 +224,42 @@ class WebMediaPlayerBrightsign
+   // they've changed.
+   void SetNetworkState(blink::WebMediaPlayer::NetworkState state);
+   void SetReadyState(blink::WebMediaPlayer::ReadyState state);
+-    blink::WebString GetUniqueSubtitlesKey(
++
++  // DemuxerHost
++  void OnBufferedTimeRangesChanged(const media::Ranges<base::TimeDelta>& ranges) override;
++  void SetDuration(base::TimeDelta duration) override;
++  void OnDemuxerError(media::PipelineStatus error) override;
++
++  void UpdateAudioConfig(const media::AudioDecoderConfig &config);
++  void UpdateVideoConfig(const media::VideoDecoderConfig &config);
++  void AudioReadCallback(media::DemuxerStream::Status status, media::DemuxerStream::DecoderBufferVector buffers);
++  void VideoReadCallback(media::DemuxerStream::Status status, media::DemuxerStream::DecoderBufferVector buffers);
++  void StreamStopped(const std::string id);
++
++  struct BvpVideoStreamProxyWrapper* PlaybackRequested(const std::string &id, const std::string &url);
++  std::vector<struct BvpConnectionWrapper*> bvp_connections_;
++  static struct BvpVideoHandlerProxyWrapper* bvp_handler_proxy_;
++  struct BvpVideoStreamProxyWrapper* bvp_stream_proxy_;
++  base::Lock stream_proxy_lock_;
++  void PumpData();
++
++  media::AudioDecoderConfig audio_decoder_config_sent_;
++  media::AudioDecoderConfig audio_decoder_config_;
++  media::VideoDecoderConfig video_decoder_config_sent_;
++  media::VideoDecoderConfig video_decoder_config_;
++  uint64_t last_video_pts_;
++  uint64_t last_audio_pts_;
++
++  media::ChunkDemuxerStream *video_stream_;
++  media::ChunkDemuxerStream *audio_stream_;
++
++  void StreamStop(const std::string id);
++  void StreamStart();
++  void StreamPause();
++  void StreamResume();
++  void StreamError(enum BvpError e, const std::string & msg);
++
++  blink::WebString GetUniqueSubtitlesKey(
+             const std::map<std::string, std::string>& text_track) const;
+ 
+   blink::WebLocalFrame* frame_;
+@@ -220,6 +271,10 @@ class WebMediaPlayerBrightsign
+ 
+   VidPlayerDecodeStatistics decode_stats_;
+ 
++  std::unique_ptr<media::Demuxer> demuxer_;
++  media::ChunkDemuxer* chunk_demuxer_;
++  bool demux_initialized_;
++
+   // Task runner for posting tasks on Chrome's main thread. Also used
+   // for DCHECKs so methods calls won't execute in the wrong thread.
+   const scoped_refptr<base::SingleThreadTaskRunner> main_task_runner_;
+@@ -230,6 +285,7 @@ class WebMediaPlayerBrightsign
+   scoped_refptr<base::SingleThreadTaskRunner> vfc_task_runner_;
+   std::unique_ptr<VideoFrameCompositor>
+       compositor_;  // Deleted on |vfc_task_runner_|.
++  std::unique_ptr<media::MediaLog> media_log_;
+ 
+   blink::WebMediaPlayer::NetworkState network_state_;
+   blink::WebMediaPlayer::ReadyState ready_state_;
+@@ -247,6 +303,9 @@ class WebMediaPlayerBrightsign
+ 
+   base::Lock video_frame_provider_client_lock_;
+   base::RepeatingTimer frame_ready_timer_;
++  base::RepeatingTimer pump_timer_;
++  bool audio_stream_callback_received_ = true;
++  bool video_stream_callback_received_ = true;
+ 
+   // The compositor layer for displaying the video content when using composited
+   // playback
+@@ -258,6 +317,7 @@ class WebMediaPlayerBrightsign
+ 
+   std::string url_;
+   std::map<std::string, std::string> attributes_;
++  std::string current_stream_id_;
+ 
+   base::WeakPtr<WebMediaPlayerBrightsign> weak_this_;
+   base::WeakPtrFactory<WebMediaPlayerBrightsign> weak_factory_{this};
