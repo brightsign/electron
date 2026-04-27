@@ -50,7 +50,7 @@ jobs:
     - name: Setup Node
       uses: actions/setup-node@v3
       with:
-        node-version: 21
+        node-version: 24
 
     - name: Download config file and set env vars from it
       run: |
