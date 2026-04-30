@@ -154,6 +154,8 @@ describe('session module', () => {
       const list = await w.webContents.session.cookies.get({ url });
       const cookie = list.find(cookie => cookie.name === name);
       expect(cookie).to.exist.and.to.have.property('value', value);
+      const authDetails = await w.webContents.getMediaResource(`${url}:${port}`, `${url}:${port}`, `${url}:${port}`);
+      expect(authDetails).to.deep.equal({ username: '', password: '', cookie: `${cookie?.name}=${cookie?.value}` });
     });
 
     it('sets cookies', async () => {

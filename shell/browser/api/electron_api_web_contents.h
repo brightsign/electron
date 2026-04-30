@@ -39,6 +39,7 @@
 #include "shell/browser/background_throttling_source.h"
 #include "shell/browser/event_emitter_mixin.h"
 #include "shell/browser/extended_web_contents_observer.h"
+#include "shell/browser/media/media_resource_getter_impl.h"
 #include "shell/browser/osr/osr_paint_event.h"
 #include "shell/browser/preload_script.h"
 #include "shell/browser/ui/inspectable_web_contents_delegate.h"
@@ -185,6 +186,14 @@ class WebContents final : public ExclusiveAccessContext,
   // gin_helper::CleanedUpAtExit
   void WillBeDestroyed() override;
 
+  v8::Local<v8::Promise> GetBlobData(v8::Isolate*,
+                                     const std::string& blob_url,
+                                     uint64_t location,
+                                     uint64_t size);
+  v8::Local<v8::Promise> GetMediaResource(v8::Isolate*,
+                                          const std::string& url,
+                                          const std::string& url_for_cookies,
+                                          const std::string& origin);
   void Destroy();
   void Close(std::optional<gin_helper::Dictionary> options);
   base::WeakPtr<WebContents> GetWeakPtr() { return weak_factory_.GetWeakPtr(); }
@@ -495,6 +504,18 @@ class WebContents final : public ExclusiveAccessContext,
                              content::WebContents* web_contents,
                              extensions::mojom::ViewType view_type);
 #endif
+
+  void OnGetBlobData(gin_helper::Promise<v8::Local<v8::Value>> promise,
+                     scoped_refptr<net::IOBufferWithSize> io_buf);
+
+  void OnGetCookieData(gin_helper::Promise<gin_helper::Dictionary> promise,
+                       const std::string& url,
+                       const std::string& cookie);
+
+  void OnGetAuthData(gin_helper::Promise<gin_helper::Dictionary> promise,
+                     const std::string& cookie,
+                     const std::u16string& username,
+                     const std::u16string& password);
 
   // content::WebContentsDelegate:
   bool IsWebContentsCreationOverridden(
@@ -889,6 +910,8 @@ class WebContents final : public ExclusiveAccessContext,
   raw_ptr<content::RenderFrameHost> fullscreen_frame_ = nullptr;
 
   std::unique_ptr<SkRegion> draggable_region_;
+
+  std::unique_ptr<content::MediaResourceGetterImpl> media_resource_getter_;
 
   base::WeakPtrFactory<WebContents> weak_factory_{this};
 };
