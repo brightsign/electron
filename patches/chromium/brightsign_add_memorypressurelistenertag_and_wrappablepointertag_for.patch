@@ -1,0 +1,38 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Tariq Bashir <tbashir@brightsign.biz>
+Date: Thu, 30 Apr 2026 16:29:27 +0100
+Subject: Brightsign: Add MemoryPressureListenerTag and WrappablePointerTag for
+ Electron MemoryPressureMonitor
+
+Add kElectronMemoryPressureMonitor entries to both
+MemoryPressureListenerTag (= 71) and WrappablePointerTag enums
+to support the Electron MemoryPressureMonitor API after the
+migration to subclass-based MemoryPressureListener and cppgc-managed
+gin::Wrappable objects.
+
+diff --git a/base/memory/memory_pressure_listener.h b/base/memory/memory_pressure_listener.h
+index 24f83685065b6fff68e832bd0e41137abd6c1a1a..3665d2b8569927b7105c543f181eca9c4cf00189 100644
+--- a/base/memory/memory_pressure_listener.h
++++ b/base/memory/memory_pressure_listener.h
+@@ -101,6 +101,7 @@ enum class MemoryPressureListenerTag {
+   kGrShaderCache = 68,
+   kMemoryPressureListenerPolicy = 69,
+   kLongScreenshotsTabService = 70,
++  kElectronMemoryPressureMonitor = 71,
+ };
+ 
+ // base::MemoryPressureListener is deprecated. Use base::MemoryConsumer instead.
+diff --git a/gin/public/wrappable_pointer_tags.h b/gin/public/wrappable_pointer_tags.h
+index 0f649fa562cef261b127dca7769dd5687a916342..38032849b37b62debe22c9c7a2a3843b8b657188 100644
+--- a/gin/public/wrappable_pointer_tags.h
++++ b/gin/public/wrappable_pointer_tags.h
+@@ -93,7 +93,8 @@ enum WrappablePointerTag : uint16_t {
+   kElectronSession,                     // electron::api::Session
+   kElectronTray,                        // electron::api::Tray
+   kElectronWebRequest,                  // electron::api::WebRequest
+-  kLastPointerTag = kElectronWebRequest,
++  kElectronMemoryPressureMonitor,       // electron::api::MemoryPressureMonitor
++  kLastPointerTag = kElectronMemoryPressureMonitor,
+ };
+ 
+ static_assert(kLastPointerTag <
