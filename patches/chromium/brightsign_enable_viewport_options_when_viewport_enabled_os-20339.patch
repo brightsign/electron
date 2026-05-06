@@ -1,0 +1,27 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Tariq Bashir <tbashir@brightsign.biz>
+Date: Wed, 18 Feb 2026 09:45:57 +0000
+Subject: Brightsign: Enable viewport options when viewport enabled OS-20339
+
+This patch enables the viewport options when the viewport is enabled, and matches
+what is done in QtWebEngine. This is necessary to match Android defaults and ensure
+that the viewport behaves as expected.
+
+diff --git a/content/browser/web_contents/web_contents_impl.cc b/content/browser/web_contents/web_contents_impl.cc
+index 23c6bc61c0f286666b7c4cbdc104090801e6aca8..dd0a29a3d83c0b89284fa27407c15d9b3c5855b2 100644
+--- a/content/browser/web_contents/web_contents_impl.cc
++++ b/content/browser/web_contents/web_contents_impl.cc
+@@ -3882,6 +3882,13 @@ const blink::web_pref::WebPreferences WebContentsImpl::ComputeWebPreferences(
+ #endif
+   }
+ 
++  if (prefs.viewport_enabled) {
++    // We need to enable the viewport options together as it doesn't really work
++    // to enable them separately. With viewport-enabled we match Android defaults.
++    prefs.viewport_meta_enabled = true;
++    prefs.shrinks_viewport_contents_to_fit = true;
++  }
++
+   prefs.spatial_navigation_enabled =
+       command_line.HasSwitch(switches::kEnableSpatialNavigation);
+ 
