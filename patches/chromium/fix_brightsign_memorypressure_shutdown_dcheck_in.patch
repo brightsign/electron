@@ -1,0 +1,49 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Tariq Bashir <tbashir@brightsign.biz>
+Date: Tue, 5 May 2026 17:00:02 +0100
+Subject: Fix: Brightsign memorypressure shutdown DCHECK in
+ AsyncMemoryConsumerRegistration
+
+Memory pressure notifications can race with ThreadPool shutdown during
+tests and process teardown. When OnUpdateMemoryLimit() or
+OnReleaseMemory() fires after the shutdown event is signaled, the
+PostTask into the consumer's sequenced runner hits a DCHECK in
+TaskTracker ("!shutdown_event_->IsSignaled()").
+
+Use ScopedFizzleBlockShutdownTasks to allow these late-arriving posts
+to be silently dropped instead of crashing.
+
+diff --git a/base/memory_coordinator/async_memory_consumer_registration.cc b/base/memory_coordinator/async_memory_consumer_registration.cc
+index c0f7ed56c0a750391fd076898df25c4dca874f40..c800b137088d38890d88aa5329f72c9ffa0e148b 100644
+--- a/base/memory_coordinator/async_memory_consumer_registration.cc
++++ b/base/memory_coordinator/async_memory_consumer_registration.cc
+@@ -13,6 +13,7 @@
+ #include "base/memory_coordinator/memory_consumer.h"
+ #include "base/task/sequenced_task_runner.h"
+ #include "base/task/single_thread_task_runner.h"
++#include "base/task/thread_pool/thread_pool_instance.h"
+ #include "base/threading/thread_checker.h"
+ #include "base/types/pass_key.h"
+ 
+@@ -49,6 +50,11 @@ class AsyncMemoryConsumerRegistration::MainThread : public MemoryConsumer {
+   // MemoryConsumer:
+   void OnUpdateMemoryLimit() override {
+     DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
++    // Memory pressure notifications can race with thread pool shutdown in
++    // tests and process teardown. Drop these late notifications instead of
++    // DCHECKing in TaskTracker.
++    base::ThreadPoolInstance::ScopedFizzleBlockShutdownTasks
++      scoped_fizzle_block_shutdown_tasks;
+     consumer_task_runner_->PostTask(
+         FROM_HERE,
+         BindOnce(&AsyncMemoryConsumerRegistration::NotifyUpdateMemoryLimit,
+@@ -56,6 +62,9 @@ class AsyncMemoryConsumerRegistration::MainThread : public MemoryConsumer {
+   }
+   void OnReleaseMemory() override {
+     DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
++    // See comment in OnUpdateMemoryLimit().
++    base::ThreadPoolInstance::ScopedFizzleBlockShutdownTasks
++      scoped_fizzle_block_shutdown_tasks;
+     consumer_task_runner_->PostTask(
+         FROM_HERE,
+         BindOnce(&AsyncMemoryConsumerRegistration::NotifyReleaseMemory,
