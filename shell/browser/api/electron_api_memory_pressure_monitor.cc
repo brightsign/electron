@@ -5,6 +5,8 @@
 #include "shell/browser/api/electron_api_memory_pressure_monitor.h"
 
 #include "base/memory/memory_pressure_listener.h"
+#include "content/browser/renderer_host/render_process_host_impl.h"
+#include "content/public/browser/render_process_host.h"
 #include "gin/data_object_builder.h"
 #include "gin/handle.h"
 #include "gin/public/wrappable_pointer_tags.h"
@@ -108,7 +110,22 @@ void MemoryPressureMonitor::NotifyMemoryPressure(const std::string& level) {
   if (pressure_level == base::MemoryPressureLevel::MEMORY_PRESSURE_LEVEL_NONE) {
     return;
   }
+
+  // Notify the browser (main) process.
   base::MemoryPressureListener::NotifyMemoryPressure(pressure_level);
+
+  // Notify all renderer processes via Mojo IPC.
+  for (content::RenderProcessHost::iterator iter =
+           content::RenderProcessHost::AllHostsIterator();
+       !iter.IsAtEnd(); iter.Advance()) {
+    content::RenderProcessHost* host = iter.GetCurrentValue();
+    if (!host || !host->IsInitializedAndNotDead())
+      continue;
+    if (!host->GetProcess().IsValid())
+      continue;
+    static_cast<content::RenderProcessHostImpl*>(host)
+        ->NotifyMemoryPressureToRenderer(pressure_level);
+  }
 }
 
 // static
