@@ -290,7 +290,9 @@ describe('modules support', () => {
         const modulePath = path.resolve('/foo');
         expect(Module._nodeModulePaths(modulePath)).to.deep.equal([
           path.join(modulePath, 'node_modules'),
-          path.resolve('/node_modules')
+          path.resolve('/node_modules'),
+          '/usr/lib/node_modules',
+          '/var/volatile/node_modules'
         ]);
       });
     });
