@@ -1916,6 +1916,9 @@ content::JavaScriptDialogManager* WebContents::GetJavaScriptDialogManager(
   // happens sometimes during shutdown or when webviews are involved.
   class JSDialogManagerHelper : public content::JavaScriptDialogManager,
                                 public base::SupportsUserData::Data {
+    base::OnceCallback<void(bool default_prevented, bool accept)>
+        will_open_dialog_callback_;
+
    public:
     void RunJavaScriptDialog(content::WebContents* web_contents,
                              content::RenderFrameHost* rfh,
@@ -1924,6 +1927,63 @@ content::JavaScriptDialogManager* WebContents::GetJavaScriptDialogManager(
                              const std::u16string& default_prompt_text,
                              DialogClosedCallback callback,
                              bool* did_suppress_message) override {
+      auto origin_url = rfh->GetLastCommittedURL();
+
+      std::string origin;
+      // For file:// URLs we do the alert filtering by the
+      // file path currently loaded
+      if (origin_url.SchemeIsFile()) {
+        origin = origin_url.path();
+      } else {
+        origin = origin_url.DeprecatedGetOriginAsURL().spec();
+      }
+
+      will_open_dialog_callback_ =
+          base::BindOnce(&JSDialogManagerHelper::OnWillOpenDialogCallback,
+                         base::Unretained(this), web_contents, rfh, dialog_type,
+                         message_text, default_prompt_text, std::move(callback),
+                         did_suppress_message, origin);
+
+      auto* wc = WebContents::From(web_contents);
+      if (wc) {
+        bool default_prevented = wc->Emit(
+            "will-open-dialog", dialog_type, message_text, default_prompt_text,
+            origin_url.spec(),
+            base::BindOnce(
+                &JSDialogManagerHelper::OnEmittedWillOpenDialogCallback,
+                base::Unretained(this)));
+
+        // Its possible that a user may call the callback and not
+        // preventDefault, we have to handle that case.
+        if (!default_prevented && will_open_dialog_callback_) {
+          std::move(will_open_dialog_callback_).Run(false, false);
+        }
+      } else {
+        std::move(will_open_dialog_callback_).Run(false, false);
+      }
+    }
+
+    void OnEmittedWillOpenDialogCallback(bool accept,
+                                         const std::string& user_input) {
+      if (will_open_dialog_callback_) {
+        std::move(will_open_dialog_callback_).Run(true, accept);
+      }
+    }
+
+    void OnWillOpenDialogCallback(content::WebContents* web_contents,
+                                  content::RenderFrameHost* rfh,
+                                  content::JavaScriptDialogType dialog_type,
+                                  const std::u16string& message_text,
+                                  const std::u16string& default_prompt_text,
+                                  DialogClosedCallback callback,
+                                  bool* did_suppress_message,
+                                  const std::string& origin,
+                                  bool default_prevented,
+                                  bool accept) {
+      if (default_prevented) {
+        std::move(callback).Run(accept, std::u16string());
+        return;
+      }
       auto* wc = WebContents::From(web_contents);
       if (wc)
         wc->RunJavaScriptDialog(web_contents, rfh, dialog_type, message_text,
