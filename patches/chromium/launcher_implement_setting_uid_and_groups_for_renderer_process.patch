@@ -190,10 +190,10 @@ index 878e5245266cfd4ea96bdbf8ca20c7ae0ac9a80e..2647658feb9c1001cb8e7dee0d7c0509
  
  #if !BUILDFLAG(IS_OPENBSD)
 diff --git a/content/browser/renderer_host/render_process_host_impl.cc b/content/browser/renderer_host/render_process_host_impl.cc
-index a5d1bafd8944afd9588d18ae8896c09f3bbce7f9..de5b4e88f20d8f98253799bdf0c85c08feb07c2e 100644
+index 44decfa9d29d1363b5453f4c11d4a7a61adddfb9..fc75de7c10425a34c551d15b40433001b28a2c1f 100644
 --- a/content/browser/renderer_host/render_process_host_impl.cc
 +++ b/content/browser/renderer_host/render_process_host_impl.cc
-@@ -1981,6 +1981,9 @@ bool RenderProcessHostImpl::Init() {
+@@ -1990,6 +1990,9 @@ bool RenderProcessHostImpl::Init() {
      file_data->files_to_preload = GetV8SnapshotFilesToPreload(*cmd_line);
  #endif
  
@@ -203,7 +203,7 @@ index a5d1bafd8944afd9588d18ae8896c09f3bbce7f9..de5b4e88f20d8f98253799bdf0c85c08
      // Spawn the child process asynchronously to avoid blocking the UI thread.
      // As long as there's no renderer prefix, we can use the zygote process
      // at this stage.
-@@ -1993,7 +1996,8 @@ bool RenderProcessHostImpl::Init() {
+@@ -2002,7 +2005,8 @@ bool RenderProcessHostImpl::Init() {
              PROCESS_TYPE_RENDERER)
              ? metrics_memory_region_
              : nullptr,

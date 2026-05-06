@@ -9,10 +9,10 @@ This change adds the remote-debugging-address switch to the content switches to
 allow it to be used in Electron.
 
 diff --git a/content/public/common/content_switches.cc b/content/public/common/content_switches.cc
-index c76de1882a425165cfed86a5fcc2cbe411ead5de..23d0ee01c1525f8f72ac685647ff971b696298f7 100644
+index 5e6312932d7d2406a4743f5c7a1743ea308993c4..0b790d5e7d596bb86962a190083c8f0bb48d37b7 100644
 --- a/content/public/common/content_switches.cc
 +++ b/content/public/common/content_switches.cc
-@@ -603,6 +603,12 @@ const char kReduceUserAgentMinorVersion[] = "reduce-user-agent-minor-version";
+@@ -605,6 +605,12 @@ const char kReduceUserAgentMinorVersion[] = "reduce-user-agent-minor-version";
  // "JSON" (the default) or "CBOR".
  const char kRemoteDebuggingPipe[] = "remote-debugging-pipe";
  
@@ -26,10 +26,10 @@ index c76de1882a425165cfed86a5fcc2cbe411ead5de..23d0ee01c1525f8f72ac685647ff971b
  const char kRemoteDebuggingPort[]           = "remote-debugging-port";
  
 diff --git a/content/public/common/content_switches.h b/content/public/common/content_switches.h
-index adc3f831bdea24ad1ec557b3e908b65d6398dca4..b39afedceb38fbe90a2fa4e64373af45f1a4ebb3 100644
+index 1a44e07a2d428f0356ec5285557b3be942269a21..1beca6ead4f2c8f09b13aac73d4dcecbb275b90d 100644
 --- a/content/public/common/content_switches.h
 +++ b/content/public/common/content_switches.h
-@@ -171,6 +171,7 @@ CONTENT_EXPORT extern const char kReduceAcceptLanguageHTTP[];
+@@ -172,6 +172,7 @@ CONTENT_EXPORT extern const char kReduceAcceptLanguageHTTP[];
  CONTENT_EXPORT extern const char kReduceUserAgentMinorVersion[];
  CONTENT_EXPORT extern const char kRemoteDebuggingPipe[];
  CONTENT_EXPORT extern const char kRemoteDebuggingPort[];
