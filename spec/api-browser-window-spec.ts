@@ -4283,14 +4283,21 @@ describe('BrowserWindow module', () => {
           }
         });
 
+        const server = http.createServer((req, res) => {
+          res.writeHead(200, { 'Content-Type': 'text/html' });
+          res.end('<html><body>Blank Page</body></html>');
+        });
+        const serverUrl = (await listen(server)).url;
+
         const preloadPath = path.join(mainFixtures, 'api', 'new-window-preload.js');
-        w.webContents.setWindowOpenHandler(() => ({
-          action: 'allow',
-          overrideBrowserWindowOptions: { webPreferences: { preload: preloadPath } }
-        }));
-        w.loadFile(path.join(fixtures, 'api', 'new-window.html'));
+        w.webContents.setWindowOpenHandler(() => ({ action: 'allow', overrideBrowserWindowOptions: { webPreferences: { preload: preloadPath } } }));
+        await w.loadFile(path.join(fixtures, 'api', 'new-window.html'), {
+          query: { url: serverUrl }
+        });
         const [, { argv }] = await once(ipcMain, 'answer');
         expect(argv).to.include('--enable-sandbox');
+
+        server.close();
       });
 
       it('should open windows with the options configured via setWindowOpenHandler handlers', async () => {
@@ -4301,18 +4308,25 @@ describe('BrowserWindow module', () => {
           }
         });
 
+        const server = http.createServer((req, res) => {
+          res.writeHead(200, { 'Content-Type': 'text/html' });
+          res.end('<html><body>Blank Page</body></html>');
+        });
+        const serverUrl = (await listen(server)).url;
+
         const preloadPath = path.join(mainFixtures, 'api', 'new-window-preload.js');
-        w.webContents.setWindowOpenHandler(() => ({
-          action: 'allow',
-          overrideBrowserWindowOptions: { webPreferences: { preload: preloadPath, contextIsolation: false } }
-        }));
-        w.loadFile(path.join(fixtures, 'api', 'new-window.html'));
+        w.webContents.setWindowOpenHandler(() => ({ action: 'allow', overrideBrowserWindowOptions: { webPreferences: { preload: preloadPath, contextIsolation: false } } }));
+        await w.loadFile(path.join(fixtures, 'api', 'new-window.html'), {
+          query: { url: serverUrl }
+        });
         const [[, childWebContents]] = await Promise.all([
           once(app, 'web-contents-created') as Promise<[any, WebContents]>,
           once(ipcMain, 'answer')
         ]);
         const webPreferences = childWebContents.getLastWebPreferences();
         expect(webPreferences!.contextIsolation).to.equal(false);
+
+        server.close();
       });
 
       it('should apply zoomFactor from setWindowOpenHandler overrideBrowserWindowOptions', async () => {
@@ -4509,12 +4523,20 @@ describe('BrowserWindow module', () => {
         expect(content).to.equal('Hello');
       });
       it('blocks accessing cross-origin frames', async () => {
+        const server = http.createServer((req, res) => {
+          res.writeHead(200, { 'Content-Type': 'text/html' });
+          res.end('<html><body>Blank Page</body></html>');
+        });
+        const serverUrl = (await listen(server)).url;
+
         const answer = once(ipcMain, 'answer');
-        w.loadFile(path.join(fixtures, 'api', 'native-window-open-cross-origin.html'));
+        await w.loadFile(path.join(fixtures, 'api', 'native-window-open-cross-origin.html'), {
+          query: { url: serverUrl }
+        });
         const [, content] = await answer;
-        expect(content).to.equal(
-          "Failed to read a named property 'toString' from 'Location': Blocked a frame with origin \"file://\" from accessing a cross-origin frame."
-        );
+        expect(content).to.equal('Failed to read a named property \'toString\' from \'Location\': Blocked a frame with origin "file://" from accessing a cross-origin frame.');
+
+        server.close();
       });
       it('opens window from <iframe> tags', async () => {
         const answer = once(ipcMain, 'answer');
@@ -4575,6 +4597,12 @@ describe('BrowserWindow module', () => {
         await webviewLoaded;
       });
       it('should open windows with the options configured via setWindowOpenHandler handlers', async () => {
+        const server = http.createServer((req, res) => {
+          res.writeHead(200, { 'Content-Type': 'text/html' });
+          res.end('<html><body>Blank Page</body></html>');
+        });
+        const serverUrl = (await listen(server)).url;
+
         const preloadPath = path.join(mainFixtures, 'api', 'new-window-preload.js');
         w.webContents.setWindowOpenHandler(() => ({
           action: 'allow',
@@ -4585,13 +4613,17 @@ describe('BrowserWindow module', () => {
             }
           }
         }));
-        w.loadFile(path.join(fixtures, 'api', 'new-window.html'));
+        await w.loadFile(path.join(fixtures, 'api', 'new-window.html'), {
+          query: { url: serverUrl }
+        });
         const [[, childWebContents]] = await Promise.all([
           once(app, 'web-contents-created') as Promise<[any, WebContents]>,
           once(ipcMain, 'answer')
         ]);
         const webPreferences = childWebContents.getLastWebPreferences();
         expect(webPreferences!.contextIsolation).to.equal(false);
+
+        server.close();
       });
 
       describe('window.location', () => {
