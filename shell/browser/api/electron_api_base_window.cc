@@ -1144,6 +1144,25 @@ v8::Local<v8::Value> BaseWindow::GetAccentColor() const {
 }
 #endif
 
+#if BUILDFLAG(IS_LINUX)
+void BaseWindow::SetWindowTransform(const std::string& transform) {
+  blink::mojom::WindowTransformType transform_type =
+      blink::mojom::WindowTransformType::kWindowTransformTypeNone;
+
+  if (transform == "rot180") {
+    transform_type =
+        blink::mojom::WindowTransformType::kWindowTransformTypeRotate180;
+  } else if (transform == "rot270") {
+    transform_type =
+        blink::mojom::WindowTransformType::kWindowTransformTypeRotate270;
+  } else if (transform == "rot90") {
+    transform_type =
+        blink::mojom::WindowTransformType::kWindowTransformTypeRotate90;
+  }
+  window_->SetWindowTransform(transform_type);
+}
+#endif
+
 #if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_LINUX)
 void BaseWindow::SetTitleBarOverlay(const gin_helper::Dictionary& options,
                                     gin::Arguments* args) {
@@ -1328,6 +1347,9 @@ void BaseWindow::BuildPrototype(v8::Isolate* isolate,
 #endif
 #if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_LINUX)
       .SetMethod("setTitleBarOverlay", &BaseWindow::SetTitleBarOverlay)
+#endif
+#if BUILDFLAG(IS_LINUX)
+      .SetMethod("setWindowTransform", &BaseWindow::SetWindowTransform)
 #endif
       .SetProperty("id", &BaseWindow::GetID);
 }
