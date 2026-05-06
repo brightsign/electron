@@ -1894,6 +1894,47 @@ describe('webContents module', () => {
     });
   });
 
+  describe('setLanguage API', () => {
+    afterEach(closeAllWindows);
+
+    it('strips quality values from navigator language APIs', async () => {
+      const w = new BrowserWindow({ show: false });
+      w.webContents.setLanguage('fr-FR, fr;q=0.9, en;q=0.8');
+      await w.loadURL('about:blank');
+
+      const languageData = await w.webContents.executeJavaScript(`
+        ({
+          language: navigator.language,
+          languages: navigator.languages
+        })
+      `);
+
+      expect(languageData.language).to.equal('fr-FR');
+      expect(languageData.language).to.not.include(';');
+      expect(languageData.languages).to.deep.equal(['fr-FR', 'fr', 'en']);
+      expect(languageData.languages).to.satisfy((languages: string[]) =>
+        languages.every(language => !language.includes(';')));
+    });
+
+    it('ignores empty entries and trims surrounding whitespace', async () => {
+      const w = new BrowserWindow({ show: false });
+      w.webContents.setLanguage(' , en-US ;q=0.9, , fr ; q=0.8  , ');
+      await w.loadURL('about:blank');
+
+      const languageData = await w.webContents.executeJavaScript(`
+        ({
+          language: navigator.language,
+          languages: navigator.languages
+        })
+      `);
+
+      expect(languageData.language).to.equal('en-US');
+      expect(languageData.languages).to.deep.equal(['en-US', 'fr']);
+      expect(languageData.languages).to.satisfy((languages: string[]) =>
+        languages.every(language => language === language.trim()));
+    });
+  });
+
   describe('audioMuted APIs', () => {
     afterEach(closeAllWindows);
     it('can set the audio mute level (functions)', () => {
