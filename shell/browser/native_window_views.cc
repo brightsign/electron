@@ -1185,9 +1185,10 @@ void NativeWindowViews::SetAlwaysOnTop(const ui::ZOrderLevel z_order,
                                        const std::string& level,
                                        const int relativeLevel) {
   const bool level_changed = z_order != widget()->GetZOrderLevel();
-  const bool always_on_top = z_order != ui::ZOrderLevel::kNormal;
+  bool always_on_top = z_order != ui::ZOrderLevel::kNormal;
 
   if (z_order == ui::ZOrderLevel::kFloatingWindow) {
+    always_on_top = false;
     // Custom feature for BrightSign to beable to set an absolute Z-index
     widget()->SetZOrderLevel((ui::ZOrderLevel)relativeLevel);
   } else {
