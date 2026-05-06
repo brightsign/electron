@@ -7,7 +7,9 @@
   <body>
     <script type="text/javascript">
       setTimeout(function () {
-        window.open('http://localhost')
+        const urlParams = new URLSearchParams(window.location.search)
+        const targetUrl = urlParams.get('url') || 'http://localhost'
+        window.open(targetUrl)
       })
     </script>
   </body>
