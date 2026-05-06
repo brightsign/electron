@@ -2940,7 +2940,7 @@ describe('BrowserWindow module', () => {
       // of everything else. It breaks presentations. Layering is
       // done with wayland extensions.
       expect(emittedAlwaysOnTop).to.be.false('is alwaysOnTop');
-      await waitForAlwaysOnTop(alwaysOnTop, label);
+      await waitForAlwaysOnTop(false, label);
     };
 
     afterEach(closeAllWindows);
