@@ -1216,7 +1216,7 @@ v8::Local<v8::Promise> WebContents::GetBlobData(v8::Isolate* isolate,
   if (!media_resource_getter_.get()) {
     auto* rfh = web_contents()->GetPrimaryMainFrame();
     if (!rfh) {
-      promise.Resolve(v8::Null(isolate));
+      promise.Resolve(v8::Null(isolate).As<v8::Value>());
       return handle;
     }
     int32_t frame_process_id = rfh->GetProcess()->GetID().GetUnsafeValue();
@@ -1252,7 +1252,7 @@ void WebContents::OnGetBlobData(
             .ToLocalChecked();
     promise.Resolve(buffer);
   } else {
-    promise.Resolve(v8::Null(isolate));
+    promise.Resolve(v8::Null(isolate).As<v8::Value>());
   }
 }
 
