@@ -219,6 +219,9 @@ jobs:
     - name: Display sccache stats
       run: sccache -s
 
+    - name: Check disk space
+      run: df -h
+
     - name: Run unit tests
       if: inputs.build_type == 'test'
       run: |
