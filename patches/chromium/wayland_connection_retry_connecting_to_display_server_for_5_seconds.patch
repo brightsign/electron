@@ -1,0 +1,43 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Caner Altinbasak <cal@brightsign.biz>
+Date: Tue, 4 Jul 2023 15:01:40 +0100
+Subject: wayland_connection: Retry connecting to display server for 5 seconds
+
+Brightsign weston server instance might not be up, at the point where
+Electron tries to connect to it. Retry for 5 seconds before giving up.
+
+diff --git a/ui/ozone/platform/wayland/host/wayland_connection.cc b/ui/ozone/platform/wayland/host/wayland_connection.cc
+index 33749fd43e86e005313acfb29c501d0662795c21..6a6bebe3929ff2cc308695c6da3f8d8f3f2acf8f 100644
+--- a/ui/ozone/platform/wayland/host/wayland_connection.cc
++++ b/ui/ozone/platform/wayland/host/wayland_connection.cc
+@@ -11,6 +11,7 @@
+ #include <bs-z-order-unstable-v1-client-protocol.h>
+ 
+ #include <cstdint>
++#include <thread>
+ 
+ #include "base/command_line.h"
+ #include "base/compiler_specific.h"
+@@ -199,9 +200,20 @@ bool WaylandConnection::Initialize(bool use_threaded_polling) {
+   RegisterGlobalObjectFactory(ZwpPrimarySelectionDeviceManager::kInterfaceName,
+                               &ZwpPrimarySelectionDeviceManager::Instantiate);
+ 
+-  display_.reset(wl_display_connect(nullptr));
++  static const int max_retries = 5;
++  int retries = 0;
++  while (!display_ && retries < max_retries)
++  {
++      display_.reset(wl_display_connect(nullptr));
++      if (!display_) {
++        PLOG(ERROR) << "Failed to connect to Wayland display";
++        std::this_thread::sleep_for(std::chrono::seconds(1));
++      }
++      retries++;
++  }
++
+   if (!display_) {
+-    PLOG(ERROR) << "Failed to connect to Wayland display";
++    PLOG(ERROR) << "Failed to connect to Wayland display after " << max_retries << " retries";
+     return false;
+   }
+ 
