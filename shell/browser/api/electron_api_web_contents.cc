@@ -24,6 +24,8 @@
 #include "base/no_destructor.h"
 #include "base/strings/strcat.h"
 #include "base/strings/string_number_conversions.h"
+#include "base/strings/string_split.h"
+#include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/task/current_thread.h"
 #include "base/threading/scoped_blocking_call.h"
@@ -3065,6 +3067,24 @@ std::string WebContents::GetUserAgent() {
   return web_contents()->GetUserAgentOverride().ua_string_override;
 }
 
+void WebContents::SetLanguage(const std::string& language) {
+  std::vector<std::string> normalized_languages;
+  for (const auto& language_piece : base::SplitStringPiece(
+           language, ",", base::KEEP_WHITESPACE, base::SPLIT_WANT_NONEMPTY)) {
+    std::string normalized_language(language_piece);
+    normalized_language =
+        normalized_language.substr(0, normalized_language.find(';'));
+    base::TrimWhitespaceASCII(normalized_language, base::TRIM_ALL,
+                              &normalized_language);
+    if (!normalized_language.empty())
+      normalized_languages.push_back(std::move(normalized_language));
+  }
+
+  auto* prefs = web_contents()->GetMutableRendererPrefs();
+  prefs->accept_languages = base::JoinString(normalized_languages, ",");
+  web_contents()->SyncRendererPrefs();
+}
+
 v8::Local<v8::Promise> WebContents::SavePage(
     const base::FilePath& full_file_path,
     const content::SavePageType& save_type) {
@@ -4821,6 +4841,7 @@ void WebContents::FillObjectTemplate(v8::Isolate* isolate,
                  &WebContents::ForcefullyCrashRenderer)
       .SetMethod("setUserAgent", &WebContents::SetUserAgent)
       .SetMethod("getUserAgent", &WebContents::GetUserAgent)
+      .SetMethod("setLanguage", &WebContents::SetLanguage)
       .SetMethod("savePage", &WebContents::SavePage)
       .SetMethod("openDevTools", &WebContents::OpenDevTools)
       .SetMethod("closeDevTools", &WebContents::CloseDevTools)

@@ -1415,6 +1415,20 @@ Overrides the user agent for this web page.
 
 Returns `string` - The user agent for this web page.
 
+#### `contents.setLanguage(language)`
+
+* `language` string
+
+Sets the accepted languages for this web page. The `language` parameter should be
+a comma-separated list of language codes (e.g., `'en-US,en'`).
+
+Any quality value parameters (such as `;q=0.9`) in the `language` string are stripped
+and ignored before being passed to Chromium. Electron/Chromium will generate their
+own quality weightings for the resulting `Accept-Language` request headers.
+
+Quality values (like `;q=0.9`) are also ignored for `navigator.language` and
+`navigator.languages`; these APIs only reflect the ordered list of language codes.
+
 #### `contents.insertCSS(css[, options])`
 
 * `css` string
