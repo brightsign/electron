@@ -1,0 +1,357 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Tariq Bashir <120014322+t-bashir-bs@users.noreply.github.com>
+Date: Tue, 11 Jun 2024 15:55:18 +0100
+Subject: launcher: Implement setting uid and groups for renderer process
+ OS-17053
+
+Cherry picked changes from QTWebEngine to allow setting the uid and groups
+for the renderer process. This is needed to allow the renderer process to
+run as a different user and group than the main process.
+
+The parameters are passed via switches --renderer-process-uid and
+--renderer-process-gids. A safety check has been added to ensure the
+renderer process is not run as root.
+
+diff --git a/base/process/launch.h b/base/process/launch.h
+index 59eac5dc8c61b5c2df58d467149d4f3a9936611d..d8395fe5ec2214866dba9ada8e8da8b37756cbe4 100644
+--- a/base/process/launch.h
++++ b/base/process/launch.h
+@@ -248,6 +248,12 @@ struct BASE_EXPORT LaunchOptions {
+   // Sets parent process death signal to SIGKILL.
+   bool kill_on_parent_death = false;
+ 
++  // UID to run as (0 = don't change)
++  uid_t uid = 0;
++
++  // Groups to run with
++  std::vector<gid_t> groups;
++
+   // File descriptors of the parent process with FD_CLOEXEC flag to be removed
+   // before calling exec*().
+   std::vector<int> fds_to_remove_cloexec;
+diff --git a/base/process/launch_posix.cc b/base/process/launch_posix.cc
+index 4f9ffed9d90a2dd54317aaa06d9a0bfac85427c0..1075e49af89152a1ca3bf06c5e494bd98d0ee2c6 100644
+--- a/base/process/launch_posix.cc
++++ b/base/process/launch_posix.cc
+@@ -19,6 +19,7 @@
+ #include <sys/types.h>
+ #include <sys/wait.h>
+ #include <unistd.h>
++#include <grp.h>
+ 
+ #include <iterator>
+ #include <limits>
+@@ -438,6 +439,18 @@ Process LaunchProcess(const std::vector<std::string>& argv,
+       }
+     }
+ 
++    gid_t gid = 0;
++    if (!options.groups.empty()) {
++      gid = options.groups[0];
++      PCHECK(0 == setgroups(options.groups.size(),options.groups.data()));
++    }
++    if (options.uid > 0)
++      PCHECK(0 == prctl (PR_SET_KEEPCAPS, 1));
++    if (gid > 0)
++      PCHECK(0 == setgid(gid));
++    if (options.uid > 0)
++      PCHECK(0 == setuid(options.uid));
++
+     ResetChildSignalHandlersToDefaults();
+     SetSignalMask(orig_sigmask);
+ 
+diff --git a/content/browser/child_process_launcher.cc b/content/browser/child_process_launcher.cc
+index 58186e523fada3bb0192de063f3c595920dd44b7..adbdcd62ad8ff79f319c7b530ba8a938a0e2a125 100644
+--- a/content/browser/child_process_launcher.cc
++++ b/content/browser/child_process_launcher.cc
+@@ -112,7 +112,9 @@ ChildProcessLauncher::ChildProcessLauncher(
+     scoped_refptr<base::RefCountedData<base::ReadOnlySharedMemoryRegion>>
+         tracing_config_memory_region,
+     scoped_refptr<base::RefCountedData<base::UnsafeSharedMemoryRegion>>
+-        tracing_output_memory_region)
++        tracing_output_memory_region,
++    uid_t uid,
++    std::vector<gid_t> groups)
+     : client_(client),
+       starting_(true),
+ #if defined(ADDRESS_SANITIZER) || defined(LEAK_SANITIZER) ||  \
+@@ -138,6 +140,7 @@ ChildProcessLauncher::ChildProcessLauncher(
+       client_->CanUseWarmUpConnection(), client_->HasSpareRendererPriority(),
+ #endif
+       std::move(mojo_invitation), process_error_callback, std::move(file_data),
++      uid, std::move(groups),
+       std::move(histogram_memory_region),
+       std::move(tracing_config_memory_region),
+       std::move(tracing_output_memory_region));
+diff --git a/content/browser/child_process_launcher.h b/content/browser/child_process_launcher.h
+index 65ffcb9491176722bb573be78ed15e81a9047c29..e22d6d21e5bb12920b261c92ab8b9bd3a7a0d2b5 100644
+--- a/content/browser/child_process_launcher.h
++++ b/content/browser/child_process_launcher.h
+@@ -289,7 +289,9 @@ class CONTENT_EXPORT ChildProcessLauncher
+       scoped_refptr<base::RefCountedData<base::ReadOnlySharedMemoryRegion>>
+           trace_config_memory_region = nullptr,
+       scoped_refptr<base::RefCountedData<base::UnsafeSharedMemoryRegion>>
+-          trace_output_memory_region = nullptr);
++          trace_output_memory_region = nullptr,
++      uid_t uid = 0,
++      std::vector<gid_t> groups = std::vector<gid_t>());
+ 
+   ChildProcessLauncher(const ChildProcessLauncher&) = delete;
+   ChildProcessLauncher& operator=(const ChildProcessLauncher&) = delete;
+diff --git a/content/browser/child_process_launcher_helper.cc b/content/browser/child_process_launcher_helper.cc
+index 08b3100781b34eba08fa24ec91209e01aec58a42..039797671c74fcca077b9123661b2e9c00ed43bf 100644
+--- a/content/browser/child_process_launcher_helper.cc
++++ b/content/browser/child_process_launcher_helper.cc
+@@ -213,6 +213,8 @@ ChildProcessLauncherHelper::ChildProcessLauncherHelper(
+     mojo::OutgoingInvitation mojo_invitation,
+     const mojo::ProcessErrorCallback& process_error_callback,
+     std::unique_ptr<ChildProcessLauncherFileData> file_data,
++    uid_t uid,
++    std::vector<gid_t> groups,
+     scoped_refptr<base::RefCountedData<base::UnsafeSharedMemoryRegion>>
+         histogram_memory_region,
+     scoped_refptr<base::RefCountedData<base::ReadOnlySharedMemoryRegion>>
+@@ -228,6 +230,8 @@ ChildProcessLauncherHelper::ChildProcessLauncherHelper(
+       mojo_invitation_(std::move(mojo_invitation)),
+       process_error_callback_(process_error_callback),
+       file_data_(std::move(file_data)),
++      uid_(uid),
++      groups_(std::move(groups)),
+ #if BUILDFLAG(IS_ANDROID)
+       can_use_warm_up_connection_(can_use_warm_up_connection),
+       is_spare_renderer_(is_spare_renderer),
+@@ -300,13 +304,14 @@ void ChildProcessLauncherHelper::LaunchOnLauncherThread() {
+   int launch_result = LAUNCH_RESULT_FAILURE;
+   std::optional<base::LaunchOptions> options;
+   base::LaunchOptions* options_ptr = nullptr;
+-  if (IsUsingLaunchOptions()) {
++  // if (IsUsingLaunchOptions()) {
++    // Always use launch options as we added uid and groups.
+     options.emplace();
+     options_ptr = &*options;
+ #if BUILDFLAG(IS_WIN)
+     options_ptr->elevated = delegate_->ShouldLaunchElevated();
+ #endif
+-  }
++  // }
+ 
+   // Propagate the kWaitForDebugger switch to child process if the
+   // kWaitForDebuggerChildren is specified and matches the child process type.
+diff --git a/content/browser/child_process_launcher_helper.h b/content/browser/child_process_launcher_helper.h
+index acd23abf6d314a0644f8f4306e101c9d99bbb832..c9f74c49154fd7717e2089452f0ad4bc38e78809 100644
+--- a/content/browser/child_process_launcher_helper.h
++++ b/content/browser/child_process_launcher_helper.h
+@@ -133,6 +133,8 @@ class ChildProcessLauncherHelper
+       mojo::OutgoingInvitation mojo_invitation,
+       const mojo::ProcessErrorCallback& process_error_callback,
+       std::unique_ptr<ChildProcessLauncherFileData> file_data,
++      uid_t uid,
++      std::vector<gid_t> groups,
+       scoped_refptr<base::RefCountedData<base::UnsafeSharedMemoryRegion>>
+           histogram_memory_region,
+       scoped_refptr<base::RefCountedData<base::ReadOnlySharedMemoryRegion>>
+@@ -331,6 +333,8 @@ class ChildProcessLauncherHelper
+   mojo::OutgoingInvitation mojo_invitation_;
+   const mojo::ProcessErrorCallback process_error_callback_;
+   std::unique_ptr<ChildProcessLauncherFileData> file_data_;
++  uid_t uid_;
++  const std::vector<gid_t> groups_;
+ 
+ #if BUILDFLAG(IS_MAC)
+   std::unique_ptr<sandbox::SeatbeltExecClient> seatbelt_exec_client_;
+diff --git a/content/browser/child_process_launcher_helper_linux.cc b/content/browser/child_process_launcher_helper_linux.cc
+index 878e5245266cfd4ea96bdbf8ca20c7ae0ac9a80e..2647658feb9c1001cb8e7dee0d7c050951d41e12 100644
+--- a/content/browser/child_process_launcher_helper_linux.cc
++++ b/content/browser/child_process_launcher_helper_linux.cc
+@@ -55,7 +55,6 @@ bool ChildProcessLauncherHelper::BeforeLaunchOnLauncherThread(
+     PosixFileDescriptorInfo& files_to_register,
+     base::LaunchOptions* options) {
+   if (options) {
+-    DCHECK(!GetZygoteForLaunch());
+     // Convert FD mapping to FileHandleMappingVector
+     options->fds_to_remap = files_to_register.GetMappingWithIDAdjustment(
+         base::GlobalDescriptors::kBaseDescriptor);
+@@ -82,6 +81,8 @@ bool ChildProcessLauncherHelper::BeforeLaunchOnLauncherThread(
+     options->current_directory = delegate_->GetCurrentDirectory();
+     options->environment = delegate_->GetEnvironment();
+     options->clear_environment = !delegate_->ShouldInheritEnvironment();
++    options->uid = uid_;
++    options->groups = groups_;
+   } else {
+     DCHECK(GetZygoteForLaunch());
+     // Environment variables could be supported in the future, but are not
+@@ -107,7 +108,7 @@ ChildProcessLauncherHelper::LaunchProcessOnLauncherThread(
+     // Additionally, the delegate could provide a UseGenericZygote() method.
+     base::ProcessHandle handle = zygote_handle->ForkRequest(
+         command_line()->argv(), files_to_register->GetMapping(),
+-        GetProcessType());
++        GetProcessType(), options);
+     *launch_result = LAUNCH_RESULT_SUCCESS;
+ 
+ #if !BUILDFLAG(IS_OPENBSD)
+diff --git a/content/browser/renderer_host/render_process_host_impl.cc b/content/browser/renderer_host/render_process_host_impl.cc
+index a5d1bafd8944afd9588d18ae8896c09f3bbce7f9..de5b4e88f20d8f98253799bdf0c85c08feb07c2e 100644
+--- a/content/browser/renderer_host/render_process_host_impl.cc
++++ b/content/browser/renderer_host/render_process_host_impl.cc
+@@ -1981,6 +1981,9 @@ bool RenderProcessHostImpl::Init() {
+     file_data->files_to_preload = GetV8SnapshotFilesToPreload(*cmd_line);
+ #endif
+ 
++    uid_t uid = GetBrowserContext()->GetUIDForRenderer();
++    std::vector<gid_t> groups = GetBrowserContext()->GetGroupsForRenderer();
++
+     // Spawn the child process asynchronously to avoid blocking the UI thread.
+     // As long as there's no renderer prefix, we can use the zygote process
+     // at this stage.
+@@ -1993,7 +1996,8 @@ bool RenderProcessHostImpl::Init() {
+             PROCESS_TYPE_RENDERER)
+             ? metrics_memory_region_
+             : nullptr,
+-        tracing_config_memory_region_, tracing_output_memory_region_);
++         tracing_config_memory_region_, tracing_output_memory_region_,
++         uid, groups);
+ 
+     // Send initialization messages to the renderer, before any other messages
+     // that might need them (e.g. navigation commits).
+diff --git a/content/common/zygote/zygote_communication_linux.cc b/content/common/zygote/zygote_communication_linux.cc
+index 2bf00e5b2f41908bc314bbadb3f018a6b79d1ed5..9ac2cc327294976f9a20196dfbe1de68c8581bfb 100644
+--- a/content/common/zygote/zygote_communication_linux.cc
++++ b/content/common/zygote/zygote_communication_linux.cc
+@@ -95,7 +95,8 @@ void ZygoteCommunication::ReinitializeLogging(
+ pid_t ZygoteCommunication::ForkRequest(
+     const std::vector<std::string>& argv,
+     const base::FileHandleMappingVector& mapping,
+-    const std::string& process_type) {
++    const std::string& process_type,
++    const base::LaunchOptions* options) {
+   DCHECK(init_);
+ 
+   base::Pickle pickle;
+@@ -115,6 +116,10 @@ pid_t ZygoteCommunication::ForkRequest(
+   icu::UnicodeString timezone_id;
+   pickle.WriteString16(
+       base::i18n::UnicodeStringToString16(timezone->getID(timezone_id)));
++  pickle.WriteInt(options->uid);
++  pickle.WriteInt(options->groups.size());
++  for (const auto g: options->groups)
++    pickle.WriteInt(g);
+ 
+   // Fork requests contain one file descriptor for the PID oracle, and one
+   // more for each file descriptor mapping for the child process.
+diff --git a/content/common/zygote/zygote_communication_linux.h b/content/common/zygote/zygote_communication_linux.h
+index 6a6e52f537fe8d4e23a3c01a36923bef5f5f0612..a6f878b49c11637206199066fa019aec791edd1f 100644
+--- a/content/common/zygote/zygote_communication_linux.h
++++ b/content/common/zygote/zygote_communication_linux.h
+@@ -48,7 +48,8 @@ class CONTENT_EXPORT ZygoteCommunication {
+   // Returns its pid on success, otherwise base::kNullProcessHandle;
+   pid_t ForkRequest(const std::vector<std::string>& command_line,
+                     const base::FileHandleMappingVector& mapping,
+-                    const std::string& process_type);
++                    const std::string& process_type,
++                    const base::LaunchOptions* options);
+ 
+   void EnsureProcessTerminated(pid_t process);
+ 
+diff --git a/content/public/browser/browser_context.h b/content/public/browser/browser_context.h
+index e03ed6361207d2b22c02533cee0c5c7668c2024e..fd4952628fc1b39ec25d8ce8f9b9d0bb5cfb28ca 100644
+--- a/content/public/browser/browser_context.h
++++ b/content/public/browser/browser_context.h
+@@ -380,6 +380,12 @@ class CONTENT_EXPORT BrowserContext : public base::SupportsUserData {
+   // also off the record.
+   virtual bool IsOffTheRecord() = 0;
+ 
++  // UID to run renderer as
++  virtual uid_t GetUIDForRenderer () const = 0;
++
++  // Groups that renderer should be in
++  virtual std::vector<gid_t> GetGroupsForRenderer() const = 0;
++
+   // Returns the DownloadManagerDelegate for this context. This will be called
+   // once per context. The embedder owns the delegate and is responsible for
+   // ensuring that it outlives DownloadManager. Note in particular that it is
+diff --git a/content/renderer/renderer_main.cc b/content/renderer/renderer_main.cc
+index 4b5f807cba7dc777e973cc5d852e92e2ed650449..e0b977af6b84f55f2a5edaa78a460221ce94e95e 100644
+--- a/content/renderer/renderer_main.cc
++++ b/content/renderer/renderer_main.cc
+@@ -144,6 +144,12 @@ int RendererMain(MainFunctionParams parameters) {
+   // expect synchronous events around the main loop of a thread.
+   TRACE_EVENT_INSTANT0("startup", "RendererMain", TRACE_EVENT_SCOPE_THREAD);
+ 
++#if BUILDFLAG(IS_LINUX)
++  if (getuid() == 0) {
++    LOG(FATAL) << "Renderer process is being run as root.";
++  }
++#endif
++
+ #if BUILDFLAG(IS_MAC)
+   // Declare that this process has CPU security mitigations enabled (see
+   // RendererSandboxedProcessLauncherDelegate::EnableCpuSecurityMitigations).
+diff --git a/content/zygote/zygote_linux.cc b/content/zygote/zygote_linux.cc
+index f157fa13599637f0a5605af1e5cb11b18726bae3..2672a159f24dd69617b11276c97419e83e80ef93 100644
+--- a/content/zygote/zygote_linux.cc
++++ b/content/zygote/zygote_linux.cc
+@@ -13,6 +13,7 @@
+ #include <sys/socket.h>
+ #include <sys/types.h>
+ #include <sys/wait.h>
++#include <grp.h>
+ 
+ #include <tuple>
+ #include <utility>
+@@ -431,7 +432,7 @@ int Zygote::ForkWithRealPid(const std::string& process_type,
+       pid = sandbox::NamespaceSandbox::ForkInNewPidNamespace(
+           /*drop_capabilities_in_child=*/true);
+     } else {
+-      pid = sandbox::Credentials::ForkAndDropCapabilitiesInChild();
++      pid = fork();
+     }
+   }
+ 
+@@ -545,6 +546,9 @@ base::ProcessId Zygote::ReadArgsAndFork(base::PickleIterator iter,
+   base::GlobalDescriptors::Mapping mapping;
+   std::string process_type;
+ 
++  uid_t uid = 0;
++  std::vector<gid_t> groups;
++
+   if (!iter.ReadString(&process_type))
+     return -1;
+   if (!iter.ReadInt(&argc))
+@@ -566,6 +570,18 @@ base::ProcessId Zygote::ReadArgsAndFork(base::PickleIterator iter,
+   icu::TimeZone::adoptDefault(icu::TimeZone::createTimeZone(
+       icu::UnicodeString(false, timezone_id.data(), timezone_id.length())));
+ 
++  if (!iter.ReadUInt32(&uid))
++    return -1;
++  int ngroups;
++  if (!iter.ReadInt(&ngroups))
++    return -1;
++  for (int i = 0; i < ngroups; i++) {
++    gid_t g;
++    if (!iter.ReadUInt32(&g))
++      return -1;
++    groups.push_back(g);
++  }
++
+   if (!iter.ReadInt(&numfds))
+     return -1;
+   if (numfds != static_cast<int>(fds.size()))
+@@ -615,6 +631,18 @@ base::ProcessId Zygote::ReadArgsAndFork(base::PickleIterator iter,
+     // (we don't have the original argv at this point).
+     base::SetProcessTitleFromCommandLine(nullptr);
+ 
++    gid_t gid = 0;
++    if (!groups.empty()) {
++      gid = groups[0];
++      PCHECK(0 == setgroups(groups.size(),groups.data()));
++    }
++    if (uid > 0)
++      PCHECK(0 == prctl (PR_SET_KEEPCAPS, 1));
++    if (gid > 0)
++      PCHECK(0 == setgid(gid));
++    if (uid > 0)
++      PCHECK(0 == setuid(uid));
++
+     // Linux-specific hack: Avoid taking the ~10-50ms jank penalty that a
+     // multithreaded process has to take when expanding its file descriptor
+     // table:

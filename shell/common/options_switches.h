@@ -322,6 +322,11 @@ inline constexpr base::cstring_view kServiceWorkerPreload =
 // If set, flag node::ProcessInitializationFlags::kNoStdioInitialization would
 // be set for node initialization.
 inline constexpr base::cstring_view kNoStdioInit = "no-stdio-init";
+inline constexpr base::cstring_view kRendererProcessUid =
+    "renderer-process-uid";
+
+inline constexpr base::cstring_view kRendererProcessGids =
+    "renderer-process-gids";
 
 }  // namespace switches
 
