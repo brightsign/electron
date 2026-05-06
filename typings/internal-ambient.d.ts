@@ -124,6 +124,14 @@ declare namespace NodeJS {
     handleActivation?: (callback: (details: ActivationArgumentsInternal) => void) => void;
   }
 
+  type MemoryPressureLevel = 'normal' | 'moderate' | 'critical';
+  interface MemoryPressureMonitorBinding {
+      createMemoryPressureMonitor(): MemoryPressureMonitorBinding;
+      getCurrentPressureLevel(): MemoryPressureLevel;
+      notifyMemoryPressure(level: MemoryPressureLevel): void;
+      emit: (event: string, ...args: any[]) => boolean;
+    }
+
   interface PowerMonitorBinding extends Electron.PowerMonitor {
     createPowerMonitor(): PowerMonitorBinding;
     setListeningForShutdown(listening: boolean): void;
@@ -249,6 +257,7 @@ declare namespace NodeJS {
     _linkedBinding(name: 'electron_browser_message_port'): { createPair(): { port1: Electron.MessagePortMain, port2: Electron.MessagePortMain }; };
     _linkedBinding(name: 'electron_browser_native_theme'): { nativeTheme: Electron.NativeTheme };
     _linkedBinding(name: 'electron_browser_notification'): NotificationBinding;
+    _linkedBinding(name: 'electron_browser_memory_pressure_monitor'): MemoryPressureMonitorBinding;
     _linkedBinding(name: 'electron_browser_power_monitor'): PowerMonitorBinding;
     _linkedBinding(name: 'electron_browser_power_save_blocker'): { powerSaveBlocker: Electron.PowerSaveBlocker };
     _linkedBinding(name: 'electron_browser_push_notifications'): { pushNotifications: Electron.PushNotifications };
