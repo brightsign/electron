@@ -22,6 +22,7 @@
 #include "extensions/browser/app_window/size_constraints.h"
 #include "shell/browser/native_window_observer.h"
 #include "third_party/abseil-cpp/absl/container/flat_hash_set.h"
+#include "third_party/blink/public/mojom/webpreferences/web_preferences.mojom-shared.h"
 #include "ui/views/widget/widget_delegate.h"
 
 class SkRegion;
@@ -196,6 +197,10 @@ class NativeWindow : public views::WidgetDelegate {
   virtual bool IsFocusable() const;
   virtual void SetMenu(ElectronMenuModel* menu) {}
   virtual void SetParentWindow(NativeWindow* parent);
+#if BUILDFLAG(IS_LINUX)
+  virtual void SetWindowTransform(
+      blink::mojom::WindowTransformType transform_type) = 0;
+#endif
   virtual content::DesktopMediaID GetDesktopMediaID() const = 0;
   virtual gfx::NativeView GetNativeView() const = 0;
   virtual gfx::NativeWindow GetNativeWindow() const = 0;
