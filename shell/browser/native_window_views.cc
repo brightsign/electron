@@ -1318,6 +1318,10 @@ void NativeWindowViews::SetOpacity(const double opacity) {
   SetLayered();
   ::SetLayeredWindowAttributes(hwnd, 0, boundedOpacity * 255, LWA_ALPHA);
   opacity_ = boundedOpacity;
+#elif BUILDFLAG(IS_OZONE_WAYLAND)
+  const double boundedOpacity = std::ranges::clamp(opacity, 0.0, 1.0);
+  widget()->SetOpacity(boundedOpacity);
+  opacity_ = boundedOpacity;
 #else
   opacity_ = 1.0;  // setOpacity unsupported on Linux
 #endif
