@@ -645,6 +645,11 @@ void NativeWindow::NotifyWindowMessage(UINT message,
 }
 #endif
 
+void NativeWindow::NotifyVirtualKeyboardVisibilityChanged(bool is_visible) {
+  for (NativeWindowObserver& observer : observers_)
+    observer.OnVirtualKeyboardVisibilityChanged(is_visible);
+}
+
 int NativeWindow::NonClientHitTest(const gfx::Point& point) {
 #if !BUILDFLAG(IS_MAC)
   // We need to ensure we account for resizing borders on Windows and Linux.

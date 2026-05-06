@@ -457,6 +457,15 @@ Calling `event.preventDefault()` will prevent the menu from being displayed.
 
 To convert `point` to DIP, use [`screen.screenToDipPoint(point)`](./screen.md#screenscreentodippointpoint-windows-linux).
 
+#### Event: 'virtual-keyboard-visibility-changed'
+
+Returns:
+
+* `event` Event
+* `show` boolean
+
+Emitted when Browser requests to show or hide a virtual keyboard
+
 ### Static Methods
 
 The `BrowserWindow` class has the following static methods:

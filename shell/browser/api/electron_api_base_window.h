@@ -100,6 +100,7 @@ class BaseWindow : public gin_helper::TrackableObject<BaseWindow>,
 #if BUILDFLAG(IS_WIN)
   void OnWindowMessage(UINT message, WPARAM w_param, LPARAM l_param) override;
 #endif
+  void OnVirtualKeyboardVisibilityChanged(bool is_visible) override;
 
   // Public APIs of NativeWindow.
   void SetContentView(gin_helper::Handle<View> view);

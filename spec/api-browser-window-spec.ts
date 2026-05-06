@@ -281,6 +281,59 @@ describe('BrowserWindow module', () => {
     });
   });
 
+  describe('virtual-keyboard-visibility-changed event', () => {
+    const triggeringInputTypes = [
+      'text', 'tel', 'search', 'email', 'password', 'url'
+    ];
+
+    const nonTriggeringInputTypes = [
+      'button', 'checkbox', 'color', 'date', 'datetime-local', 'file', 'hidden',
+      'image', 'month', 'number', 'radio', 'range', 'reset', 'submit', 'time', 'week'
+    ];
+
+    let w: BrowserWindow;
+
+    beforeEach(() => {
+      w = new BrowserWindow({ show: true, webPreferences: { nodeIntegration: false, contextIsolation: true } });
+    });
+
+    afterEach(async () => {
+      await closeWindow(w);
+      w = null as unknown as BrowserWindow;
+    });
+
+    for (const type of triggeringInputTypes) {
+      it(`should emit virtual-keyboard-visibility-changed for <input type="${type}"> when focused/blurred`, async () => {
+        const load = once(w, 'virtual-keyboard-visibility-changed');
+        await w.loadURL(`data:text/html,<input id="test" type="${type}"></input>`);
+        expect((await load)[1]).to.be.false();
+
+        let shown = once(w, 'virtual-keyboard-visibility-changed');
+        await w.webContents.executeJavaScript('document.getElementById("test").focus()', true);
+        expect((await shown)[1]).to.be.true();
+
+        shown = once(w, 'virtual-keyboard-visibility-changed');
+        await w.webContents.executeJavaScript('document.getElementById("test").blur()', true);
+        expect((await shown)[1]).to.be.false();
+      });
+    }
+
+    for (const type of nonTriggeringInputTypes) {
+      it(`should not emit virtual-keyboard-visibility-changed for <input type="${type}"> when focused/blurred`, async () => {
+        const eventSpy = once(w, 'virtual-keyboard-visibility-changed');
+        await w.loadURL(`data:text/html,<input id="test" type="${type}"></input>`);
+
+        await w.webContents.executeJavaScript('document.getElementById("test").focus()', true);
+
+        const didTimeout = await Promise.race([
+          eventSpy.then((args) => !args[1]), // show flag should be false, if triggered.
+          new Promise<boolean>((resolve) => global.setTimeout(() => resolve(true), 500)) // Timeout after 500ms (expected)
+        ]);
+        expect(didTimeout).to.be.true();
+      });
+    }
+  });
+
   describe('window.close()', () => {
     let w: BrowserWindow;
     beforeEach(() => {
