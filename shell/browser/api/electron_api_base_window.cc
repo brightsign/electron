@@ -125,6 +125,10 @@ BaseWindow::BaseWindow(v8::Isolate* isolate,
 #endif
 }
 
+void BaseWindow::OnVirtualKeyboardVisibilityChanged(bool show) {
+  Emit("virtual-keyboard-visibility-changed", show);
+}
+
 BaseWindow::BaseWindow(gin::Arguments* args,
                        const gin_helper::Dictionary& options)
     : BaseWindow(args->isolate(), options) {
