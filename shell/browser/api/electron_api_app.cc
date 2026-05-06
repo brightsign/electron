@@ -87,6 +87,10 @@
 #include "v8/include/cppgc/allocation.h"
 #include "v8/include/v8-traced-handle.h"
 
+#if BUILDFLAG(IS_LINUX)
+#include <fontconfig/fontconfig.h>
+#endif
+
 #if BUILDFLAG(IS_WIN)
 #include "base/strings/utf_string_conversions.h"
 #include "shell/browser/notifications/win/windows_toast_activator.h"
@@ -1638,6 +1642,15 @@ v8::Local<v8::Promise> App::ResolveProxy(gin::Arguments* args) {
 
   return handle;
 }
+#if BUILDFLAG(IS_LINUX)
+bool App::AddFont(const base::FilePath& path) {
+  if (FcConfigAppFontAddFile(NULL, (FcChar8*)path.value().c_str()) == FcTrue) {
+    return true;
+  } else {
+    return false;
+  }
+}
+#endif
 
 void App::SetUserAgentFallback(const std::string& user_agent) {
   ElectronBrowserClient::Get()->SetUserAgent(user_agent);
@@ -1994,6 +2007,9 @@ gin::ObjectTemplateBuilder App::GetObjectTemplateBuilder(v8::Isolate* isolate) {
                    &App::SetUserAgentFallback)
       .SetMethod("configureHostResolver", &ConfigureHostResolver)
       .SetMethod("enableSandbox", &App::EnableSandbox)
+#if BUILDFLAG(IS_LINUX)
+      .SetMethod("addFont", &App::AddFont)
+#endif
       .SetMethod("setProxy", &App::SetProxy)
       .SetMethod("resolveProxy", &App::ResolveProxy);
 }

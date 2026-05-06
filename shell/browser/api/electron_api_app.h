@@ -236,6 +236,9 @@ class App final : public gin::Wrappable<App>,
   v8::Local<v8::Promise> GetGPUInfo(v8::Isolate* isolate,
                                     const std::string& info_type);
   void EnableSandbox(gin_helper::ErrorThrower thrower);
+#if BUILDFLAG(IS_LINUX)
+  bool AddFont(const base::FilePath& path);
+#endif
   void SetUserAgentFallback(const std::string& user_agent);
   std::string GetUserAgentFallback();
   v8::Local<v8::Promise> SetProxy(gin::Arguments* args);
