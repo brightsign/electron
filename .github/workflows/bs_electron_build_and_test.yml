@@ -235,7 +235,7 @@ jobs:
       if: inputs.build_type == 'release'
       run: |
         cd src
-        ninja -C $OUTPUT_FOLDER electron:electron_dist_zip electron:node_headers third_party/electron_node:overlapped-checker electron:hunspell_dictionaries_zip
+        ninja -C $OUTPUT_FOLDER electron:electron_dist_zip electron:node_headers electron:hunspell_dictionaries_zip
         if [ "`uname`" == "Darwin" ]; then
           target_os=mac
           target_cpu=x64
