@@ -1,0 +1,63 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Tariq Bashir <120014322+t-bashir-bs@users.noreply.github.com>
+Date: Tue, 3 Dec 2024 15:49:57 +0000
+Subject: OS-18170: Allow MSE MediaSource to be disabled
+
+The BrightSign native media player doesn't support MSE. This patch adds back
+changes to allow MediaSource to be disabled using the disable-blink-features
+command line flag.
+
+diff --git a/third_party/blink/renderer/modules/mediasource/media_source.idl b/third_party/blink/renderer/modules/mediasource/media_source.idl
+index 060baac1694e7bfb4a023e39401ccff0553a0451..1093043ee3e71e49bfb3313d9baf0effccc2006f 100644
+--- a/third_party/blink/renderer/modules/mediasource/media_source.idl
++++ b/third_party/blink/renderer/modules/mediasource/media_source.idl
+@@ -37,7 +37,7 @@ enum EndOfStreamError {
+ 
+ [
+     ActiveScriptWrappable,
+-    Exposed=(Window, DedicatedWorker)
++    Exposed(Window MediaSourceStable, DedicatedWorker MediaSourceStable)
+ ] interface MediaSource : EventTarget {
+     [CallWith=ExecutionContext] constructor();
+     // All the source buffers created by this object.
+diff --git a/third_party/blink/renderer/modules/mediasource/source_buffer.idl b/third_party/blink/renderer/modules/mediasource/source_buffer.idl
+index 21975a0bd60dae6360c87a064ab04c90701873e6..1ab9e499aaf4564de23639318ff2fcde795e043b 100644
+--- a/third_party/blink/renderer/modules/mediasource/source_buffer.idl
++++ b/third_party/blink/renderer/modules/mediasource/source_buffer.idl
+@@ -41,7 +41,7 @@ enum AppendMode {
+ 
+ [
+     ActiveScriptWrappable,
+-    Exposed=(Window, DedicatedWorker)
++    Exposed(Window MediaSourceStable, DedicatedWorker MediaSourceStable)
+ ] interface SourceBuffer : EventTarget {
+ 
+     // Gets or sets the AppendMode.
+diff --git a/third_party/blink/renderer/modules/mediasource/source_buffer_list.idl b/third_party/blink/renderer/modules/mediasource/source_buffer_list.idl
+index 75dcd69646123551f14fba569b2acbafd8cde1d0..c11505a0d6dcada81dd8ac6ab9e0e5ac1bc2d8f0 100644
+--- a/third_party/blink/renderer/modules/mediasource/source_buffer_list.idl
++++ b/third_party/blink/renderer/modules/mediasource/source_buffer_list.idl
+@@ -29,7 +29,7 @@
+  */
+ 
+ [
+-    Exposed=(Window, DedicatedWorker)
++    Exposed(Window MediaSourceStable, DedicatedWorker MediaSourceStable)
+ ] interface SourceBufferList : EventTarget {
+     readonly attribute unsigned long length;
+     attribute EventHandler onaddsourcebuffer;
+diff --git a/third_party/blink/renderer/platform/runtime_enabled_features.json5 b/third_party/blink/renderer/platform/runtime_enabled_features.json5
+index 9c207b3927535ceeecb6f73a36f51566500c9ebb..287aa88900e8e9054685b2339894ba40389d4eae 100644
+--- a/third_party/blink/renderer/platform/runtime_enabled_features.json5
++++ b/third_party/blink/renderer/platform/runtime_enabled_features.json5
+@@ -3794,6 +3794,10 @@
+       base_feature: "none",
+       origin_trial_feature_name: "MediaSourceExtensionsForWebCodecs",
+     },
++    {
++      name: "MediaSourceStable",
++      status: "stable",
++    },
+     {
+       name: "MediaStreamTrackTransfer",
+       status: "test",
