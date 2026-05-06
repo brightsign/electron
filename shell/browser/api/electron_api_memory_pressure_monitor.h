@@ -43,7 +43,8 @@ class MemoryPressureMonitor
   // Returns the current memory pressure level as a string.
   std::string GetCurrentPressureLevel();
 
-  // Broadcasts a memory pressure notification to all listeners in this process.
+  // Broadcasts a memory pressure notification to all listeners in the browser
+  // process and all renderer processes.
   void NotifyMemoryPressure(const std::string& level);
 
   // base::MemoryPressureListener:
