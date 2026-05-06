@@ -4349,6 +4349,12 @@ describe('BrowserWindow module', () => {
           }
         });
 
+        const server = http.createServer((req, res) => {
+          res.writeHead(200, { 'Content-Type': 'text/html' });
+          res.end('<html><body>Blank Page</body></html>');
+        });
+        const serverUrl = (await listen(server)).url;
+
         w.webContents.setWindowOpenHandler(() => ({
           action: 'allow',
           overrideBrowserWindowOptions: {
@@ -4357,10 +4363,13 @@ describe('BrowserWindow module', () => {
             }
           }
         }));
-        w.loadFile(path.join(fixtures, 'api', 'new-window.html'));
-        const [childWindow] = (await once(w.webContents, 'did-create-window')) as [BrowserWindow, any];
+        w.loadFile(path.join(fixtures, 'api', 'new-window.html'), {
+          query: { url: serverUrl }
+        });
+        const [childWindow] = await once(w.webContents, 'did-create-window') as [BrowserWindow, any];
         await once(childWindow.webContents, 'did-finish-load');
         expect(childWindow.webContents.getZoomFactor()).to.be.closeTo(2.0, 0.1);
+        server.close();
       });
 
       it('should set ipc event sender correctly', async () => {
