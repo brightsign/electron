@@ -1,0 +1,52 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Tariq Bashir <tbashir@brightsign.biz>
+Date: Thu, 11 May 2023 17:53:08 +0100
+Subject: OS-14339: BrightSign change to pass window boundary x and y offsets
+ to SetGeometry
+
+Patch to set the x & y offsets from the window bounds in the SetWindowGeometry call.
+This ensures that the offsets are passed to the Wayland compositor through the
+xdg_surface_set_window_geometry call. This is because we don't support aura shell
+and hence cannot use RequestWindowBounds calls to set the offset.
+Also, some BrightSign customers create windows with zero width and height bounds.
+This change also ensures that the bounds are always at least 1 pixel in size.
+
+diff --git a/ui/ozone/platform/wayland/host/wayland_toplevel_window.cc b/ui/ozone/platform/wayland/host/wayland_toplevel_window.cc
+index 072d543d347103393b1eb23f23f13f90aa110125..33b7d01af0da3564fa6ddc4f5467d9727d4adf17 100644
+--- a/ui/ozone/platform/wayland/host/wayland_toplevel_window.cc
++++ b/ui/ozone/platform/wayland/host/wayland_toplevel_window.cc
+@@ -652,17 +652,24 @@ void WaylandToplevelWindow::SetWindowGeometry(
+   auto insets_dip = delegate()->CalculateInsetsInDIP(state.window_state);
+   if (!insets_dip.IsEmpty()) {
+     geometry_dip.Inset(insets_dip);
+-
+-    // Shrinking the bounds by the decoration insets might result in empty
+-    // bounds. For the reasons already explained in WaylandWindow::Initialize(),
+-    // we mustn't request an empty window geometry.
+-    if (geometry_dip.width() == 0) {
+-      geometry_dip.set_width(1);
+-    }
+-    if (geometry_dip.height() == 0) {
+-      geometry_dip.set_height(1);
+-    }
+   }
++  // Always check if the bounds are zero, this can happen for certain BrightSign
++  // customer scenarios where the window is created with zero width or height
++  // bounds. For the reasons already explained in WaylandWindow::Initialize(),
++  // we mustn't request an empty window geometry.
++  if (geometry_dip.width() == 0) {
++    geometry_dip.set_width(1);
++  }
++  if (geometry_dip.height() == 0) {
++    geometry_dip.set_height(1);
++  }
++
++  // BrightSign modification to set the x & y offsets from the window bounds
++  // in the SetWindowGeometry call. This is because we don't support aura shell
++  // and hence cannot use RequestWindowBounds calls to set the offset.
++  geometry_dip.set_x(GetBoundsInDIP().x());
++  geometry_dip.set_y(GetBoundsInDIP().y());
++
+   xdg_toplevel_->SetWindowGeometry(geometry_dip);
+ }
+ 
