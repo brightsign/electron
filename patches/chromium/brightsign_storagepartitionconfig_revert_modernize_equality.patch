@@ -1,0 +1,60 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Tariq Bashir <tbashir@brightsign.biz>
+Date: Wed, 2 Jul 2025 11:02:18 +0100
+Subject: BrightSign StoragePartitionConfig: Preserve comparison semantics
+
+Chromium added https://chromium-review.googlesource.com/c/chromium/src/+/6554130
+which modernized the equality operators in StoragePartitionConfig and other places.
+This change means that the quota std::optional<int> we added is now included in the
+equality and comparison operators, which is not what we want. Keep Chromium's
+modern comparison surface but customize it for StoragePartitionConfig so quota is
+ignored and the previous BrightSign behavior is preserved.
+
+diff --git a/content/public/browser/storage_partition_config.cc b/content/public/browser/storage_partition_config.cc
+index ff56aedfc7361645be5968f7b017161d999c149f..3f080b4612d6f53d2310f30d680da45d744f0e30 100644
+--- a/content/public/browser/storage_partition_config.cc
++++ b/content/public/browser/storage_partition_config.cc
+@@ -65,6 +65,26 @@ StoragePartitionConfig::GetFallbackForBlobUrls() const {
+           quota_size_);
+ }
+ 
++bool StoragePartitionConfig::operator==(
++    const StoragePartitionConfig& rhs) const {
++  return partition_domain_ == rhs.partition_domain_ &&
++         partition_name_ == rhs.partition_name_ &&
++         in_memory_ == rhs.in_memory_ &&
++         fallback_to_partition_domain_for_blob_urls_ ==
++             rhs.fallback_to_partition_domain_for_blob_urls_;
++}
++std::strong_ordering StoragePartitionConfig::operator<=>(
++    const StoragePartitionConfig& rhs) const {
++  if (auto cmp = partition_domain_ <=> rhs.partition_domain_; cmp != 0)
++    return cmp;
++  if (auto cmp = partition_name_ <=> rhs.partition_name_; cmp != 0)
++    return cmp;
++  if (auto cmp = in_memory_ <=> rhs.in_memory_; cmp != 0)
++    return cmp;
++  return fallback_to_partition_domain_for_blob_urls_ <=>
++         rhs.fallback_to_partition_domain_for_blob_urls_;
++}
++
+ std::ostream& operator<<(std::ostream& out,
+                          const StoragePartitionConfig& config) {
+   out << "{";
+diff --git a/content/public/browser/storage_partition_config.h b/content/public/browser/storage_partition_config.h
+index b1b708c1982a28f40ee961d363f6b2583619f8f0..e6f922c3a86bbafd4cff51d601bdc5bfb8cc9059 100644
+--- a/content/public/browser/storage_partition_config.h
++++ b/content/public/browser/storage_partition_config.h
+@@ -84,10 +84,8 @@ class CONTENT_EXPORT StoragePartitionConfig {
+   }
+   std::optional<StoragePartitionConfig> GetFallbackForBlobUrls() const;
+ 
+-  friend bool operator==(const StoragePartitionConfig&,
+-                         const StoragePartitionConfig&) = default;
+-  friend auto operator<=>(const StoragePartitionConfig&,
+-                          const StoragePartitionConfig&) = default;
++  bool operator==(const StoragePartitionConfig& rhs) const;
++  std::strong_ordering operator<=>(const StoragePartitionConfig& rhs) const;
+ 
+  private:
+   friend StoragePartitionConfig CreateStoragePartitionConfigForTesting(
