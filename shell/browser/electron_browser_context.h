@@ -113,6 +113,7 @@ class ElectronBrowserContext : public content::BrowserContext {
       override;
   content::DownloadManagerDelegate* GetDownloadManagerDelegate() override;
   content::BrowserPluginGuestManager* GetGuestManager() override;
+  content::StoragePartition* GetDefaultStoragePartition();
   content::PlatformNotificationService* GetPlatformNotificationService()
       override;
   content::PermissionControllerDelegate* GetPermissionControllerDelegate()
@@ -215,6 +216,7 @@ class ElectronBrowserContext : public content::BrowserContext {
   base::FilePath path_;
   bool in_memory_ = false;
   bool use_cache_ = true;
+  std::optional<int> user_set_quota_ = std::nullopt;
   int max_cache_size_ = 0;
 
   // Shared URLLoaderFactory.

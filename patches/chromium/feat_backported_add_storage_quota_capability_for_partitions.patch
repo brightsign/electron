@@ -1,0 +1,232 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Tariq Bashir <120014322+t-bashir-bs@users.noreply.github.com>
+Date: Fri, 19 Apr 2024 17:36:50 +0100
+Subject: feat:(backported) add storage quota capability for partitions
+
+This patch adds the capability for a storage quota
+to be set on partitions.This capability will be
+exercised only when physical storage based
+partitions are used.
+
+diff --git a/content/browser/storage_partition_impl.cc b/content/browser/storage_partition_impl.cc
+index ab16e6b15905b8812be29ca8cd099d6f325a43e7..cdd510a6f397a669a91df9f69d3e62fd30783952 100644
+--- a/content/browser/storage_partition_impl.cc
++++ b/content/browser/storage_partition_impl.cc
+@@ -1333,6 +1333,8 @@ void StoragePartitionImpl::Initialize(
+                           weak_factory_.GetWeakPtr()),
+       report_static_storage_quota);
+   quota_manager_ = quota_context_->quota_manager();
++  if (config_.quota())
++      quota_manager_->SetQuota(config_.quota().value());
+   scoped_refptr<storage::QuotaManagerProxy> quota_manager_proxy =
+       quota_manager_->proxy();
+ 
+diff --git a/content/public/browser/storage_partition_config.cc b/content/public/browser/storage_partition_config.cc
+index a2fae1b19d9489bbb5c42f29de7480a29133ea6e..ff56aedfc7361645be5968f7b017161d999c149f 100644
+--- a/content/public/browser/storage_partition_config.cc
++++ b/content/public/browser/storage_partition_config.cc
+@@ -21,8 +21,10 @@ StoragePartitionConfig& StoragePartitionConfig::operator=(
+ 
+ // static
+ StoragePartitionConfig StoragePartitionConfig::CreateDefault(
+-    BrowserContext* browser_context) {
+-  return StoragePartitionConfig("", "", browser_context->IsOffTheRecord());
++    BrowserContext* browser_context,
++    std::optional<int> quota_size) {
++  return StoragePartitionConfig("", "", browser_context->IsOffTheRecord(),
++                                quota_size);
+ }
+ 
+ // static
+@@ -30,22 +32,26 @@ StoragePartitionConfig StoragePartitionConfig::Create(
+     BrowserContext* browser_context,
+     const std::string& partition_domain,
+     const std::string& partition_name,
+-    bool in_memory) {
++    bool in_memory,
++    std::optional<int> quota_size) {
+   // If a caller tries to pass an empty partition_domain something is seriously
+   // wrong or the calling code is not explicitly signalling its desire to create
+   // a default partition by calling CreateDefault().
+   CHECK(!partition_domain.empty());
+   return StoragePartitionConfig(partition_domain, partition_name,
+-                                in_memory || browser_context->IsOffTheRecord());
++                                in_memory || browser_context->IsOffTheRecord(),
++                                quota_size);
+ }
+ 
+ StoragePartitionConfig::StoragePartitionConfig(
+     const std::string& partition_domain,
+     const std::string& partition_name,
+-    bool in_memory)
++    bool in_memory,
++    std::optional<int> quota_size)
+     : partition_domain_(partition_domain),
+       partition_name_(partition_name),
+-      in_memory_(in_memory) {}
++      in_memory_(in_memory),
++      quota_size_(quota_size) {}
+ 
+ std::optional<StoragePartitionConfig>
+ StoragePartitionConfig::GetFallbackForBlobUrls() const {
+@@ -55,7 +61,8 @@ StoragePartitionConfig::GetFallbackForBlobUrls() const {
+   return StoragePartitionConfig(
+       partition_domain_, "",
+       /*in_memory=*/fallback_to_partition_domain_for_blob_urls_ ==
+-          FallbackMode::kFallbackPartitionInMemory);
++          FallbackMode::kFallbackPartitionInMemory,
++          quota_size_);
+ }
+ 
+ std::ostream& operator<<(std::ostream& out,
+diff --git a/content/public/browser/storage_partition_config.h b/content/public/browser/storage_partition_config.h
+index 30da39f2c648b587d0902d7ffe7e16f982ad0b95..b1b708c1982a28f40ee961d363f6b2583619f8f0 100644
+--- a/content/public/browser/storage_partition_config.h
++++ b/content/public/browser/storage_partition_config.h
+@@ -28,7 +28,8 @@ class CONTENT_EXPORT StoragePartitionConfig {
+ 
+   // Creates a default config for |browser_context|. If |browser_context| is an
+   // off-the-record profile, then the config will have |in_memory_| set to true.
+-  static StoragePartitionConfig CreateDefault(BrowserContext* browser_context);
++  static StoragePartitionConfig CreateDefault(BrowserContext* browser_context,
++                                              std::optional<int> quota_size = std::nullopt);
+ 
+   // Creates a config tied to a specific domain.
+   // The |partition_domain| is [a-z]* UTF-8 string, specifying the domain in
+@@ -43,11 +44,13 @@ class CONTENT_EXPORT StoragePartitionConfig {
+   static StoragePartitionConfig Create(BrowserContext* browser_context,
+                                        const std::string& partition_domain,
+                                        const std::string& partition_name,
+-                                       bool in_memory);
++                                       bool in_memory,
++                                       std::optional<int> quota_size = std::nullopt);
+ 
+   const std::string& partition_domain() const { return partition_domain_; }
+   const std::string& partition_name() const { return partition_name_; }
+   bool in_memory() const { return in_memory_; }
++  std::optional<int> quota() const { return quota_size_; }
+ 
+   // Returns true if this config was created by CreateDefault() or is
+   // a copy of a config created with that method.
+@@ -95,11 +98,13 @@ class CONTENT_EXPORT StoragePartitionConfig {
+ 
+   StoragePartitionConfig(const std::string& partition_domain,
+                          const std::string& partition_name,
+-                         bool in_memory);
++                         bool in_memory,
++                         std::optional<int> quota_size = std::nullopt);
+ 
+   std::string partition_domain_;
+   std::string partition_name_;
+   bool in_memory_ = false;
++  std::optional<int> quota_size_ = std::nullopt;
+   FallbackMode fallback_to_partition_domain_for_blob_urls_ =
+       FallbackMode::kNone;
+ };
+diff --git a/storage/browser/quota/quota_manager_impl.cc b/storage/browser/quota/quota_manager_impl.cc
+index beb6c5cde9ea013e068531f08fcc384412716081..2c23db6849f9f9d2290c73ecfcb723c36ff4fabe 100644
+--- a/storage/browser/quota/quota_manager_impl.cc
++++ b/storage/browser/quota/quota_manager_impl.cc
+@@ -2729,7 +2729,7 @@ void QuotaManagerImpl::GetStorageCapacity(StorageCapacityCallback callback) {
+   db_runner_->PostTaskAndReplyWithResult(
+       FROM_HERE,
+       base::BindOnce(&QuotaManagerImpl::CallGetVolumeInfo, get_volume_info_fn_,
+-                     profile_path_),
++                     profile_path_,start_quota_),
+       base::BindOnce(&QuotaManagerImpl::DidGetStorageCapacity,
+                      weak_factory_.GetWeakPtr()));
+ }
+@@ -3018,16 +3018,25 @@ void QuotaManagerImpl::PostTaskAndReplyWithResultForDBThread(
+       std::move(reply));
+ }
+ 
++void QuotaManagerImpl::SetQuota(int start_quota) {
++  // Set the quota for a browser context */
++  // If an electron::BrowserWindow uses a partition path
++  // with no existing browser context, then
++  // this quota takes effect
++  start_quota_ = start_quota;
++}
++
+ // static
+ QuotaAvailability QuotaManagerImpl::CallGetVolumeInfo(
+     GetVolumeInfoFn get_volume_info_fn,
+-    const base::FilePath& path) {
++    const base::FilePath& path,
++    const std::optional<int>& quota_size) {
+   if (!base::CreateDirectory(path)) {
+     LOG(WARNING) << "Create directory failed for path" << path.value();
+     return QuotaAvailability(0, 0);
+   }
+ 
+-  const QuotaAvailability quotaAvailability = get_volume_info_fn(path);
++  const QuotaAvailability quotaAvailability = get_volume_info_fn(path,quota_size);
+   const auto total = quotaAvailability.total;
+   const auto available = quotaAvailability.available;
+ 
+@@ -3049,10 +3058,16 @@ QuotaAvailability QuotaManagerImpl::CallGetVolumeInfo(
+ }
+ 
+ // static
+-QuotaAvailability QuotaManagerImpl::GetVolumeInfo(const base::FilePath& path) {
+-  return QuotaAvailability(
+-      base::SysInfo::AmountOfTotalDiskSpace(path).value_or(-1),
+-      base::SysInfo::AmountOfFreeDiskSpace(path).value_or(-1));
++QuotaAvailability QuotaManagerImpl::GetVolumeInfo(
++    const base::FilePath& path,
++    const std::optional<int>& quota_size) {
++  if (!quota_size) {
++    return QuotaAvailability(base::SysInfo::AmountOfTotalDiskSpace(path).value_or(-1),
++                             base::SysInfo::AmountOfFreeDiskSpace(path).value_or(-1));
++  } else {
++    return QuotaAvailability(base::SysInfo::AmountOfTotalDiskSpace(path).value_or(-1),
++                             quota_size.value());
++  }
+ }
+ 
+ void QuotaManagerImpl::AddObserver(
+diff --git a/storage/browser/quota/quota_manager_impl.h b/storage/browser/quota/quota_manager_impl.h
+index eac74a9ae3dcec612fee8868556d501f40c07d16..ccc5d8911b5b33438afc9eec221ec48b706103a8 100644
+--- a/storage/browser/quota/quota_manager_impl.h
++++ b/storage/browser/quota/quota_manager_impl.h
+@@ -156,7 +156,8 @@ class COMPONENT_EXPORT(STORAGE_BROWSER) QuotaManagerImpl
+   // Function pointer type used to store the function which returns
+   // information about the volume containing the given FilePath.
+   // The value returned is the QuotaAvailability struct.
+-  using GetVolumeInfoFn = QuotaAvailability (*)(const base::FilePath&);
++  using GetVolumeInfoFn = QuotaAvailability (*)(const base::FilePath&,
++                                                const std::optional<int>&);
+ 
+   static constexpr int64_t kGBytes = 1024 * 1024 * 1024;
+   static constexpr int64_t kNoLimit = INT64_MAX;
+@@ -469,6 +470,8 @@ class COMPONENT_EXPORT(STORAGE_BROWSER) QuotaManagerImpl
+     eviction_disabled_ = disable;
+   }
+ 
++  void SetQuota(const int start_quota);
++
+   // Testing support for handling corruption in the underlying database.
+   //
+   // Runs `corrupter` on the same sequence used to do database I/O,
+@@ -753,8 +756,10 @@ class COMPONENT_EXPORT(STORAGE_BROWSER) QuotaManagerImpl
+   CreateDeleteBucketSetCallback(StatusCallback done);
+ 
+   static QuotaAvailability CallGetVolumeInfo(GetVolumeInfoFn get_volume_info_fn,
+-                                             const base::FilePath& path);
+-  static QuotaAvailability GetVolumeInfo(const base::FilePath& path);
++                                             const base::FilePath& path,
++                                             const std::optional<int>& quota_size = std::nullopt);
++  static QuotaAvailability GetVolumeInfo(const base::FilePath& path,
++                                         const std::optional<int>& quota_size = std::nullopt);
+ 
+   const bool is_incognito_;
+   const base::FilePath profile_path_;
+@@ -850,6 +855,8 @@ class COMPONENT_EXPORT(STORAGE_BROWSER) QuotaManagerImpl
+   // QuotaManagerImpl::GetVolumeInfo.
+   GetVolumeInfoFn get_volume_info_fn_;
+ 
++  std::optional<int> start_quota_ = std::nullopt;
++
+   // Whether to report static values for storage quota estimate APIs.
+   const bool report_static_storage_quota_;
+ 
