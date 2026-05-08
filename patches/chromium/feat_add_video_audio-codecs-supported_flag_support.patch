@@ -50,10 +50,18 @@ index 3d45c534d367e9f3b9d29a076a933cc3bc6cbfb4..2a345fe27d0a6151b040a2f1270acf38
  
  #if BUILDFLAG(ENABLE_PASSTHROUGH_AUDIO_CODECS)
 diff --git a/media/base/supported_types.cc b/media/base/supported_types.cc
-index 117bb7eb6d499e8c43fc83c6d93268929af7eb30..1af4140b305830ab3ebceaf897b91e8329b86c7c 100644
+index 117bb7eb6d499e8c43fc83c6d93268929af7eb30..feaac58817098b7143ffe001258dbf9a6f0610b8 100644
 --- a/media/base/supported_types.cc
 +++ b/media/base/supported_types.cc
-@@ -75,6 +75,141 @@ GetSupplementalEncoderVideoProfileCache() {
+@@ -9,6 +9,7 @@
+ #include "base/logging.h"
+ #include "base/no_destructor.h"
+ #include "base/notreached.h"
++#include "base/strings/string_number_conversions.h"
+ #include "build/build_config.h"
+ #include "media/base/media.h"
+ #include "media/base/media_client.h"
+@@ -75,6 +76,142 @@ GetSupplementalEncoderVideoProfileCache() {
    return cache.get();
  }
  
@@ -114,9 +122,10 @@ index 117bb7eb6d499e8c43fc83c6d93268929af7eb30..1af4140b305830ab3ebceaf897b91e83
 +        ++pos;
 +
 +        // Parse out the profile and level constraints
-+        int value = strtoul(allowed.c_str() + pos, NULL, 16);
++        unsigned value = 0;
++        base::HexStringToUInt(allowed.substr(pos, 3), &value);
 +        int max_level = (((value >> 4) & 0x0f) * 10) + (value & 0x0f);
-+        if ((value >> 8) >= profile) {
++        if (static_cast<int>(value >> 8) >= profile) {
 +          if (max_level >= level) {
 +            // Profile and level are supported
 +            return true;
@@ -195,7 +204,7 @@ index 117bb7eb6d499e8c43fc83c6d93268929af7eb30..1af4140b305830ab3ebceaf897b91e83
  bool IsDecoderSupportedHdrMetadata(const VideoType& type) {
    switch (type.hdr_metadata_type) {
      case gfx::HdrMetadataType::kNone:
-@@ -438,11 +573,22 @@ bool IsDefaultDecoderSupportedVideoType(const VideoType& type) {
+@@ -438,11 +575,22 @@ bool IsDefaultDecoderSupportedVideoType(const VideoType& type) {
      return false;
    }
  
@@ -218,7 +227,7 @@ index 117bb7eb6d499e8c43fc83c6d93268929af7eb30..1af4140b305830ab3ebceaf897b91e83
    switch (type.codec) {
      case VideoCodec::kTheora:
        return IsDecoderBuiltInVideoCodec(type.codec);
-@@ -473,11 +619,22 @@ bool IsDefaultDecoderSupportedAudioType(const AudioType& type) {
+@@ -473,11 +621,22 @@ bool IsDefaultDecoderSupportedAudioType(const AudioType& type) {
    if (type.spatial_rendering)
      return false;
  
