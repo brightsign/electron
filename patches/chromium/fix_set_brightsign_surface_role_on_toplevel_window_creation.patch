@@ -1,0 +1,109 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Caner Altinbasak <cal@brightsign.biz>
+Date: Fri, 8 May 2026 11:49:16 +0100
+Subject: fix: set BrightSign surface role on toplevel window creation
+
+Electron's toplevel Wayland surface was never calling
+bs_z_order_v2_set_role(), leaving shsurf->bs_role at ROLE_NONE.
+The BrightSign Weston backend classifies such surfaces as
+BSSurfaceType::NA and FilterVisible() skips them during DRM plane
+assignment, resulting in an empty planes list and no visible output
+on hardware (though screenshots and QEMU still worked via software
+compositing).
+
+Three changes fix this:
+
+1. CreateXdgToplevel() now calls SetZOrder(z_order_) after the first
+   wl_surface commit so the role is sent only once Weston has created
+   the shell_surface via desktop_surface_added.
+
+2. SetZOrderLevel() now forwards to xdg_toplevel_->SetZOrder() when
+   the toplevel exists, instead of only storing the value.
+
+3. XdgToplevel::SetZOrder() is a no-op for non-BrightSign z_order
+   values (kNormal, kFloatingWindow, etc.) instead of calling
+   abort(). Only explicit BS roles (kRoleGraphics,
+   kRoleVirtualKeyboard, kRaise, kLower) send protocol requests.
+   This avoids prematurely assigning GRAPHICS to windows like the
+   virtual keyboard that receive their role via a later
+   SetZOrderLevel() call, since Weston rejects role changes once set.
+
+diff --git a/ui/ozone/platform/wayland/host/wayland_connection.h b/ui/ozone/platform/wayland/host/wayland_connection.h
+index f4b1513809c0a70bd8b3ab712eade05818b8a190..5bcc70873c42c79541c67cd2680381fc2b11baeb 100644
+--- a/ui/ozone/platform/wayland/host/wayland_connection.h
++++ b/ui/ozone/platform/wayland/host/wayland_connection.h
+@@ -403,14 +403,16 @@ class WaylandConnection {
+   base::flat_map<std::string, wl::GlobalObjectFactory> global_object_factories_;
+ 
+   uint32_t compositor_version_ = 0;
+-  wl::Object<bs_z_order_v2> bs_z_order_v2_;
+-  wl::Object<zwp_surface_activation_control_manager_v1>
+-      surface_activation_control_manager_v1_;
+   wl::Object<wl_display> display_;
+   // `event_queue_` must be declared before `wrapped_display_`, so that the
+   // latter is destroyed first. This prevents libwayland warnings about the
+   // queue being destroyed while the proxy is still attached.
++  // BrightSign protocol globals must also be declared after `event_queue_`
++  // so they are destroyed before the queue.
+   wl::Object<wl_event_queue> event_queue_;
++  wl::Object<bs_z_order_v2> bs_z_order_v2_;
++  wl::Object<zwp_surface_activation_control_manager_v1>
++      surface_activation_control_manager_v1_;
+   // A non-default display that Ozone/Wayland uses for event dispatching
+   // (a non-default `event_queue_` is created using this display). This is
+   // necessary to avoid any possible deadlocks (in case of API's misuse. See
+diff --git a/ui/ozone/platform/wayland/host/wayland_toplevel_window.cc b/ui/ozone/platform/wayland/host/wayland_toplevel_window.cc
+index 9c4509919893ed26f43403a261f6d48650a02b4c..e8605bc35454d82dad48ec543ba77d4519226cc2 100644
+--- a/ui/ozone/platform/wayland/host/wayland_toplevel_window.cc
++++ b/ui/ozone/platform/wayland/host/wayland_toplevel_window.cc
+@@ -105,6 +105,13 @@ bool WaylandToplevelWindow::CreateXdgToplevel() {
+   // during the call to WaylandWindow::Initialize().
+   UpdateWindowMask();
+   root_surface()->Commit(true);
++
++  // Set the BrightSign surface role so the compositor can assign the surface
++  // to a hardware plane. This must happen after the first commit because Weston
++  // creates the shell_surface in desktop_surface_added, which is triggered by
++  // the initial wl_surface.commit.
++  xdg_toplevel_->SetZOrder(z_order_);
++
+   return true;
+ }
+ 
+@@ -383,9 +390,10 @@ void WaylandToplevelWindow::SetOpacity(float opacity) {
+ }
+ 
+ void WaylandToplevelWindow::SetZOrderLevel(ZOrderLevel order) {
+-  // TODO(crbug.com/374244479): Linux/Wayland doesn't support zorder level.
+-  // Consider complete removal of that.
+   z_order_ = order;
++  if (xdg_toplevel_) {
++    xdg_toplevel_->SetZOrder(order);
++  }
+ }
+ 
+ ZOrderLevel WaylandToplevelWindow::GetZOrderLevel() const {
+diff --git a/ui/ozone/platform/wayland/host/xdg_toplevel.cc b/ui/ozone/platform/wayland/host/xdg_toplevel.cc
+index 39b0be8813cb0cbd203d9b851c4e5ceaa27e9c56..0f8739197c2af25e58258bb6d06b4bf0867b9b87 100644
+--- a/ui/ozone/platform/wayland/host/xdg_toplevel.cc
++++ b/ui/ozone/platform/wayland/host/xdg_toplevel.cc
+@@ -397,7 +397,6 @@ void XdgToplevel::SetIcon(const gfx::ImageSkia& icon) {
+ 
+ void XdgToplevel::SetZOrder(ZOrderLevel z_order) {
+   if (connection()->bs_z_order()) {
+-    // The z-index we get if we are using xdg on a BS device is an absolute value.
+     switch (z_order) {
+       case ZOrderLevel::kRaise:
+         bs_z_order_v2_raise(connection()->bs_z_order(), window()->root_surface()->surface());
+@@ -412,7 +411,10 @@ void XdgToplevel::SetZOrder(ZOrderLevel z_order) {
+         bs_z_order_v2_set_role(connection()->bs_z_order(), window()->root_surface()->surface(), BS_Z_ORDER_V2_ROLE_GRAPHICS);
+         break;
+       default:
+-        abort();
++        // Non-BrightSign z-order levels (kNormal, kFloatingWindow, etc.)
++        // are not mapped to a BS role. The caller must explicitly set a
++        // BS-specific ZOrderLevel before Show() or via SetZOrderLevel().
++        break;
+     }
+   }
+ }
