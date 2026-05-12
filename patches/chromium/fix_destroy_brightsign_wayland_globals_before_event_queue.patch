@@ -1,0 +1,37 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Caner Altinbasak <cal@brightsign.biz>
+Date: Mon, 11 May 2026 15:20:14 +0100
+Subject: fix: destroy BrightSign Wayland globals before event queue
+
+bs_z_order_v2 and surface_activation_control_manager_v1 were
+declared before event_queue_ in WaylandConnection, so C++ destroyed
+the queue first while the proxies were still attached, causing
+libwayland warnings and a crash on exit.
+
+Move them after event_queue_ so they follow the same destruction
+order as all other Wayland globals.
+
+diff --git a/ui/ozone/platform/wayland/host/wayland_connection.h b/ui/ozone/platform/wayland/host/wayland_connection.h
+index f4b1513809c0a70bd8b3ab712eade05818b8a190..5bcc70873c42c79541c67cd2680381fc2b11baeb 100644
+--- a/ui/ozone/platform/wayland/host/wayland_connection.h
++++ b/ui/ozone/platform/wayland/host/wayland_connection.h
+@@ -403,14 +403,16 @@ class WaylandConnection {
+   base::flat_map<std::string, wl::GlobalObjectFactory> global_object_factories_;
+ 
+   uint32_t compositor_version_ = 0;
+-  wl::Object<bs_z_order_v2> bs_z_order_v2_;
+-  wl::Object<zwp_surface_activation_control_manager_v1>
+-      surface_activation_control_manager_v1_;
+   wl::Object<wl_display> display_;
+   // `event_queue_` must be declared before `wrapped_display_`, so that the
+   // latter is destroyed first. This prevents libwayland warnings about the
+   // queue being destroyed while the proxy is still attached.
++  // BrightSign protocol globals must also be declared after `event_queue_`
++  // so they are destroyed before the queue.
+   wl::Object<wl_event_queue> event_queue_;
++  wl::Object<bs_z_order_v2> bs_z_order_v2_;
++  wl::Object<zwp_surface_activation_control_manager_v1>
++      surface_activation_control_manager_v1_;
+   // A non-default display that Ozone/Wayland uses for event dispatching
+   // (a non-default `event_queue_` is created using this display). This is
+   // necessary to avoid any possible deadlocks (in case of API's misuse. See
