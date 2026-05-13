@@ -1,0 +1,40 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Tariq Bashir <tbashir@brightsign.biz>
+Date: Wed, 13 May 2026 15:58:00 +0100
+Subject: gpu: enable validating command decoder for BrightSign builds
+
+BrightSign uses native EGL/GLES2 (not ANGLE) via the Nexus and Wayland
+ozone backends. The passthrough command decoder requires ANGLE and
+CHECK-fails in GLES2DecoderPassthroughImpl::Initialize() when it
+detects a non-ANGLE GL implementation.
+
+Previously, enable_validating_command_decoder was only true for Android,
+so on BrightSign (Linux) builds ENABLE_VALIDATING_COMMAND_DECODER was
+false, forcing UsePassthroughCommandDecoder() to unconditionally return
+true. This caused a SIGTRAP crash when MSE video playback created a new
+GPU command buffer context.
+
+Add is_brightsign to the enable_validating_command_decoder condition so
+the validating decoder is available and correctly selected at runtime.
+
+diff --git a/ui/gl/features.gni b/ui/gl/features.gni
+index e0bdd667233d5e96f70587a381e8f05590f95adf..7844bf37784bb07158f4aef6273e375129932ee0 100644
+--- a/ui/gl/features.gni
++++ b/ui/gl/features.gni
+@@ -2,6 +2,7 @@
+ # Use of this source code is governed by a BSD-style license that can be
+ # found in the LICENSE file.
+ 
++import("//build/config/brightsign_build.gni")
+ import("//build/config/cast.gni")
+ import("//build/config/chrome_build.gni")
+ 
+@@ -20,7 +21,7 @@ declare_args() {
+   # Independent of use_dawn, which controls whether Dawn is used in Chromium.
+   build_dawn_tests = is_mac || is_win || is_linux || is_chromeos || is_android
+ 
+-  enable_validating_command_decoder = is_android
++  enable_validating_command_decoder = is_android || is_brightsign
+ }
+ 
+ declare_args() {
