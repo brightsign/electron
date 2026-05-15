@@ -64,7 +64,7 @@ index 600cf1a64b0d83a68847ab83c28f2b4a525b0afd..01a4c679cb5f9cfab3c07fd3bff26c60
    ],
  }
 diff --git a/third_party/blink/renderer/core/html/media/html_media_element.cc b/third_party/blink/renderer/core/html/media/html_media_element.cc
-index 58f523698ca7243a4b9758600a70c67cb8754a21..cfab1977450c1a5cb3008b3510ef15d6103150da 100644
+index d03b5c45f793c16a9b39b6534b0c696b1be461b0..32bc202b087821b73f43a9c6ca7bc7f70ac3b31a 100644
 --- a/third_party/blink/renderer/core/html/media/html_media_element.cc
 +++ b/third_party/blink/renderer/core/html/media/html_media_element.cc
 @@ -322,8 +322,10 @@ String PreloadTypeToString(WebMediaPlayer::Preload preload_type) {
@@ -80,7 +80,7 @@ index 58f523698ca7243a4b9758600a70c67cb8754a21..cfab1977450c1a5cb3008b3510ef15d6
  }
  
  HTMLMediaElement::PlayPromiseError PauseReasonToPlayPromiseError(
-@@ -885,6 +887,9 @@ void HTMLMediaElement::ParseAttribute(
+@@ -884,6 +886,9 @@ void HTMLMediaElement::ParseAttribute(
    } else {
      HTMLElement::ParseAttribute(params);
    }
@@ -90,7 +90,7 @@ index 58f523698ca7243a4b9758600a70c67cb8754a21..cfab1977450c1a5cb3008b3510ef15d6
  }
  
  // This method is being used as a way to know that cloneNode finished cloning
-@@ -1728,6 +1733,10 @@ void HTMLMediaElement::StartPlayerLoad() {
+@@ -1727,6 +1732,10 @@ void HTMLMediaElement::StartPlayerLoad() {
      player_created = true;
    }
  
@@ -101,7 +101,7 @@ index 58f523698ca7243a4b9758600a70c67cb8754a21..cfab1977450c1a5cb3008b3510ef15d6
    if (!web_media_player_) {
      MediaLoadingFailed(WebMediaPlayer::kNetworkStateFormatError,
                         BuildElementErrorMessage(
-@@ -1904,6 +1913,17 @@ WebMediaPlayer::LoadType HTMLMediaElement::GetLoadType() const {
+@@ -1903,6 +1912,17 @@ WebMediaPlayer::LoadType HTMLMediaElement::GetLoadType() const {
    return WebMediaPlayer::kLoadTypeURL;
  }
  
@@ -119,7 +119,7 @@ index 58f523698ca7243a4b9758600a70c67cb8754a21..cfab1977450c1a5cb3008b3510ef15d6
  void HTMLMediaElement::DidAudioOutputSinkChanged(
      const String& hashed_device_id) {
    for (auto& observer : media_player_observer_remote_set_->Value())
-@@ -4218,7 +4238,7 @@ void HTMLMediaElement::UpdatePlayState(
+@@ -4217,7 +4237,7 @@ void HTMLMediaElement::UpdatePlayState(
      was_always_muted_ = false;
  
    if (should_be_playing) {
