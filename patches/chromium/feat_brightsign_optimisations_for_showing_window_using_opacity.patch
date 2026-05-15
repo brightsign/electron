@@ -256,10 +256,10 @@ index 235f0e5b178943d5e0962d2f9ea4fa2dbe510fee..f29295d402ab96431fda655a2ae07cb6
    // If it is requested before, it is stored and executed in ack configure.
    std::optional<std::string> pending_configure_activation_token_ = std::nullopt;
 diff --git a/ui/ozone/platform/wayland/host/wayland_window.cc b/ui/ozone/platform/wayland/host/wayland_window.cc
-index 0847bb07db27e36478fea20d886c7d2d78d39110..f0596d30f27c1ed44431271b7711165125bc0461 100644
+index ad933902da79a3d18f94597ca3fe76d0686fa05c..a5b64623292cabb9797f2359e3b150574edf85dd 100644
 --- a/ui/ozone/platform/wayland/host/wayland_window.cc
 +++ b/ui/ozone/platform/wayland/host/wayland_window.cc
-@@ -1074,6 +1074,10 @@ bool WaylandWindow::IsSuspended() const {
+@@ -1075,6 +1075,10 @@ bool WaylandWindow::IsSuspended() const {
    return false;
  }
  
