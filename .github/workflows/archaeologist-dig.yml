@@ -23,6 +23,7 @@ jobs:
       - name: Setting Up Dig Site
         env:
           CLONE_URL: ${{ github.event.pull_request.head.repo.clone_url }}
+          BASE_CLONE_URL: ${{ github.event.pull_request.base.repo.clone_url }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           BASE_REF: ${{ github.event.pull_request.base.ref }}
         run: |
@@ -33,8 +34,9 @@ jobs:
           cd electron
           mkdir -p artifacts
           git remote add fork "$CLONE_URL" && git fetch fork
+          git remote add base "$BASE_CLONE_URL" && git fetch base
           git checkout "$HEAD_SHA"
-          git merge-base "origin/$BASE_REF" HEAD > .dig-old
+          git merge-base "base/$BASE_REF" HEAD > .dig-old
           echo "$HEAD_SHA" > .dig-new
           cp .dig-old artifacts
 
