@@ -6,6 +6,7 @@
 #include "shell/browser/media/media_resource_getter_impl.h"
 
 #include "base/functional/bind.h"
+#include "base/functional/callback_helpers.h"
 #include "base/path_service.h"
 #include "base/task/single_thread_task_runner.h"
 #include "content/browser/renderer_host/render_frame_host_impl.h"
@@ -177,6 +178,16 @@ void MediaResourceGetterImpl::GetCookies(
       GetRestrictedCookieManagerForContext(
           browser_context_, url, site_for_cookies, top_frame_origin,
           RenderFrameHostImpl::FromID(render_process_id_, render_frame_id_)));
+
+  // Split the callback so that it is invoked exactly once: either via the
+  // normal mojo response or via the disconnect handler (which fires when
+  // ValidateAccessToCookiesAt fails and closes the pipe via ReportBadMessage
+  // before the response can be delivered).
+  auto [response_cb, disconnect_cb] =
+      base::SplitOnceCallback(std::move(callback));
+  cookie_manager.set_disconnect_handler(base::BindOnce(
+      &ReturnResultOnUIThread, std::move(disconnect_cb), std::string()));
+
   network::mojom::RestrictedCookieManager* cookie_manager_ptr =
       cookie_manager.get();
   cookie_manager_ptr->GetCookiesString(
@@ -185,7 +196,7 @@ void MediaResourceGetterImpl::GetCookies(
       /*apply_devtools_overrides=*/true,
       /*force_disable_third_party_cookies=*/false,
       base::BindOnce(&ReturnResultOnUIThreadAndClosePipe,
-                     std::move(cookie_manager), std::move(callback)));
+                     std::move(cookie_manager), std::move(response_cb)));
 }
 
 void MediaResourceGetterImpl::GetAuthCredentialsCallback(
