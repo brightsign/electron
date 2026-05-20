@@ -7,6 +7,9 @@ inputs:
   filename:
     description: 'Filename to write types to'
     required: true
+  base-clone-url:
+    description: 'Clone URL for the base repository'
+    required: true
 runs:
   using: "composite"
   steps:
@@ -16,7 +19,7 @@ runs:
       export ELECTRON_DIR=$(pwd)
       if [ "${{ inputs.sha-file }}" == ".dig-old" ]; then
         cd /tmp
-        git clone https://github.com/electron/electron.git
+        git clone "${{ inputs.base-clone-url }}"
         cd electron
       fi
       git checkout $(cat $ELECTRON_DIR/${{ inputs.sha-file }})
