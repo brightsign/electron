@@ -1289,10 +1289,10 @@ index df1ccbe1c44e33e6a8322ebd31eaf931683e754f..24a69ef889b31f01e531c1c2c687c651
  source_set("unit_tests") {
 diff --git a/third_party/blink/renderer/platform/media/brightsign/video_player_proxy.cc b/third_party/blink/renderer/platform/media/brightsign/video_player_proxy.cc
 new file mode 100644
-index 0000000000000000000000000000000000000000..7abaaed16555e635e37745fc064898fe1bf8c4e5
+index 0000000000000000000000000000000000000000..8b117ecc2a863a616812eb47d1d271bfa61b01c8
 --- /dev/null
 +++ b/third_party/blink/renderer/platform/media/brightsign/video_player_proxy.cc
-@@ -0,0 +1,115 @@
+@@ -0,0 +1,117 @@
 +#include "third_party/blink/renderer/platform/media/brightsign/video_player_proxy.h"
 +
 +#include "base/functional/bind.h"
@@ -1317,9 +1317,11 @@ index 0000000000000000000000000000000000000000..7abaaed16555e635e37745fc064898fe
 +
 +void VidPlayerListenerProxy::ErrorCallback(enum VidPlayerErrorCode error_code,
 +                                     const char* message) {
++  std::string message_copy(message ? message : "");
 +  main_task_runner_->PostTask(
 +      FROM_HERE, base::BindOnce(&WebMediaPlayerBrightsign::ErrorCallback,
-+                                web_media_player_, error_code, message));
++                                web_media_player_, error_code,
++                                std::move(message_copy)));
 +}
 +
 +void VidPlayerListenerProxy::PlaybackStartedCallback() {
@@ -1465,7 +1467,7 @@ index 0000000000000000000000000000000000000000..c34d368be76dcbe5ae2c366e29d74492
 +#endif
 diff --git a/third_party/blink/renderer/platform/media/brightsign/web_media_player_brightsign.cc b/third_party/blink/renderer/platform/media/brightsign/web_media_player_brightsign.cc
 new file mode 100644
-index 0000000000000000000000000000000000000000..7d3b1955787cb56c8ba32538e1a1e3008cfe8494
+index 0000000000000000000000000000000000000000..f3cad379ce481b453165df077ef6c2fe19387fa8
 --- /dev/null
 +++ b/third_party/blink/renderer/platform/media/brightsign/web_media_player_brightsign.cc
 @@ -0,0 +1,844 @@
@@ -2016,7 +2018,7 @@ index 0000000000000000000000000000000000000000..7d3b1955787cb56c8ba32538e1a1e300
 +}
 +
 +void WebMediaPlayerBrightsign::ErrorCallback(enum VidPlayerErrorCode code,
-+                                             const char* message) {
++                                             const std::string& message) {
 +  VLOG(1) << __func__;
 +  DCHECK(main_task_runner_->BelongsToCurrentThread());
 +  error_message_ = blink::WebString::FromUTF8(message);
@@ -2315,7 +2317,7 @@ index 0000000000000000000000000000000000000000..7d3b1955787cb56c8ba32538e1a1e300
 +} // namespace blink
 diff --git a/third_party/blink/renderer/platform/media/brightsign/web_media_player_brightsign.h b/third_party/blink/renderer/platform/media/brightsign/web_media_player_brightsign.h
 new file mode 100644
-index 0000000000000000000000000000000000000000..c9925fd91c0ac127de87d484bf82186d11c381bf
+index 0000000000000000000000000000000000000000..b9bdba1a21246a66bb56a04529a3cd39e37243fa
 --- /dev/null
 +++ b/third_party/blink/renderer/platform/media/brightsign/web_media_player_brightsign.h
 @@ -0,0 +1,273 @@
@@ -2470,7 +2472,7 @@ index 0000000000000000000000000000000000000000..c9925fd91c0ac127de87d484bf82186d
 +  std::optional<media::VideoFrame::ID> CurrentFrameId() const override;
 +
 +  //
-+  void ErrorCallback(enum VidPlayerErrorCode code, const char* message);
++  void ErrorCallback(enum VidPlayerErrorCode code, const std::string& message);
 +  void PlaybackStartedCallback();
 +  void PlaybackCompletedCallback();
 +  void LoadCallback(std::chrono::microseconds duration,

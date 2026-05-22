@@ -194,10 +194,10 @@ index 2058b10270951d1566e4be4b5eabfed885052186..f5a3e79dd978fd5d52d7806026f5fb1f
    // EventTarget
    const AtomicString& InterfaceName() const override;
 diff --git a/third_party/blink/renderer/platform/media/brightsign/video_player_proxy.cc b/third_party/blink/renderer/platform/media/brightsign/video_player_proxy.cc
-index 7abaaed16555e635e37745fc064898fe1bf8c4e5..3c6d777dd3aa516db4230d05fa7c1f6312db3109 100644
+index 8b117ecc2a863a616812eb47d1d271bfa61b01c8..ea889a86677f308016b33276945155b603e8a427 100644
 --- a/third_party/blink/renderer/platform/media/brightsign/video_player_proxy.cc
 +++ b/third_party/blink/renderer/platform/media/brightsign/video_player_proxy.cc
-@@ -40,7 +40,11 @@ void VidPlayerListenerProxy::PlaybackCompletedCallback() {
+@@ -42,7 +42,11 @@ void VidPlayerListenerProxy::PlaybackCompletedCallback() {
  }
  
  void VidPlayerListenerProxy::LoadCallback(
@@ -210,7 +210,7 @@ index 7abaaed16555e635e37745fc064898fe1bf8c4e5..3c6d777dd3aa516db4230d05fa7c1f63
    main_task_runner_->PostTask(
        FROM_HERE,
        base::BindOnce(&WebMediaPlayerBrightsign::LoadCallback, web_media_player_,
-@@ -98,7 +102,7 @@ void VidPlayerListenerProxy::FrameReadyCallback() {
+@@ -100,7 +104,7 @@ void VidPlayerListenerProxy::FrameReadyCallback() {
  }
  
  void VidPlayerListenerProxy::SubtitleUpdatedCallback(
@@ -250,7 +250,7 @@ index c34d368be76dcbe5ae2c366e29d7449209bee5ab..7f9dabb4a3b459f5519cf774298bf77b
  
   private:
 diff --git a/third_party/blink/renderer/platform/media/brightsign/web_media_player_brightsign.cc b/third_party/blink/renderer/platform/media/brightsign/web_media_player_brightsign.cc
-index 7d3b1955787cb56c8ba32538e1a1e3008cfe8494..74af9d4962dad0e86b3577d1a6d54f09a6434f55 100644
+index f3cad379ce481b453165df077ef6c2fe19387fa8..f6f2322b8012b70375cc66b582613c8dd532244d 100644
 --- a/third_party/blink/renderer/platform/media/brightsign/web_media_player_brightsign.cc
 +++ b/third_party/blink/renderer/platform/media/brightsign/web_media_player_brightsign.cc
 @@ -8,6 +8,7 @@
@@ -448,7 +448,7 @@ index 7d3b1955787cb56c8ba32538e1a1e3008cfe8494..74af9d4962dad0e86b3577d1a6d54f09
    SetReadyState(WebMediaPlayer::kReadyStateHaveEnoughData);
    SetNetworkState(WebMediaPlayer::kNetworkStateIdle);
 diff --git a/third_party/blink/renderer/platform/media/brightsign/web_media_player_brightsign.h b/third_party/blink/renderer/platform/media/brightsign/web_media_player_brightsign.h
-index c9925fd91c0ac127de87d484bf82186d11c381bf..511f36eb9c9636e05da125cf02106d8d8ef22819 100644
+index b9bdba1a21246a66bb56a04529a3cd39e37243fa..01934e3975fca8315ef4eda194217806062f1d4b 100644
 --- a/third_party/blink/renderer/platform/media/brightsign/web_media_player_brightsign.h
 +++ b/third_party/blink/renderer/platform/media/brightsign/web_media_player_brightsign.h
 @@ -8,6 +8,7 @@

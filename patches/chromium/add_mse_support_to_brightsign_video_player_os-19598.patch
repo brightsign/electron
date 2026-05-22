@@ -35,7 +35,7 @@ index 24a69ef889b31f01e531c1c2c687c6512ff0b307..bf3ddacbc2974469a45c6164eb0515ca
  }
  
 diff --git a/third_party/blink/renderer/platform/media/brightsign/video_player_proxy.cc b/third_party/blink/renderer/platform/media/brightsign/video_player_proxy.cc
-index 3c6d777dd3aa516db4230d05fa7c1f6312db3109..c6578ef8f305f9822e370f64a6371c21dd4e3a77 100644
+index ea889a86677f308016b33276945155b603e8a427..6f66fe001dbb919372d3294db5ef57627541ee41 100644
 --- a/third_party/blink/renderer/platform/media/brightsign/video_player_proxy.cc
 +++ b/third_party/blink/renderer/platform/media/brightsign/video_player_proxy.cc
 @@ -5,8 +5,6 @@
@@ -48,7 +48,7 @@ index 3c6d777dd3aa516db4230d05fa7c1f6312db3109..c6578ef8f305f9822e370f64a6371c21
  
  VidPlayerListenerProxy::VidPlayerListenerProxy(
 diff --git a/third_party/blink/renderer/platform/media/brightsign/web_media_player_brightsign.cc b/third_party/blink/renderer/platform/media/brightsign/web_media_player_brightsign.cc
-index 74af9d4962dad0e86b3577d1a6d54f09a6434f55..26096d43c3cdaf1220244dea506f5ec2d297fd85 100644
+index f6f2322b8012b70375cc66b582613c8dd532244d..fcb37533003158c741f1e2fa31da1f0760d8bc41 100644
 --- a/third_party/blink/renderer/platform/media/brightsign/web_media_player_brightsign.cc
 +++ b/third_party/blink/renderer/platform/media/brightsign/web_media_player_brightsign.cc
 @@ -5,6 +5,7 @@
@@ -839,7 +839,7 @@ index 74af9d4962dad0e86b3577d1a6d54f09a6434f55..26096d43c3cdaf1220244dea506f5ec2
      current_time_ = current_time_d;
      client_->TimeChanged();
 diff --git a/third_party/blink/renderer/platform/media/brightsign/web_media_player_brightsign.h b/third_party/blink/renderer/platform/media/brightsign/web_media_player_brightsign.h
-index 511f36eb9c9636e05da125cf02106d8d8ef22819..e76defc753d478c64dbd4854ef5fc0c42a6cd853 100644
+index 01934e3975fca8315ef4eda194217806062f1d4b..695578bd44f101d22008d7cdc168436ad3a0ab80 100644
 --- a/third_party/blink/renderer/platform/media/brightsign/web_media_player_brightsign.h
 +++ b/third_party/blink/renderer/platform/media/brightsign/web_media_player_brightsign.h
 @@ -6,7 +6,7 @@
