@@ -1,0 +1,45 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Geoffrey Ostosh <gostosh@brightsign.biz>
+Date: Thu, 28 May 2026 18:48:36 -0500
+Subject: Fix mojo trap leak OS-21158
+
+MojoTrap::RemoveTrigger and MojoTrap::Close erase entries from their
+local triggers_ map but leave the corresponding ipcz traps installed
+on the Router's TrapSet, causing them to accumulate across
+BrowserWindow create/destroy cycles. Call the new ipcz RemoveTrap API
+from both entry points to release the underlying trap.
+
+diff --git a/mojo/core/ipcz_driver/mojo_trap.cc b/mojo/core/ipcz_driver/mojo_trap.cc
+index 7a5765a74a7f64e584b0a080e659c88c019adcbb..d5052e2d4c81963b9bc08dcf0a4761758446b02c 100644
+--- a/mojo/core/ipcz_driver/mojo_trap.cc
++++ b/mojo/core/ipcz_driver/mojo_trap.cc
+@@ -277,12 +277,16 @@ MojoResult MojoTrap::RemoveTrigger(uintptr_t trigger_context) {
+   if (it == triggers_.end()) {
+     return MOJO_RESULT_NOT_FOUND;
+   }
+-
+   scoped_refptr<Trigger> trigger = std::move(it->second);
+   trigger->armed = false;
+   triggers_.erase(it);
+   next_trigger_ = triggers_.begin();
+   DispatchOrQueueTriggerRemoval(*trigger);
++  {
++    base::AutoUnlock unlock(lock_);
++    GetIpczAPI().RemoveTrap(trigger->handle, trigger->ipcz_context(),
++                            IPCZ_NO_FLAGS, nullptr);
++  }
+   return MOJO_RESULT_OK;
+ }
+ 
+@@ -379,6 +383,11 @@ void MojoTrap::Close() {
+ 
+     DCHECK(!trigger->removed);
+     DispatchOrQueueTriggerRemoval(*trigger);
++    {
++      base::AutoUnlock unlock(lock_);
++      GetIpczAPI().RemoveTrap(trigger->handle, trigger->ipcz_context(),
++                              IPCZ_NO_FLAGS, nullptr);
++    }
+   }
+ }
+ 

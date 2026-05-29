@@ -1,0 +1,141 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Geoffrey Ostosh <gostosh@brightsign.biz>
+Date: Thu, 28 May 2026 18:34:17 -0500
+Subject: Add RemoveTrap API OS-21158
+
+The ipcz library exposes no removal entry point for traps installed
+via Trap(); once registered on the Router's TrapSet they persist for
+the lifetime of the portal. Add a RemoveTrap function to ipcz's
+public API that dispatches a synthetic IPCZ_TRAP_REMOVED event so any
+pending handler sees a clean teardown, then erases the entry from
+the Router's TrapSet.
+
+diff --git a/third_party/ipcz/include/ipcz/ipcz.h b/third_party/ipcz/include/ipcz/ipcz.h
+index b2072b92c9b262222e6bdcdfba7cdeaef93df410..9673cf696e1631c9810bab1817ca1f53715fd2a4 100644
+--- a/third_party/ipcz/include/ipcz/ipcz.h
++++ b/third_party/ipcz/include/ipcz/ipcz.h
+@@ -1606,6 +1606,11 @@ struct IPCZ_ALIGN(8) IpczAPI {
+       IpczTrapConditionFlags* satisfied_condition_flags,  // out
+       struct IpczPortalStatus* status);                   // out
+ 
++  IpczResult (IPCZ_API* RemoveTrap)(IpczHandle portal,
++                                    uintptr_t context,
++                                    uint32_t flags,
++                                    const void* options);
++
+   // Reject()
+   // ========
+   //
+diff --git a/third_party/ipcz/src/api.cc b/third_party/ipcz/src/api.cc
+index b54bee2c9087e958fa37f6e783a90d2ca0801d4b..d9f58d71f3cd6bcf4e10fb7b38b84439242ea21e 100644
+--- a/third_party/ipcz/src/api.cc
++++ b/third_party/ipcz/src/api.cc
+@@ -276,6 +276,18 @@ IpczResult Trap(IpczHandle portal_handle,
+                       status);
+ }
+ 
++IpczResult RemoveTrap(IpczHandle portal_handle,
++                      uintptr_t context,
++                      uint32_t flags,
++                      const void* options) {
++  ipcz::Router* router = ipcz::Router::FromHandle(portal_handle);
++  if (!router) {
++    return IPCZ_RESULT_INVALID_ARGUMENT;
++  }
++  router->RemoveTrap(context);
++  return IPCZ_RESULT_OK;
++}
++
+ IpczResult Reject(IpczHandle parcel_handle,
+                   uintptr_t context,
+                   uint32_t flags,
+@@ -360,6 +372,7 @@ constexpr IpczAPI kCurrentAPI = {
+     BeginGet,
+     EndGet,
+     Trap,
++    RemoveTrap,
+     Reject,
+     Box,
+     Unbox,
+diff --git a/third_party/ipcz/src/ipcz/router.cc b/third_party/ipcz/src/ipcz/router.cc
+index af70af0c0b72ab028463d836ec14561878f406db..2513529bf186eea8ad7fca0d8ff0b8457bbefcd5 100644
+--- a/third_party/ipcz/src/ipcz/router.cc
++++ b/third_party/ipcz/src/ipcz/router.cc
+@@ -674,6 +674,15 @@ IpczResult Router::Trap(const IpczTrapConditions& conditions,
+                     inbound_parcels_, satisfied_condition_flags, status);
+ }
+ 
++void Router::RemoveTrap(uintptr_t context) {
++  const OperationContext op_context{OperationContext::kAPICall};
++  TrapEventDispatcher dispatcher;
++  {
++    absl::MutexLock lock(&mutex_);
++    traps_.Remove(context, op_context, dispatcher);
++  }
++}
++
+ IpczResult Router::MergeRoute(const Ref<Router>& other) {
+   if (HasLocalPeer(*other) || other == this) {
+     return IPCZ_RESULT_INVALID_ARGUMENT;
+diff --git a/third_party/ipcz/src/ipcz/router.h b/third_party/ipcz/src/ipcz/router.h
+index 1a60e847cc68f58a1c24f03e653d9b06f595c67e..0ca24a49f838317ee44cd8377d3ef719820fa76a 100644
+--- a/third_party/ipcz/src/ipcz/router.h
++++ b/third_party/ipcz/src/ipcz/router.h
+@@ -169,6 +169,8 @@ class Router : public APIObjectImpl<Router, APIObject::kPortal> {
+                   IpczTrapConditionFlags* satisfied_condition_flags,
+                   IpczPortalStatus* status);
+ 
++  void RemoveTrap(uintptr_t context);
++
+   // Attempts to merge this Router's route with the route terminated by `other`.
+   // Both `other` and this Router must be terminal routers on their own separate
+   // routes, and neither Router must have transmitted or retreived any parcels
+diff --git a/third_party/ipcz/src/ipcz/trap_set.cc b/third_party/ipcz/src/ipcz/trap_set.cc
+index 161ae7d3c7f04233cdc728062d8963821b0032c0..4997c7fedf6260301bc882ec54ac515c21e12d3f 100644
+--- a/third_party/ipcz/src/ipcz/trap_set.cc
++++ b/third_party/ipcz/src/ipcz/trap_set.cc
+@@ -98,6 +98,29 @@ void TrapSet::RemoveAll(const OperationContext& context,
+   traps_.clear();
+ }
+ 
++bool TrapSet::Remove(uintptr_t context_to_remove,
++                     const OperationContext& context,
++                     TrapEventDispatcher& dispatcher) {
++  IpczTrapConditionFlags flags = IPCZ_TRAP_REMOVED;
++  if (context.is_api_call()) {
++    flags |= IPCZ_TRAP_WITHIN_API_CALL;
++  }
++  const IpczPortalStatus status{
++      .size = sizeof(status),
++      .flags = IPCZ_NO_FLAGS,
++      .num_local_parcels = 0,
++      .num_local_bytes = 0,
++  };
++  for (auto it = traps_.begin(); it != traps_.end(); ++it) {
++    if (it->context == context_to_remove) {
++      dispatcher.DeferEvent(it->handler, it->context, flags, status);
++      traps_.erase(it);
++      return true;
++    }
++  }
++  return false;
++}
++
+ IpczTrapConditionFlags TrapSet::GetSatisfiedConditionsForUpdate(
+     const IpczTrapConditions& conditions,
+     IpczPortalStatusFlags status_flags,
+diff --git a/third_party/ipcz/src/ipcz/trap_set.h b/third_party/ipcz/src/ipcz/trap_set.h
+index 054607cb866981aa702e03f28502685e3c45c805..57f747557f2c04ae1ac94fb99fcb03087a884dbc 100644
+--- a/third_party/ipcz/src/ipcz/trap_set.h
++++ b/third_party/ipcz/src/ipcz/trap_set.h
+@@ -73,6 +73,10 @@ class TrapSet {
+   void RemoveAll(const OperationContext& context,
+                  TrapEventDispatcher& dispatcher);
+ 
++  bool Remove(uintptr_t context_to_remove,
++              const OperationContext& op_context,
++              TrapEventDispatcher& dispatcher);
++
+  private:
+   struct Trap {
+     Trap(IpczTrapConditions conditions,
