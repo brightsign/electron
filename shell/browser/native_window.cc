@@ -154,7 +154,15 @@ void NativeWindow::InitFromOptions(const gin_helper::Dictionary& options) {
   }
 
   if (int x, y; options.Get(options::kX, &x) && options.Get(options::kY, &y)) {
-    SetPosition(gfx::Point{x, y});
+    // BrightSign: Use SetBounds with the full rect (including width/height
+    // from options) instead of just SetPosition. CenterWindow in the
+    // NativeWindowViews constructor clamps the window size to the primary
+    // display's work area, which breaks windows spanning multiple displays
+    // (e.g. dual HDMI at 3840x1080). SetPosition only restores the origin
+    // and preserves the clamped size, so we must restore the full bounds.
+    const int w = options.ValueOrDefault(options::kWidth, GetSize().width());
+    const int h = options.ValueOrDefault(options::kHeight, GetSize().height());
+    SetBounds(gfx::Rect(x, y, w, h), false);
 
 #if BUILDFLAG(IS_WIN)
     // FIXME(felixrieseberg): Dirty, dirty workaround for
