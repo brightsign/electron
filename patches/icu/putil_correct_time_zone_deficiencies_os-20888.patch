@@ -12,10 +12,10 @@ Add non-daylight-saving EST and MST zones so that we can check against
 them in the unit test.
 
 diff --git a/source/common/putil.cpp b/source/common/putil.cpp
-index 42e8be1170af1de2151a2434b5459923825bb6eb..0e1b29d390415b1aee8d1acff5e0c66b2e3b6db5 100644
+index ea15fdff0b0c67d09daf5a403f038be572cd1fbf..bb7c66832b2ffe46588572de143a5c549c5356b1 100644
 --- a/source/common/putil.cpp
 +++ b/source/common/putil.cpp
-@@ -806,16 +806,16 @@ static const struct OffsetZoneMapping OFFSET_ZONE_MAPPINGS[] = {
+@@ -801,16 +801,16 @@ static const struct OffsetZoneMapping OFFSET_ZONE_MAPPINGS[] = {
      {-43200, 1, "ANAT", "ANAST", "Asia/Anadyr"},
      {-39600, 1, "MAGT", "MAGST", "Asia/Magadan"},
      {-37800, 2, "LHST", "LHST", "Australia/Lord_Howe"},
@@ -35,7 +35,7 @@ index 42e8be1170af1de2151a2434b5459923825bb6eb..0e1b29d390415b1aee8d1acff5e0c66b
      {-25200, 1, "HOVT", "HOVST", "Asia/Hovd"},
      {-25200, 1, "KRAT", "KRAST", "Asia/Krasnoyarsk"},
      {-21600, 1, "NOVT", "NOVST", "Asia/Novosibirsk"},
-@@ -850,15 +850,17 @@ static const struct OffsetZoneMapping OFFSET_ZONE_MAPPINGS[] = {
+@@ -845,15 +845,17 @@ static const struct OffsetZoneMapping OFFSET_ZONE_MAPPINGS[] = {
      {14400, 2, "PYT", "PYST", "America/Asuncion"},
      {18000, 1, "CST", "CDT", "America/Havana"},
      {18000, 1, "EST", "EDT", "US/Eastern"}, /* Conflicts with America/Grand_Turk */

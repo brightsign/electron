@@ -1,0 +1,43 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Caner Altinbasak <cal@brightsign.biz>
+Date: Thu, 4 Jun 2026 15:54:18 +0100
+Subject: gin: cap V8 CodeRange to 64MB on low-memory systems
+
+On embedded systems with <=512MB of physical RAM visible to the kernel
+(e.g. BrightSign Pagani where 484MB is reserved for Broadcom BMEM),
+the default V8 CodeRange of 256MB exceeds the kernel's overcommit
+heuristic (CommitLimit). Both the browser and renderer processes need
+their own CodeRange, so 2x256MB is impossible on a system with only
+~235MB CommitLimit.
+
+When ConfigureDefaults leaves code_range_size at 0 (because
+RLIMIT_DATA is unlimited), V8 falls back to kMaximalCodeRangeSize
+(256MB on ARM64). This causes the renderer's mmap to either fail with
+OOM.
+
+Fix by explicitly setting code_range_size to 64MB (kMinimumCodeRangeSize)
+when physical memory is <=512MB and ConfigureDefaults did not already
+set a code_range_size. This allows both processes to reserve their
+CodeRange within the kernel's overcommit budget (2x64MB = 128MB).
+
+diff --git a/gin/isolate_holder.cc b/gin/isolate_holder.cc
+index 24127c579e149345cc9b937b17dbfe630b0d3c35..406fc211731fd28e3047675e09c26e265e97cbb3 100644
+--- a/gin/isolate_holder.cc
++++ b/gin/isolate_holder.cc
+@@ -198,6 +198,16 @@ IsolateHolder::getDefaultIsolateParams() {
+   params->constraints.ConfigureDefaults(
+       base::SysInfo::AmountOfPhysicalMemory().InBytesUnsigned(),
+       base::SysInfo::AmountOfVirtualMemory().InBytes());
++  // On memory-constrained systems (<=512MB usable RAM), the default CodeRange
++  // of 256MB is too large to be allocated in both the browser and renderer
++  // processes. Cap it to 64MB (V8's minimum) so that both processes can
++  // successfully mmap their CodeRange without exceeding the kernel's
++  // overcommit heuristic (CommitLimit).
++  if (base::SysInfo::AmountOfPhysicalMemory().InBytesUnsigned() <=
++          512u * 1024u * 1024u &&
++      params->constraints.code_range_size_in_bytes() == 0) {
++    params->constraints.set_code_range_size_in_bytes(64u * 1024u * 1024u);
++  }
+   params->array_buffer_allocator = g_array_buffer_allocator;
+   params->allow_atomics_wait = true;
+   params->external_references = g_reference_table;
