@@ -1,0 +1,141 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Tariq Bashir <tbashir@brightsign.biz>
+Date: Fri, 12 Jun 2026 21:11:35 +0100
+Subject: BrightSign: fix black/transparent hole being shown before video
+ starts OS-20428
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+In Chromium 87 (Qt WebEngine), the GL renderer handled kVideoHole quads
+directly in GLRenderer::DrawVideoHoleQuad(), which was a no-op for
+z_index >= 0 — the compositor left whatever was already in the framebuffer
+(the HTML background) intact.
+
+In Chromium 120 (Electron/Skia renderer), kVideoHole quads reach
+SkiaRenderer::DrawQuad(). OverlayCandidate::RequiresOverlay() returns true
+for kVideoHole unconditionally, so SkiaRenderer takes the "requires overlay"
+fallback path and makes the video element area trasnparent.
+When a video is started but there are no frames visible yet instead of
+just seeing the canvas below the video (for the z-index > 0 case) we
+would get a transparent hole. This caused a momentry flash of the
+background behind the html window surface.
+
+There were two bugs:
+
+1. When replace_with_underlay_hole() was called for z_index >= 0 it used
+   SkBlendMode::kSrcOver. ReplaceExistingQuadWithSolidColor() always sets
+   needs_blending=false on the replacement SolidColorDrawQuad. With
+   needs_blending=false, opacity=1.0, and blend_mode=kSrcOver,
+   ShouldDrawWithBlending() returns false, so SkiaRenderer writes the source
+   colour (0,0,0,0) directly to the framebuffer with no compositing — zeroing
+   the alpha channel of the Chromium Wayland surface at that location and
+   making the desktop behind it visible through the HTML window.
+
+2. CommitCandidate() was replacing the quad a second time with
+   kTransparent + kSrcOver, undoing any correct blend mode set by VideoHoleDraw.
+
+Fix:
+
+- For z_index >= 0 (GPU overlay: video surface is above Chromium), change the
+  replacement blend mode in replace_with_underlay_hole() from kSrcOver to kDst.
+  kDst != kSrcOver causes ShouldDrawWithBlending() to return true, so blending
+  is actually applied. kDst semantics are "output = destination unchanged" — a
+  true no-op that preserves the HTML background without punching any hole.
+
+- For z_index < 0 (hardware underlay: video plane is below Chromium), retain
+  kDstOut which subtracts alpha to punch a transparent hole, allowing the
+  hardware video plane below to show through.
+
+- Make CommitCandidate() a no-op. VideoHoleDraw() (called from Attempt())
+  already replaces every kVideoHole with the correct blend mode per z_index.
+  Calling ReplaceExistingQuadWithSolidColor() again in CommitCandidate() would
+  overwrite that blend mode with kSrcOver and reintroduce the hole.
+
+- For the aggregated render pass (nested pass) case: only propagate
+  child_tokens into the root render pass and call replace_with_underlay_hole
+  for z_index < 0. For z_index >= 0, inserting the kVideoHole copy into the
+  root pass and replacing it would clear the root Chromium surface to
+  transparent, showing the desktop through the entire HTML window.
+
+diff --git a/components/viz/service/display/overlay_strategy_underlay_brightsign.cc b/components/viz/service/display/overlay_strategy_underlay_brightsign.cc
+index e66e3f74f9d68fff530b54cbb5856229f41344df..5cfcbf2d85327f35abf08e209bc9ca8cfb8de137 100644
+--- a/components/viz/service/display/overlay_strategy_underlay_brightsign.cc
++++ b/components/viz/service/display/overlay_strategy_underlay_brightsign.cc
+@@ -50,8 +50,16 @@ bool OverlayStrategyUnderlayBrightsign::VideoHoleDraw(
+   auto replace_with_underlay_hole = [&](auto quad_iterator) {
+     auto* video_hole_quad = VideoHoleDrawQuad::MaterialCast(*quad_iterator);
+     if (video_hole_quad->z_index >= 0) {
++      // Video surface is above the Chromium surface (GPU overlay). The HTML
++      // background must remain visible through the transparent video surface.
++      // kDst blend mode: output = destination unchanged (true no-op). This is
++      // necessary because ReplaceExistingQuadWithSolidColor always sets
++      // needs_blending=false; with kSrcOver that would write transparent pixels
++      // directly, punching a hole to the desktop. kDst forces
++      // ShouldDrawWithBlending()=true so the blend mode is actually applied,
++      // and kDst keeps the destination (e.g. gray page background) intact.
+       render_pass->ReplaceExistingQuadWithSolidColor(
+-          quad_iterator, SkColors::kTransparent, SkBlendMode::kSrcOver);
++          quad_iterator, SkColors::kTransparent, SkBlendMode::kDst);
+       return;
+     }
+ 
+@@ -99,10 +107,16 @@ bool OverlayStrategyUnderlayBrightsign::VideoHoleDraw(
+         }
+ 
+         for (auto temp_quad : child_tokens) {
+-          quad = quad_list.InsertAfterAndInvalidateAllPointers<VideoHoleDrawQuad>(
+-              quad, 1, temp_quad);
+-
+-          replace_with_underlay_hole(quad);
++          // For underlay (z_index < 0), insert into root render pass and punch a
++          // transparent hole so the video plane below can be seen. For overlay
++          // (z_index >= 0), the video surface is above Chromium, so we must NOT
++          // insert into the root pass — doing so would clear the root to
++          // transparent, making the OS desktop visible through the HTML window.
++          if (temp_quad.z_index < 0) {
++            quad = quad_list.InsertAfterAndInvalidateAllPointers<VideoHoleDrawQuad>(
++                quad, 1, temp_quad);
++            replace_with_underlay_hole(quad);
++          }
+         }
+ 
+         tokens->insert(tokens->end(), child_tokens.begin(), child_tokens.end());
+@@ -176,6 +190,12 @@ bool OverlayStrategyUnderlayBrightsign::VideoHoleDraw(
+       content_bounds->push_back(content_rect);
+       found_underlay = true;
+ 
++      // Replace the kVideoHole quad so SkiaRenderer never sees it. For z_index
++      // >= 0 (overlay: video surface is above Chromium), this makes the
++      // compositor render transparent at the video location; the nested render
++      // pass texture composites transparently over the HTML background so the
++      // gray page shows through the transparent video. For z_index < 0
++      // (underlay), kDstOut punches a hole so the video plane below is visible.
+       replace_with_underlay_hole(quad);
+     }
+   }
+@@ -252,14 +272,16 @@ bool OverlayStrategyUnderlayBrightsign::Attempt(
+ void OverlayStrategyUnderlayBrightsign::CommitCandidate(
+     const OverlayProposedCandidate& proposed_candidate,
+     AggregatedRenderPass* render_pass) {
+-  if (proposed_candidate.candidate.has_mask_filter) {
+-    render_pass->ReplaceExistingQuadWithSolidColor(
+-        proposed_candidate.quad_iter, SkColors::kBlack, SkBlendMode::kDstOut);
+-  } else {
+-    render_pass->ReplaceExistingQuadWithSolidColor(proposed_candidate.quad_iter,
+-                                                   SkColors::kTransparent,
+-                                                   SkBlendMode::kSrcOver);
+-  }
++  // VideoHoleDraw (called from Attempt) has already replaced every kVideoHole
++  // quad with a SolidColorDrawQuad using the correct blend mode:
++  //   z_index >= 0 (GPU overlay above Chromium): kDst  - true no-op, HTML
++  //                background remains visible through transparent video.
++  //   z_index < 0  (hardware underlay below Chromium): kDstOut - punches a
++  //                transparent hole so the video plane below is visible.
++  // Replacing again here (e.g. with kSrcOver) would overwrite that blend mode
++  // and cause transparent pixels to be written to the framebuffer directly
++  // (because needs_blending=false), making the Chromium surface transparent
++  // and showing the desktop through it.
+ }
+ 
+ void OverlayStrategyUnderlayBrightsign::Propose(
