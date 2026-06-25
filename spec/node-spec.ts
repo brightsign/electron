@@ -400,6 +400,115 @@ describe('node feature', () => {
       );
     });
 
+    // Regression test for a zero-length callback fs.writeFile() that failed
+    // with "EFAULT: bad address in system call argument, write" only in the
+    // renderer (nodeIntegration / roHtmlWidget) Node integration, while it
+    // worked in a standalone Node process and via fs/promises.writeFile().
+    // Callback fs.writeFile() now skips the native zero-length write, matching
+    // the early return already present in fs/promises.writeFile().
+    describe('zero-length fs.writeFile in renderer', () => {
+      itremote('fs.writeFile(path, "", cb) succeeds and creates an empty file', async () => {
+        const fs = require('node:fs');
+        const path = require('node:path');
+        const file = path.join(require('node:os').tmpdir(), `electron-fswrite-empty-string-${Date.now()}`);
+        try {
+          await new Promise<void>((resolve, reject) => {
+            fs.writeFile(file, '', (err: Error | null) => (err ? reject(err) : resolve()));
+          });
+          expect(fs.statSync(file).size).to.equal(0);
+        } finally {
+          try {
+            fs.unlinkSync(file);
+          } catch {
+            /* ignore */
+          }
+        }
+      });
+
+      itremote('fs.writeFile(path, Buffer.alloc(0), cb) succeeds', async () => {
+        const fs = require('node:fs');
+        const path = require('node:path');
+        const file = path.join(require('node:os').tmpdir(), `electron-fswrite-empty-buffer-${Date.now()}`);
+        try {
+          await new Promise<void>((resolve, reject) => {
+            fs.writeFile(file, Buffer.alloc(0), (err: Error | null) => (err ? reject(err) : resolve()));
+          });
+          expect(fs.statSync(file).size).to.equal(0);
+        } finally {
+          try {
+            fs.unlinkSync(file);
+          } catch {
+            /* ignore */
+          }
+        }
+      });
+
+      itremote('fs.writeFile(path, "1", cb) still writes non-empty data', async () => {
+        const fs = require('node:fs');
+        const path = require('node:path');
+        const file = path.join(require('node:os').tmpdir(), `electron-fswrite-non-empty-${Date.now()}`);
+        try {
+          await new Promise<void>((resolve, reject) => {
+            fs.writeFile(file, '1', (err: Error | null) => (err ? reject(err) : resolve()));
+          });
+          expect(fs.readFileSync(file, 'utf-8')).to.equal('1');
+        } finally {
+          try {
+            fs.unlinkSync(file);
+          } catch {
+            /* ignore */
+          }
+        }
+      });
+
+      itremote('fs.writeFile(path, "", cb) truncates an existing file', async () => {
+        const fs = require('node:fs');
+        const path = require('node:path');
+        const file = path.join(require('node:os').tmpdir(), `electron-fswrite-truncate-${Date.now()}`);
+        try {
+          fs.writeFileSync(file, 'non-empty contents');
+          expect(fs.statSync(file).size).to.be.greaterThan(0);
+          await new Promise<void>((resolve, reject) => {
+            fs.writeFile(file, '', (err: Error | null) => (err ? reject(err) : resolve()));
+          });
+          expect(fs.statSync(file).size).to.equal(0);
+        } finally {
+          try {
+            fs.unlinkSync(file);
+          } catch {
+            /* ignore */
+          }
+        }
+      });
+
+      itremote('fs.writeFile(fd, Buffer.alloc(0), cb) succeeds without closing a caller-owned fd', async () => {
+        const fs = require('node:fs');
+        const path = require('node:path');
+        const file = path.join(require('node:os').tmpdir(), `electron-fswrite-user-fd-${Date.now()}`);
+        const fd = fs.openSync(file, 'w');
+        try {
+          await new Promise<void>((resolve, reject) => {
+            fs.writeFile(fd, Buffer.alloc(0), (err: Error | null) => (err ? reject(err) : resolve()));
+          });
+          // If writeFile had closed our fd this write would throw EBADF.
+          fs.writeSync(fd, 'still open');
+          fs.closeSync(fd);
+          expect(fs.readFileSync(file, 'utf-8')).to.equal('still open');
+        } finally {
+          try {
+            fs.closeSync(fd);
+          } catch {
+            /* already closed */
+          }
+          try {
+            fs.unlinkSync(file);
+          } catch {
+            /* ignore */
+          }
+        }
+      });
+    });
+
     describe('error thrown in renderer process node context', () => {
       itremote(
         'gets emitted as a process uncaughtException event',
