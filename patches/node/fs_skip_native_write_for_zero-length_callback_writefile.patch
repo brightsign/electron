@@ -1,0 +1,96 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Caner Altinbasak <cal@brightsign.biz>
+Date: Thu, 25 Jun 2026 10:51:20 +0100
+Subject: fs: skip native write for zero-length callback writeFile()
+
+Callback fs.writeFile()/writeAll() always issued a native
+fs.write(fd, buffer, 0, 0, ...) syscall even when the data was empty.
+On the Electron-based roHtmlWidget Node integration that zero-length
+write returns "EFAULT: bad address in system call argument, write",
+whereas it succeeds under the standalone roNodeJs runtime and under
+fs/promises.writeFile().
+
+Add a zero-length guard to writeAll() that skips the syscall and runs
+the normal completion path (optional fsync, close the fd only when
+writeFile() opened it, invoke callback(null)), matching the early
+return already present in fs/promises.writeFile(). Non-empty writes,
+validation, abort/signal handling and caller-owned fd semantics are
+unchanged.
+
+diff --git a/lib/fs.js b/lib/fs.js
+index 6e688375f48d2d6a12e0af6ac0c94c84b9c3c9f4..05c0b69e68cd26a862153dd3cf10cc94d7c0da32 100644
+--- a/lib/fs.js
++++ b/lib/fs.js
+@@ -2283,6 +2283,41 @@ function writeAll(fd, isUserFd, buffer, offset, length, signal, flush, callback)
+     }
+     return;
+   }
++  // Shared completion path: optionally flush, close the fd if writeFile()
++  // opened it internally, and invoke the callback.
++  const onWriteSucceeded = () => {
++    if (!flush) {
++      if (isUserFd) {
++        callback(null);
++      } else {
++        fs.close(fd, callback);
++      }
++    } else {
++      fs.fsync(fd, (syncErr) => {
++        if (syncErr) {
++          if (isUserFd) {
++            callback(syncErr);
++          } else {
++            fs.close(fd, (err) => {
++              callback(aggregateTwoErrors(err, syncErr));
++            });
++          }
++        } else if (isUserFd) {
++          callback(null);
++        } else {
++          fs.close(fd, callback);
++        }
++      });
++    }
++  };
++  // A zero-length write would still issue a native fs.write(fd, buffer, 0, 0,
++  // ...) syscall, which returns EFAULT on some runtimes (notably the
++  // Electron-based roHtmlWidget Node integration). Skip the syscall and finish
++  // as a successful 0-byte write, matching fs/promises.writeFile().
++  if (length === 0) {
++    onWriteSucceeded();
++    return;
++  }
+   // write(fd, buffer, offset, length, position, callback)
+   fs.write(fd, buffer, offset, length, null, (writeErr, written) => {
+     if (writeErr) {
+@@ -2294,29 +2329,7 @@ function writeAll(fd, isUserFd, buffer, offset, length, signal, flush, callback)
+         });
+       }
+     } else if (written === length) {
+-      if (!flush) {
+-        if (isUserFd) {
+-          callback(null);
+-        } else {
+-          fs.close(fd, callback);
+-        }
+-      } else {
+-        fs.fsync(fd, (syncErr) => {
+-          if (syncErr) {
+-            if (isUserFd) {
+-              callback(syncErr);
+-            } else {
+-              fs.close(fd, (err) => {
+-                callback(aggregateTwoErrors(err, syncErr));
+-              });
+-            }
+-          } else if (isUserFd) {
+-            callback(null);
+-          } else {
+-            fs.close(fd, callback);
+-          }
+-        });
+-      }
++      onWriteSucceeded();
+     } else {
+       offset += written;
+       length -= written;
