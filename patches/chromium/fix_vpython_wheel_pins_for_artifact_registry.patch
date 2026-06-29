@@ -1,0 +1,31 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: BrightSign CI <ci@brightsign.com>
+Date: Mon, 29 Jun 2026 16:25:00 +0100
+Subject: fix: update vpython wheel pins for Artifact Registry
+
+Use currently available wheel versions in Chrome Python Artifact Registry.
+
+- numpy: 1.2x.supported.1 -> 1.20.supported.2
+- pathos: 0.2.7.chromium.5 -> 0.2.7.chromium.6
+
+diff --git a/.vpython3 b/.vpython3
+--- a/.vpython3
++++ b/.vpython3
+@@ -144,7 +144,7 @@ wheel: <
+ # Chromium tests using Telemetry function properly.
+ wheel: <
+   name: "infra/python/wheels/numpy/${vpython_platform}"
+-  version: "version:1.2x.supported.1"
++  version: "version:1.20.supported.2"
+ >
+ wheel: <
+   name: "infra/python/wheels/pexpect/${vpython_platform}"
+@@ -476,7 +476,7 @@ wheel: <
+ #   //content/test/gpu
+ wheel: <
+   name: "infra/python/wheels/pathos/${vpython_platform}"
+-  version: "version:0.2.7.chromium.5"
++  version: "version:0.2.7.chromium.6"
+   not_match_tag <
+     abi: "cp27mu"
+     platform: "manylinux1_i686"
