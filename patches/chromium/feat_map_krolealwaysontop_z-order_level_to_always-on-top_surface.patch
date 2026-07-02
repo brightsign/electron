@@ -1,0 +1,53 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Caner Altinbasak <cal@brightsign.biz>
+Date: Thu, 2 Jul 2026 16:34:07 +0100
+Subject: feat: map kRoleAlwaysOnTop z-order level to always-on-top surface
+ role OS-20685
+
+Add the always-on-top role (value 5) to the bs_z_order_v2 role enum so
+the generated protocol headers expose BS_Z_ORDER_V2_ROLE_ALWAYS_ON_TOP
+for the Ozone client. This layer is used for supervisor on-screen
+displays such as TV controls for brightness, colour and volume.
+
+Emit bs_z_order_v2_set_role with BS_Z_ORDER_V2_ROLE_ALWAYS_ON_TOP
+from XdgToplevel::SetZOrder so an Ozone window can be assigned the
+always-on-top role.
+
+diff --git a/third_party/wayland-protocols/unstable/bs-z-order/bs-z-order-unstable-v2.xml b/third_party/wayland-protocols/unstable/bs-z-order/bs-z-order-unstable-v2.xml
+index f961a47c67e00ec80e17cb08d4167ac2c07c74d9..7a50b5fac3297535acabc8620037a0bd66501590 100644
+--- a/third_party/wayland-protocols/unstable/bs-z-order/bs-z-order-unstable-v2.xml
++++ b/third_party/wayland-protocols/unstable/bs-z-order/bs-z-order-unstable-v2.xml
+@@ -7,6 +7,7 @@
+       <entry name="video" value="2" />
+       <entry name="ticker" value="3" />
+       <entry name="virtual_keyboard" value="4" />
++      <entry name="always_on_top" value="5" />
+     </enum>
+ 
+     <request name="set_role">
+diff --git a/ui/base/ui_base_types.h b/ui/base/ui_base_types.h
+index 14a50cb81dca0103c3207f3742dd50f0091f654a..81a79971706903f04e40b95584a70b9ad2570b5d 100644
+--- a/ui/base/ui_base_types.h
++++ b/ui/base/ui_base_types.h
+@@ -80,6 +80,7 @@ enum class ZOrderLevel {
+   kLower = 565,
+   kRoleVirtualKeyboard = 567,
+   kRoleGraphics = 568,
++  kRoleAlwaysOnTop = 569,
+ };
+ 
+ // Where an owned anchored window should be anchored to. Used by such backends
+diff --git a/ui/ozone/platform/wayland/host/xdg_toplevel.cc b/ui/ozone/platform/wayland/host/xdg_toplevel.cc
+index 0f8739197c2af25e58258bb6d06b4bf0867b9b87..d5c7022ef2484efdb4e7574080f12a1d852424f6 100644
+--- a/ui/ozone/platform/wayland/host/xdg_toplevel.cc
++++ b/ui/ozone/platform/wayland/host/xdg_toplevel.cc
+@@ -410,6 +410,9 @@ void XdgToplevel::SetZOrder(ZOrderLevel z_order) {
+       case ZOrderLevel::kRoleGraphics:
+         bs_z_order_v2_set_role(connection()->bs_z_order(), window()->root_surface()->surface(), BS_Z_ORDER_V2_ROLE_GRAPHICS);
+         break;
++      case ZOrderLevel::kRoleAlwaysOnTop:
++        bs_z_order_v2_set_role(connection()->bs_z_order(), window()->root_surface()->surface(), BS_Z_ORDER_V2_ROLE_ALWAYS_ON_TOP);
++        break;
+       default:
+         // Non-BrightSign z-order levels (kNormal, kFloatingWindow, etc.)
+         // are not mapped to a BS role. The caller must explicitly set a
