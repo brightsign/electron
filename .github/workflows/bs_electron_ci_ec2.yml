@@ -11,7 +11,7 @@ on:
         description: 'EC2 instance type'
         required: false
         type: string
-        default: r6a.2xlarge
+        default: r6a.4xlarge
 
       leave_ec2_instance_running:
         description: 'Leave EC2 instance running after use'
