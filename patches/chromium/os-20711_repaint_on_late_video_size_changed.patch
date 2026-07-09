@@ -1,0 +1,25 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: JDye <jdye@brightsign.biz>
+Date: Thu, 9 Jul 2026 14:40:00 +0000
+Subject: fix(video): repaint after late size change OS-20711
+
+When a late VideoSizeChanged callback arrives after the player is already in
+HaveEnoughData, we can update frame/layer state without forcing a repaint.
+
+Trigger a repaint in that state so the resized video becomes visible
+immediately.
+
+diff --git a/third_party/blink/renderer/platform/media/brightsign/web_media_player_brightsign.cc b/third_party/blink/renderer/platform/media/brightsign/web_media_player_brightsign.cc
+index 4dd2c1cd5c9ed72663d79ae95e3f24b79682ca33..171de1af1b122f112fddf495a991e5d75615e19c 100644
+--- a/third_party/blink/renderer/platform/media/brightsign/web_media_player_brightsign.cc
++++ b/third_party/blink/renderer/platform/media/brightsign/web_media_player_brightsign.cc
+@@ -1408,6 +1408,9 @@ void WebMediaPlayerBrightsign::VideoSizeChangedCallback(uint32_t width,
+   compositor_task_runner_->PostTask(
+     FROM_HERE, base::BindOnce(&WebMediaPlayerBrightsign::DidReceiveFrame, weak_this_));
+   StartFrameReadyTimerIfRequired();
++
++  client_->SizeChanged();
++  client_->DidPlayerSizeChange(NaturalSize());
+ }
+ 
+ void WebMediaPlayerBrightsign::PlaybackPositionUpdatedCallback(
