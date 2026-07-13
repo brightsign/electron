@@ -1,0 +1,53 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Tariq Bashir <tbashir@brightsign.biz>
+Date: Wed, 8 Jul 2026 09:16:30 +0100
+Subject: feat: Brightsign add SetAttribute and SetSyncParams OS-21421
+
+Methods SetAttribute and SetSyncParams were in WebMediaPlayerBrightsign
+but commented out, this patch adds the implementation of these methods.
+
+diff --git a/third_party/blink/renderer/platform/media/brightsign/web_media_player_brightsign.cc b/third_party/blink/renderer/platform/media/brightsign/web_media_player_brightsign.cc
+index b8639f29768a557fc9faf844793ff390238f94cc..b6273ab0cd925736037126a0ffcf255a0eba28b1 100644
+--- a/third_party/blink/renderer/platform/media/brightsign/web_media_player_brightsign.cc
++++ b/third_party/blink/renderer/platform/media/brightsign/web_media_player_brightsign.cc
+@@ -800,20 +800,20 @@ bool WebMediaPlayerBrightsign::HasReadableVideoFrame() const {
+ 
+ void OnReleaseTexture(gpu::Mailbox mbox) {}
+ 
+-/*
++
+ void WebMediaPlayerBrightsign::SetAttribute(const std::string& name,
+                                             const std::string& value) {
+   VLOG(1) << __func__;
+-  vid_player_->SetAttribute(name, value);
++  vid_player_set_attribute(vid_player_, name.c_str(), value.c_str());
+ }
+ 
+ void WebMediaPlayerBrightsign::SetSyncParams(const std::string& domain,
+                                              const std::string& id,
+                                              const std::string& timestamp) {
+   VLOG(1) << __func__;
+-  vid_player_->SetSyncParams(domain, id, timestamp);
++  vid_player_set_sync_params(vid_player_, domain.c_str(), id.c_str(), timestamp.c_str());
+ }
+-*/
++
+ 
+ void WebMediaPlayerBrightsign::SetNetworkState(
+     WebMediaPlayer::NetworkState state) {
+diff --git a/third_party/blink/renderer/platform/media/brightsign/web_media_player_brightsign.h b/third_party/blink/renderer/platform/media/brightsign/web_media_player_brightsign.h
+index bf506de08a8e23a8411dc2a0d31752b71bde93c8..51c9c56e3997081c406e160b55d6a1277d3a0ee7 100644
+--- a/third_party/blink/renderer/platform/media/brightsign/web_media_player_brightsign.h
++++ b/third_party/blink/renderer/platform/media/brightsign/web_media_player_brightsign.h
+@@ -176,9 +176,8 @@ class WebMediaPlayerBrightsign
+   void SubtitleUpdatedCallback(const std::vector< std::map<std::string, std::string> >& text_tracks);
+   void TextureMailboxReadyCallback(const VidPlayerMailboxData& mbox);
+ 
+-  // void SetAttribute(const std::string& name, const std::string& value)
+-  // override; void SetSyncParams(const std::string& domain, const std::string&
+-  // id, const std::string& timestamp) override;
++  void SetAttribute(const std::string& name, const std::string& value) override;
++  void SetSyncParams(const std::string& domain, const std::string& id, const std::string& timestamp) override;
+ 
+   void OnProgress();
+   void OnEncryptedMediaInitData(media::EmeInitDataType init_data_type,

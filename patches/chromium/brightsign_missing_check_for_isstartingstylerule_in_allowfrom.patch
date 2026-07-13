@@ -1,0 +1,59 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Tariq Bashir <tbashir@brightsign.biz>
+Date: Thu, 25 Jun 2026 16:44:07 +0100
+Subject: Brightsign: Missing check for IsStartingStyleRule() in AllowFrom
+
+Caused a CHECK failure when trying to cast from StyleRuleStartingStyle
+to StyleRuleGroup. Also, removed unused condition rule leftovers from
+StyleRuleStartingStyle.
+
+Cherry picked from:
+https://chromium-review.googlesource.com/c/chromium/src/+/5097743
+
+diff --git a/third_party/blink/renderer/core/css/style_rule.cc b/third_party/blink/renderer/core/css/style_rule.cc
+index 1912267e3a912ebae92e29743f7cd541dd944c32..9db2612f08a6489a7abdfdc786bbe5d0ad939611 100644
+--- a/third_party/blink/renderer/core/css/style_rule.cc
++++ b/third_party/blink/renderer/core/css/style_rule.cc
+@@ -812,6 +812,6 @@ void StyleRuleContainer::TraceAfterDispatch(blink::Visitor* visitor) const {
+ 
+ StyleRuleStartingStyle::StyleRuleStartingStyle(
+     HeapVector<Member<StyleRuleBase>> rules)
+-    : StyleRuleCondition(kStartingStyle, "", std::move(rules)) {}
++    : StyleRuleGroup(kStartingStyle, std::move(rules)) {}
+ 
+ }  // namespace blink
+diff --git a/third_party/blink/renderer/core/css/style_rule.h b/third_party/blink/renderer/core/css/style_rule.h
+index 19cee7b2e03f7fced4668a0792b9d5c0e7a54e59..6a3c9ef9e3f632a17d9b6f50f8e60d23930c93c1 100644
+--- a/third_party/blink/renderer/core/css/style_rule.h
++++ b/third_party/blink/renderer/core/css/style_rule.h
+@@ -550,18 +550,17 @@ class CORE_EXPORT StyleRuleContainer : public StyleRuleCondition {
+   Member<ContainerQuery> container_query_;
+ };
+ 
+-class StyleRuleStartingStyle : public StyleRuleCondition {
++class StyleRuleStartingStyle : public StyleRuleGroup  {
+  public:
+   explicit StyleRuleStartingStyle(HeapVector<Member<StyleRuleBase>> rules);
+   StyleRuleStartingStyle(const StyleRuleStartingStyle&) = default;
+ 
+-  bool ConditionIsSupported() const { return true; }
+   StyleRuleStartingStyle* Copy() const {
+     return MakeGarbageCollected<StyleRuleStartingStyle>(*this);
+   }
+ 
+   void TraceAfterDispatch(blink::Visitor* visitor) const {
+-    StyleRuleCondition::TraceAfterDispatch(visitor);
++    StyleRuleGroup::TraceAfterDispatch(visitor);
+   }
+ };
+ 
+@@ -614,7 +613,8 @@ struct DowncastTraits<StyleRuleGroup> {
+   static bool AllowFrom(const StyleRuleBase& rule) {
+     return rule.IsMediaRule() || rule.IsSupportsRule() ||
+            rule.IsContainerRule() || rule.IsLayerBlockRule() ||
+-           rule.IsScopeRule() || rule.IsPositionFallbackRule();
++           rule.IsScopeRule() || rule.IsPositionFallbackRule() ||
++           rule.IsStartingStyleRule();
+   }
+ };
+ 

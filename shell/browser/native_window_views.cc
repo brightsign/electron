@@ -521,8 +521,15 @@ void NativeWindowViews::SetWindowTransform(
 #endif
 
 void NativeWindowViews::SetContentView(views::View* view) {
-  if (content_view()) {
-    root_view_.RemoveChildView(content_view());
+  auto* cv = content_view();
+  if (cv) {
+    set_content_view(nullptr);
+    focused_view_ = nullptr;
+    if (!cv->owned_by_client()) {
+      root_view_.RemoveChildViewT(cv);
+    } else {
+      root_view_.RemoveChildView(cv);
+    }
   }
   set_content_view(view);
   focused_view_ = view;
