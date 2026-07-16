@@ -1,0 +1,40 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Tariq Bashir <tbashir@brightsign.biz>
+Date: Wed, 15 Jul 2026 12:00:35 +0100
+Subject: fix: ensure BrightSign seek completion fires TimeChanged OS-21551
+
+Blink expects a TimeChanged notification for every completed seek,
+including when the resolved media time remains unchanged.
+
+Snapshot current_time_ before updating the playback position. If the
+normal update path leaves it unchanged, explicitly notify Blink. This
+avoids relying on equality with the raw reported timestamp and covers
+cases where the reported time is clamped or rounded.
+
+Normal seeks continue to emit a single notification through
+PlaybackPositionUpdatedCallback, while unchanged-time seeks use the
+fallback.
+
+diff --git a/third_party/blink/renderer/platform/media/brightsign/web_media_player_brightsign.cc b/third_party/blink/renderer/platform/media/brightsign/web_media_player_brightsign.cc
+index 171de1af1b122f112fddf495a991e5d75615e19c..2fce1e846dec5b4b773ca4a74382a949faa4737c 100644
+--- a/third_party/blink/renderer/platform/media/brightsign/web_media_player_brightsign.cc
++++ b/third_party/blink/renderer/platform/media/brightsign/web_media_player_brightsign.cc
+@@ -1382,8 +1382,18 @@ void WebMediaPlayerBrightsign::TextureMailboxReadyCallback(
+ void WebMediaPlayerBrightsign::SeekCompletedCallback(std::chrono::microseconds current_time) {
+   VLOG(1) << __func__;
+   DCHECK(main_task_runner_->BelongsToCurrentThread());
++
++  const double previous_current_time = current_time_;
++
+   seeking_ = false;
+   PlaybackPositionUpdatedCallback(current_time, decode_stats_);
++
++  // Blink expects a TimeChanged() notification in response to every seek.
++  // Send one if the normal playback position update did not change the time.
++  if (ready_state_ != kReadyStateHaveNothing &&
++      current_time_ == previous_current_time) {
++    client_->TimeChanged();
++  }
+ }
+ 
+ void WebMediaPlayerBrightsign::VideoSizeChangedCallback(uint32_t width,
