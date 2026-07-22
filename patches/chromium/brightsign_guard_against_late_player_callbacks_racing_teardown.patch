@@ -1,0 +1,71 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Tariq Bashir <tbashir@brightsign.biz>
+Date: Mon, 20 Jul 2026 13:51:43 +0100
+Subject: Brightsign: guard against late player callbacks racing teardown
+ OS-21183
+
+HTMLMediaElement::DurationChanged() and
+WebMediaPlayerBrightsign::OnDemuxInitialized() could both be invoked
+after the underlying media player had begun (but not fully completed)
+teardown, causing renderer crashes.
+
+- HTMLMediaElement::DurationChanged() hit
+  CHECK(web_media_player_) when a WebMediaPlayer implementation
+  posted a late duration-changed notification after
+  web_media_player_ had already been reset/moved out during
+  ClearMediaPlayerAndAudioSourceProviderClientWithoutLocking().
+  Replace the CHECK with a null guard that logs and returns early,
+  since ignoring a stale duration update from a player that is
+  already gone is safe.
+
+- WebMediaPlayerBrightsign::OnDemuxInitialized() dereferenced
+  demuxer_ unconditionally. Shutdown() moves demuxer_ into
+  DemuxerDestructionHelper() for async destruction on
+  media_task_runner_, but the WebMediaPlayerBrightsign instance
+  itself is only destroyed later via main_task_runner_ DeleteSoon.
+  A previously queued OnDemuxInitialized callback (bound via
+  weak_this_, which is still valid at this point) can therefore
+  run on the main thread after demuxer_ has been moved out,
+  dereferencing a null unique_ptr and crashing at
+  demuxer_->GetAllStreams(). Add a null check that logs and
+  returns early to ignore the stale callback.
+
+diff --git a/third_party/blink/renderer/core/html/media/html_media_element.cc b/third_party/blink/renderer/core/html/media/html_media_element.cc
+index 32bc202b087821b73f43a9c6ca7bc7f70ac3b31a..349130744f17b56e03d8f2bf333f8e110dd521de 100644
+--- a/third_party/blink/renderer/core/html/media/html_media_element.cc
++++ b/third_party/blink/renderer/core/html/media/html_media_element.cc
+@@ -4056,7 +4056,13 @@ void HTMLMediaElement::DurationChanged() {
+   DVLOG(3) << "durationChanged(" << *this << ")";
+ 
+   // durationChanged() is triggered by media player.
+-  CHECK(web_media_player_);
++  // Some player backends may emit a late duration callback during teardown.
++  // Ignore it instead of crashing the renderer.
++  if (!web_media_player_) {
++    DVLOG(1) << "durationChanged(" << *this
++             << ") ignored: no web_media_player_";
++    return;
++  }
+   double new_duration = web_media_player_->Duration();
+ 
+   // If the duration is changed such that the *current playback position* ends
+diff --git a/third_party/blink/renderer/platform/media/brightsign/web_media_player_brightsign.cc b/third_party/blink/renderer/platform/media/brightsign/web_media_player_brightsign.cc
+index 2fce1e846dec5b4b773ca4a74382a949faa4737c..52de707cbba1feded7a75e257e9a752deadb94cf 100644
+--- a/third_party/blink/renderer/platform/media/brightsign/web_media_player_brightsign.cc
++++ b/third_party/blink/renderer/platform/media/brightsign/web_media_player_brightsign.cc
+@@ -879,6 +879,15 @@ void WebMediaPlayerBrightsign::OnDemuxInitialized(media::PipelineStatus status)
+ 
+   DCHECK(main_task_runner_->BelongsToCurrentThread());
+ 
++  if (!demuxer_) {
++    // Shutdown() may have already moved |demuxer_| out for asynchronous
++    // destruction before this queued callback ran (the WebMediaPlayerBrightsign
++    // object itself is destroyed later via DeleteSoon). Ignore the stale
++    // callback instead of crashing.
++    VLOG(1) << __func__ << ": demuxer_ already released, ignoring";
++    return;
++  }
++
+   // The streams are all present, so update with their configurations
+   std::vector<media::DemuxerStream*> streams = demuxer_->GetAllStreams();
+   for (auto* stream : streams)
