@@ -228,3 +228,4 @@ feat_brightsign_add_setattribute_and_setsyncparams_os-21421.patch
 add_removetrap_api_os-21158.patch
 fix_mojo_trap_leak_os-21158.patch
 fix_brightsign_fire_timechanged_for_equal-time-seeks_on-seek_os-21551.patch
+os-20201_add_mirrored_window_transforms.patch

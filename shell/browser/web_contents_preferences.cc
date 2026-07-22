@@ -81,6 +81,10 @@ struct Converter<blink::mojom::WindowTransformType> {
     using Val = blink::mojom::WindowTransformType;
     static constexpr auto Lookup =
         base::MakeFixedFlatMapSorted<base::StringPiece, Val>({
+            {"mirror", Val::kWindowTransformTypeMirror},
+            {"mirror_rot180", Val::kWindowTransformTypeMirrorRotate180},
+            {"mirror_rot270", Val::kWindowTransformTypeMirrorRotate270},
+            {"mirror_rot90", Val::kWindowTransformTypeMirrorRotate90},
             {"none", Val::kWindowTransformTypeNone},
             {"rot180", Val::kWindowTransformTypeRotate180},
             {"rot270", Val::kWindowTransformTypeRotate270},

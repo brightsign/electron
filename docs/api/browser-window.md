@@ -1632,6 +1632,10 @@ removed in future Electron releases.
   * `rot90` - The widget content is rotated to portrait at 90 degrees (clockwise).
   * `rot180` - The widget content is rotated to portrait at 180 degrees (clockwise).
   * `rot270` - The widget content is rotated to portrait at 270 degrees (clockwise).
+  * `mirror` - The widget content is mirrored horizontally.
+  * `mirror_rot90` - The widget content is mirrored horizontally and rotated 90 degrees clockwise.
+  * `mirror_rot180` - The widget content is mirrored horizontally and rotated 180 degrees clockwise.
+  * `mirror_rot270` - The widget content is mirrored horizontally and rotated 270 degrees clockwise.
 
 This method sets the browser window's transform.
 
