@@ -1,0 +1,203 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Tariq Bashir <120014322+t-bashir-bs@users.noreply.github.com>
+Date: Tue, 21 Jul 2026 12:00:00 +0000
+Subject: Add hardware-accelerated mirrored window transforms
+
+Extend window and overlay transforms with mirrored quarter turns. Propagate
+these transforms through Viz and the Linux Wayland, Vulkan, and DRM hardware
+presentation paths, and update Aura bounds, popup, and input transforms.
+
+diff --git a/content/browser/renderer_host/render_widget_host_view_aura.cc b/content/browser/renderer_host/render_widget_host_view_aura.cc
+index 6e03d616d77d1c9da483b8777142925f78d1427c..6d0bf614341bb142e9aac161b961561ff444d18e 100644
+--- a/content/browser/renderer_host/render_widget_host_view_aura.cc
++++ b/content/browser/renderer_host/render_widget_host_view_aura.cc
+@@ -393,6 +393,20 @@ RenderWidgetHostViewAura::RenderWidgetHostViewAura(
+       case blink::mojom::WindowTransformType::kWindowTransformTypeRotate270:
+         window_transform_ = gfx::OVERLAY_TRANSFORM_ROTATE_CLOCKWISE_270;
+         break;
++      case blink::mojom::WindowTransformType::kWindowTransformTypeMirror:
++        window_transform_ = gfx::OVERLAY_TRANSFORM_FLIP_HORIZONTAL;
++        break;
++      case blink::mojom::WindowTransformType::kWindowTransformTypeMirrorRotate90:
++        // Since its flip horizontal and rotate 90, it is equivalent to flip vertical and rotate 270.
++        window_transform_ = gfx::OVERLAY_TRANSFORM_FLIP_VERTICAL_CLOCKWISE_270;
++        break;
++      case blink::mojom::WindowTransformType::kWindowTransformTypeMirrorRotate180:
++        window_transform_ = gfx::OVERLAY_TRANSFORM_FLIP_VERTICAL;
++        break;
++      case blink::mojom::WindowTransformType::kWindowTransformTypeMirrorRotate270:
++        // Since its flip horizontal and rotate 270, it is equivalent to flip vertical and rotate 90.
++        window_transform_ = gfx::OVERLAY_TRANSFORM_FLIP_VERTICAL_CLOCKWISE_90;
++        break;
+       default:
+         window_transform_ = gfx::OVERLAY_TRANSFORM_NONE;
+         break;
+@@ -3600,6 +3614,14 @@ gfx::Rect RenderWidgetHostViewAura::GetTransformedPopupBounds(const gfx::Rect& n
+     transformed_bounds.Offset(parent_bounds.OffsetFromOrigin());
+ 
+   switch (window_transform_) {
++    case gfx::OVERLAY_TRANSFORM_FLIP_HORIZONTAL:
++      transformed_bounds.Offset(-original_popup_bounds_.width(), 0);
++      break;
++
++    case gfx::OVERLAY_TRANSFORM_FLIP_VERTICAL:
++      transformed_bounds.Offset(0, -original_popup_bounds_.height());
++      break;
++
+     case gfx::OVERLAY_TRANSFORM_ROTATE_CLOCKWISE_90:
+       transformed_bounds.set_size(gfx::Size(original_popup_bounds_.height(), original_popup_bounds_.width()));
+       transformed_bounds.Offset(-original_popup_bounds_.height(), 0);
+@@ -3614,6 +3636,16 @@ gfx::Rect RenderWidgetHostViewAura::GetTransformedPopupBounds(const gfx::Rect& n
+       transformed_bounds.Offset(0, -original_popup_bounds_.width());
+       break;
+ 
++    case gfx::OVERLAY_TRANSFORM_FLIP_VERTICAL_CLOCKWISE_270:
++      transformed_bounds.set_size(gfx::Size(original_popup_bounds_.height(), original_popup_bounds_.width()));
++      transformed_bounds.Offset(-original_popup_bounds_.height(),
++                                -original_popup_bounds_.width());
++      break;
++
++    case gfx::OVERLAY_TRANSFORM_FLIP_VERTICAL_CLOCKWISE_90:
++      transformed_bounds.set_size(gfx::Size(original_popup_bounds_.height(), original_popup_bounds_.width()));
++      break;
++
+     default:
+       break;
+   }
+diff --git a/third_party/blink/public/mojom/webpreferences/web_preferences.mojom b/third_party/blink/public/mojom/webpreferences/web_preferences.mojom
+index d877f7c2e908f1f3188b4f499269da5388037285..b0d5e37425ce7a8be36fc36511d9ab13c260f839 100644
+--- a/third_party/blink/public/mojom/webpreferences/web_preferences.mojom
++++ b/third_party/blink/public/mojom/webpreferences/web_preferences.mojom
+@@ -120,6 +120,10 @@ enum WindowTransformType {
+   kWindowTransformTypeRotate90,
+   kWindowTransformTypeRotate180,
+   kWindowTransformTypeRotate270,
++  kWindowTransformTypeMirror,
++  kWindowTransformTypeMirrorRotate90,
++  kWindowTransformTypeMirrorRotate180,
++  kWindowTransformTypeMirrorRotate270,
+ };
+ 
+ struct WebPreferences {
+diff --git a/ui/aura/window_tree_host.cc b/ui/aura/window_tree_host.cc
+index 2d753066243c6cd5f95c3d356b62ef6003b9340b..49e22badb8e725be20b8c513a2c40a637d35f04b 100644
+--- a/ui/aura/window_tree_host.cc
++++ b/ui/aura/window_tree_host.cc
+@@ -186,6 +186,7 @@ void WindowTreeHost::SetDisplayTransformHint(gfx::OverlayTransform transform) {
+     return;
+ 
+   compositor()->SetDisplayTransformHint(transform);
++  compositor()->ScheduleFullRedraw();
+   OnHostResizedInPixels(GetBoundsInPixels().size());
+   CalculateInputTransform(transform);
+ }
+@@ -208,7 +209,9 @@ gfx::Rect WindowTreeHost::GetTransformedWindowBounds(const gfx::Rect& new_bounds
+ 
+   if (IsPopup()) {
+     if (transform_hint_ == gfx::OVERLAY_TRANSFORM_ROTATE_CLOCKWISE_90 ||
+-        transform_hint_ == gfx::OVERLAY_TRANSFORM_ROTATE_CLOCKWISE_270) {
++        transform_hint_ == gfx::OVERLAY_TRANSFORM_ROTATE_CLOCKWISE_270 ||
++        transform_hint_ == gfx::OVERLAY_TRANSFORM_FLIP_VERTICAL_CLOCKWISE_90 ||
++        transform_hint_ == gfx::OVERLAY_TRANSFORM_FLIP_VERTICAL_CLOCKWISE_270) {
+       // Make the window bounds equal the original popup bounds with the width and height swapped.
+       transformed_bounds.set_size(gfx::Size(original_popup_bounds_.height(), original_popup_bounds_.width()));
+     }
+@@ -216,7 +219,9 @@ gfx::Rect WindowTreeHost::GetTransformedWindowBounds(const gfx::Rect& new_bounds
+   else {
+     gfx::Rect window_bounds = GetBoundsInPixels();
+     if ((transform_hint_ == gfx::OVERLAY_TRANSFORM_ROTATE_CLOCKWISE_90 ||
+-         transform_hint_ == gfx::OVERLAY_TRANSFORM_ROTATE_CLOCKWISE_270) &&
++         transform_hint_ == gfx::OVERLAY_TRANSFORM_ROTATE_CLOCKWISE_270 ||
++         transform_hint_ == gfx::OVERLAY_TRANSFORM_FLIP_VERTICAL_CLOCKWISE_90 ||
++         transform_hint_ == gfx::OVERLAY_TRANSFORM_FLIP_VERTICAL_CLOCKWISE_270) &&
+         window_bounds.height() && window_bounds.width()) {
+       float window_aspect_ratio = (float)window_bounds.width() / (float)window_bounds.height();
+       float new_aspect_ratio = (float)new_bounds.width() / (float)new_bounds.height();
+@@ -237,7 +242,9 @@ gfx::Rect WindowTreeHost::GetNonTransformedWindowBounds(const gfx::Rect& new_bou
+   gfx::Rect window_bounds = GetBoundsInPixels();
+ 
+   if ((transform_hint_ == gfx::OVERLAY_TRANSFORM_ROTATE_CLOCKWISE_90 ||
+-       transform_hint_ == gfx::OVERLAY_TRANSFORM_ROTATE_CLOCKWISE_270) &&
++       transform_hint_ == gfx::OVERLAY_TRANSFORM_ROTATE_CLOCKWISE_270 ||
++       transform_hint_ == gfx::OVERLAY_TRANSFORM_FLIP_VERTICAL_CLOCKWISE_90 ||
++       transform_hint_ == gfx::OVERLAY_TRANSFORM_FLIP_VERTICAL_CLOCKWISE_270) &&
+        window_bounds.height() && window_bounds.width()) {
+     float window_aspect_ratio = (float)window_bounds.width() / (float)window_bounds.height();
+     float new_aspect_ratio = (float)new_bounds.width() / (float)new_bounds.height();
+@@ -257,6 +264,18 @@ void WindowTreeHost::CalculateInputTransform(gfx::OverlayTransform transform) {
+   popup_transform_.MakeIdentity();
+ 
+   switch (transform) {
++    case gfx::OVERLAY_TRANSFORM_FLIP_HORIZONTAL:
++      input_transform_ = gfx::Transform::Affine(
++          -1, 0, 0, 1, GetBoundsInPixels().width(), 0);
++      popup_transform_ = input_transform_;
++      break;
++
++    case gfx::OVERLAY_TRANSFORM_FLIP_VERTICAL:
++      input_transform_ = gfx::Transform::Affine(
++          1, 0, 0, -1, 0, GetBoundsInPixels().height());
++      popup_transform_ = input_transform_;
++      break;
++
+     case gfx::OVERLAY_TRANSFORM_ROTATE_CLOCKWISE_90:
+       input_transform_.Translate(0, GetBoundsInPixels().width());
+       input_transform_.Rotate(-90);
+@@ -281,6 +300,20 @@ void WindowTreeHost::CalculateInputTransform(gfx::OverlayTransform transform) {
+       popup_transform_.Rotate(-90);
+       break;
+ 
++    case gfx::OVERLAY_TRANSFORM_FLIP_VERTICAL_CLOCKWISE_270:
++      input_transform_ = gfx::Transform::Affine(
++          0, -1, -1, 0, GetBoundsInPixels().height(),
++          GetBoundsInPixels().width());
++      popup_transform_ = gfx::Transform::Affine(
++          0, -1, -1, 0, GetBoundsInPixels().width(),
++          GetBoundsInPixels().height());
++      break;
++
++    case gfx::OVERLAY_TRANSFORM_FLIP_VERTICAL_CLOCKWISE_90:
++      input_transform_ = gfx::Transform::Affine(0, 1, 1, 0, 0, 0);
++      popup_transform_ = input_transform_;
++      break;
++
+     default:
+       break;
+   }
+diff --git a/ui/ozone/platform/drm/gpu/hardware_display_plane_atomic.cc b/ui/ozone/platform/drm/gpu/hardware_display_plane_atomic.cc
+index 80bf68d8a25df51811f2d704d21544f22c7458f7..44516d4818c636d0038565f9f5a0d02114ec04b6 100644
+--- a/ui/ozone/platform/drm/gpu/hardware_display_plane_atomic.cc
++++ b/ui/ozone/platform/drm/gpu/hardware_display_plane_atomic.cc
+@@ -37,7 +37,9 @@ uint32_t OverlayTransformToDrmRotationPropertyValue(
+     case gfx::OVERLAY_TRANSFORM_ROTATE_CLOCKWISE_270:
+       return DRM_MODE_ROTATE_90;
+     case gfx::OVERLAY_TRANSFORM_FLIP_VERTICAL_CLOCKWISE_90:
++      return DRM_MODE_REFLECT_Y | DRM_MODE_ROTATE_90;
+     case gfx::OVERLAY_TRANSFORM_FLIP_VERTICAL_CLOCKWISE_270:
++      return DRM_MODE_REFLECT_Y | DRM_MODE_ROTATE_270;
+     default:
+       NOTREACHED();
+   }
+@@ -56,6 +58,8 @@ bool IsRotationTransformSupported(gfx::OverlayTransform transform,
+                                   bool is_original_buffer) {
+   if ((transform == gfx::OVERLAY_TRANSFORM_ROTATE_CLOCKWISE_90) ||
+       (transform == gfx::OVERLAY_TRANSFORM_ROTATE_CLOCKWISE_270) ||
++      (transform == gfx::OVERLAY_TRANSFORM_FLIP_VERTICAL_CLOCKWISE_90) ||
++      (transform == gfx::OVERLAY_TRANSFORM_FLIP_VERTICAL_CLOCKWISE_270) ||
+       (transform == gfx::OVERLAY_TRANSFORM_FLIP_HORIZONTAL)) {
+     if (is_original_buffer && (format_fourcc == DRM_FORMAT_NV12 ||
+                                format_fourcc == DRM_FORMAT_P010)) {
+diff --git a/ui/ozone/platform/wayland/common/wayland_util.cc b/ui/ozone/platform/wayland/common/wayland_util.cc
+index 193888cefc1846d2b3a22fbab9d76c5907c3a24b..a2f99629978bc2fcc6fa969e2d92ad26899185fc 100644
+--- a/ui/ozone/platform/wayland/common/wayland_util.cc
++++ b/ui/ozone/platform/wayland/common/wayland_util.cc
+@@ -147,7 +147,9 @@ wl_output_transform ToWaylandTransform(gfx::OverlayTransform transform) {
+     case gfx::OVERLAY_TRANSFORM_ROTATE_CLOCKWISE_270:
+       return WL_OUTPUT_TRANSFORM_90;
+     case gfx::OVERLAY_TRANSFORM_FLIP_VERTICAL_CLOCKWISE_90:
++      return WL_OUTPUT_TRANSFORM_FLIPPED_270;
+     case gfx::OVERLAY_TRANSFORM_FLIP_VERTICAL_CLOCKWISE_270:
++      return WL_OUTPUT_TRANSFORM_FLIPPED_90;
+     default:
+       break;
+   }

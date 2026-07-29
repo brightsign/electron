@@ -557,6 +557,22 @@ void NativeWindowViews::SetWindowTransform(
     case blink::mojom::WindowTransformType::kWindowTransformTypeRotate270:
       window_transform = gfx::OVERLAY_TRANSFORM_ROTATE_CLOCKWISE_270;
       break;
+    case blink::mojom::WindowTransformType::kWindowTransformTypeMirror:
+      window_transform = gfx::OVERLAY_TRANSFORM_FLIP_HORIZONTAL;
+      break;
+    // Since its flip horizontal and rotate 90, it is equivalent to flip
+    // vertical and rotate 270.
+    case blink::mojom::WindowTransformType::kWindowTransformTypeMirrorRotate90:
+      window_transform = gfx::OVERLAY_TRANSFORM_FLIP_VERTICAL_CLOCKWISE_270;
+      break;
+    case blink::mojom::WindowTransformType::kWindowTransformTypeMirrorRotate180:
+      window_transform = gfx::OVERLAY_TRANSFORM_FLIP_VERTICAL;
+      break;
+    // Since its flip horizontal and rotate 270, it is equivalent to flip
+    // vertical and rotate 90.
+    case blink::mojom::WindowTransformType::kWindowTransformTypeMirrorRotate270:
+      window_transform = gfx::OVERLAY_TRANSFORM_FLIP_VERTICAL_CLOCKWISE_90;
+      break;
     default:
       window_transform = gfx::OVERLAY_TRANSFORM_NONE;
       break;
