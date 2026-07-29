@@ -7651,6 +7651,20 @@ describe('BrowserWindow module', () => {
     const offsetBounds = { x: 100, y: 200, width: 600, height: 400 };
     const negativeOffsetBounds = { x: -5, y: -5, width: 600, height: 400 };
     const fullScreenBounds = { x: 0, y: 0, width: screenSize.width - 1, height: screenSize.height - 1 };
+    const windowBounds = [
+      { description: 'landscape', bounds: landscapeBounds },
+      { description: 'portrait', bounds: portraitBounds },
+      { description: 'square', bounds: squareBounds },
+      { description: 'x,y offset', bounds: offsetBounds },
+      { description: 'x,y negative offset', bounds: negativeOffsetBounds },
+      { description: 'full screen', bounds: fullScreenBounds }
+    ];
+    const rotatedResizeBounds = [
+      { description: 'portraitBounds', bounds: portraitBounds },
+      { description: 'squareBounds', bounds: squareBounds },
+      { description: 'bounds with x,y offsets', bounds: offsetBounds },
+      { description: 'bounds with negative x,y offsets', bounds: negativeOffsetBounds }
+    ];
     const SELECT_HEIGHT = 10;
     const SELECT_WIDTH = 20;
     const SELECT_OPTION_HEIGHT = 18;
@@ -7666,139 +7680,122 @@ describe('BrowserWindow module', () => {
 
     const MOUSE_X_OFFSET = 10;
     const MOUSE_Y_OFFSET = 5;
+    type WindowTransform = Parameters<BrowserWindow['setWindowTransform']>[0];
+    type WindowTransformTest = {
+      name: WindowTransform;
+      description: string;
+      swapsDimensions: boolean;
+      transformPosition: (bounds: Electron.Rectangle, x: number, y: number) => { x: number; y: number };
+    };
+    const windowTransforms: readonly WindowTransformTest[] = [
+      {
+        name: 'none',
+        description: 'identity',
+        swapsDimensions: false,
+        transformPosition: (_bounds, x, y) => ({ x, y })
+      },
+      {
+        name: 'rot90',
+        description: 'rot90',
+        swapsDimensions: true,
+        transformPosition: (bounds, x, y) => ({ x: bounds.width - y, y: x })
+      },
+      {
+        name: 'rot180',
+        description: 'rot180',
+        swapsDimensions: false,
+        transformPosition: (bounds, x, y) => ({ x: bounds.width - x, y: bounds.height - y })
+      },
+      {
+        name: 'mirror',
+        description: 'mirror',
+        swapsDimensions: false,
+        transformPosition: (bounds, x, y) => ({ x: bounds.width - x, y })
+      },
+      {
+        name: 'mirror_rot90',
+        description: 'mirror_rot90',
+        swapsDimensions: true,
+        transformPosition: (bounds, x, y) => ({ x: bounds.width - y, y: bounds.height - x })
+      },
+      {
+        name: 'mirror_rot180',
+        description: 'mirror_rot180',
+        swapsDimensions: false,
+        transformPosition: (bounds, x, y) => ({ x, y: bounds.height - y })
+      },
+      {
+        name: 'mirror_rot270',
+        description: 'mirror_rot270',
+        swapsDimensions: true,
+        transformPosition: (_bounds, x, y) => ({ x: y, y: x })
+      },
+      {
+        name: 'rot270',
+        description: 'rot270',
+        swapsDimensions: true,
+        transformPosition: (bounds, x, y) => ({ x: y, y: bounds.height - x })
+      }
+    ];
+    const identityTransform = windowTransforms.find(({ name }) => name === 'none')!;
+    const rot270Transform = windowTransforms.find(({ name }) => name === 'rot270')!;
     let w: BrowserWindow;
-    const clickMouse = (w: BrowserWindow, pos: {x: number, y: number}) => {
+    const clickMouse = (w: BrowserWindow, pos: { x: number; y: number }) => {
       w.webContents.sendInputEvent({ type: 'mouseDown', clickCount: 1, x: pos.x, y: pos.y });
       w.webContents.sendInputEvent({ type: 'mouseUp', clickCount: 1, x: pos.x, y: pos.y });
     };
-    // Enable to help debug problems.
-    // const dumpImageForDebug = async (filename: string) => {
-    //   const screen = await captureScreen();
-    //   const pngImage = screen.toPNG();
-    //   fs.writeFileSync(filename, pngImage);
-    // }
+    const verifyWindowTransform = async (bounds: Electron.Rectangle, transform: WindowTransformTest) => {
+      await setTimeout(500);
+      const { windowWidth, windowHeight } = await w.webContents.executeJavaScript(
+        '({windowWidth: window.innerWidth, windowHeight: window.innerHeight})'
+      );
+      expect(windowWidth).to.be.equal(transform.swapsDimensions ? bounds.height : bounds.width);
+      expect(windowHeight).to.be.equal(transform.swapsDimensions ? bounds.width : bounds.height);
+      expectBoundsEqual(w.getBounds(), bounds);
+
+      // Enable to help debug problems (note run test harness with C=1 prefix).
+      // dumpImageForDebug(`window-transform-${transform.name}-${bounds.width}x${bounds.height}`);
+
+      const selectPosition = transform.transformPosition(bounds, SELECT_WIDTH_OFFSET, SELECT_HEIGHT_OFFSET);
+      const screenCapture = new ScreenCapture(display);
+      await screenCapture.expectColorAtPointOnDisplayMatches(HexColors.RED, () => ({
+        x: bounds.x + selectPosition.x,
+        y: bounds.y + selectPosition.y
+      }));
+
+      clickMouse(w, { x: MOUSE_X_OFFSET, y: MOUSE_Y_OFFSET });
+      await setTimeout(500);
+      // dumpImageForDebug(`window-transform-${transform.name}-${bounds.width}x${bounds.height}-mouse-clicked`);
+
+      const optionPosition = transform.transformPosition(
+        bounds,
+        SELECT_OPTION_WIDTH_OFFSET,
+        SELECT_OPTION_HEIGHT_OFFSET
+      );
+      await screenCapture.expectColorAtPointOnDisplayMatches(HexColors.GREEN, () => ({
+        x: bounds.x + optionPosition.x,
+        y: bounds.y + optionPosition.y
+      }));
+    };
+    // Enable to help debug problems
+    // const dumpImageForDebug = async (filePrefix: string) => {
+    //   const screenCapture = new ScreenCapture(display);
+    //   await screenCapture.takeScreenshot(filePrefix);
+    // };
 
     describe('webpreference', () => {
       afterEach(closeAllWindows);
-      after(() => { w = null as unknown as BrowserWindow; });
+      after(() => {
+        w = null as unknown as BrowserWindow;
+      });
 
-      [{ name: 'landscape', bounds: landscapeBounds }, { name: 'portrait', bounds: portraitBounds }, { name: 'square', bounds: squareBounds },
-        { name: 'x,y offset', bounds: offsetBounds }, { name: 'x,y negative offset', bounds: negativeOffsetBounds },
-        { name: 'full screen', bounds: fullScreenBounds }].forEach((item) => {
-        it(`identity: ${item.name}`, async () => {
-          w = new BrowserWindow({ ...item.bounds, frame: false, webPreferences: { windowTransform: 'none' } });
-          await w.loadURL(url);
-          const { windowWidth, windowHeight } = await w.webContents.executeJavaScript('({windowWidth: window.innerWidth, windowHeight: window.innerHeight})');
-          expect(windowWidth).to.be.equal(item.bounds.width);
-          expect(windowHeight).to.be.equal(item.bounds.height);
-          expectBoundsEqual(w.getBounds(), item.bounds);
-
-          await setTimeout(500);
-          const screenCapture = new ScreenCapture(display);
-          await screenCapture.expectColorAtPointOnDisplayMatches(
-            HexColors.RED,
-            () => ({
-              x: item.bounds.x + SELECT_WIDTH_OFFSET,
-              y: item.bounds.y + SELECT_HEIGHT_OFFSET
-            })
-          );
-
-          clickMouse(w, { x: MOUSE_X_OFFSET, y: MOUSE_Y_OFFSET });
-          await setTimeout(500);
-          await screenCapture.expectColorAtPointOnDisplayMatches(
-            HexColors.GREEN,
-            () => ({
-              x: item.bounds.x + SELECT_OPTION_WIDTH_OFFSET,
-              y: item.bounds.y + SELECT_OPTION_HEIGHT_OFFSET
-            })
-          );
-        });
-
-        it(`rot90: ${item.name}`, async () => {
-          w = new BrowserWindow({ ...item.bounds, frame: false, webPreferences: { windowTransform: 'rot90' } });
-          await w.loadURL(url);
-          const { windowWidth, windowHeight } = await w.webContents.executeJavaScript('({windowWidth: window.innerWidth, windowHeight: window.innerHeight})');
-          expect(windowWidth).to.be.equal(item.bounds.height);
-          expect(windowHeight).to.be.equal(item.bounds.width);
-          expectBoundsEqual(w.getBounds(), item.bounds);
-
-          await setTimeout(500);
-          const screenCapture = new ScreenCapture(display);
-          await screenCapture.expectColorAtPointOnDisplayMatches(
-            HexColors.RED,
-            () => ({
-              x: item.bounds.x + item.bounds.width - SELECT_HEIGHT_OFFSET,
-              y: item.bounds.y + SELECT_WIDTH_OFFSET
-            })
-          );
-
-          clickMouse(w, { x: MOUSE_X_OFFSET, y: MOUSE_Y_OFFSET });
-          await setTimeout(500);
-          await screenCapture.expectColorAtPointOnDisplayMatches(
-            HexColors.GREEN,
-            () => ({
-              x: item.bounds.x + item.bounds.width - SELECT_OPTION_HEIGHT_OFFSET,
-              y: item.bounds.y + SELECT_OPTION_WIDTH_OFFSET
-            })
-          );
-        });
-
-        it(`rot180: ${item.name}`, async () => {
-          w = new BrowserWindow({ ...item.bounds, frame: false, webPreferences: { windowTransform: 'rot180' } });
-          await w.loadURL(url);
-          const { windowWidth, windowHeight } = await w.webContents.executeJavaScript('({windowWidth: window.innerWidth, windowHeight: window.innerHeight})');
-          expect(windowWidth).to.be.equal(item.bounds.width);
-          expect(windowHeight).to.be.equal(item.bounds.height);
-          expectBoundsEqual(w.getBounds(), item.bounds);
-
-          await setTimeout(500);
-          const screenCapture = new ScreenCapture(display);
-          await screenCapture.expectColorAtPointOnDisplayMatches(
-            HexColors.RED,
-            () => ({
-              x: item.bounds.x + item.bounds.width - SELECT_WIDTH_OFFSET,
-              y: item.bounds.y + item.bounds.height - SELECT_HEIGHT_OFFSET
-            })
-          );
-
-          clickMouse(w, { x: MOUSE_X_OFFSET, y: MOUSE_Y_OFFSET });
-          await setTimeout(500);
-          await screenCapture.expectColorAtPointOnDisplayMatches(
-            HexColors.GREEN,
-            () => ({
-              x: item.bounds.x + item.bounds.width - SELECT_OPTION_WIDTH_OFFSET,
-              y: item.bounds.y + item.bounds.height - SELECT_OPTION_HEIGHT_OFFSET
-            })
-          );
-        });
-
-        it(`rot270: ${item.name}`, async () => {
-          w = new BrowserWindow({ ...item.bounds, frame: false, webPreferences: { windowTransform: 'rot270' } });
-          await w.loadURL(url);
-          const { windowWidth, windowHeight } = await w.webContents.executeJavaScript('({windowWidth: window.innerWidth, windowHeight: window.innerHeight})');
-          expect(windowWidth).to.be.equal(item.bounds.height);
-          expect(windowHeight).to.be.equal(item.bounds.width);
-          expectBoundsEqual(w.getBounds(), item.bounds);
-
-          await setTimeout(500);
-          const screenCapture = new ScreenCapture(display);
-          await screenCapture.expectColorAtPointOnDisplayMatches(
-            HexColors.RED,
-            () => ({
-              x: item.bounds.x + SELECT_HEIGHT_OFFSET,
-              y: item.bounds.y + item.bounds.height - SELECT_WIDTH_OFFSET
-            })
-          );
-
-          clickMouse(w, { x: MOUSE_X_OFFSET, y: MOUSE_Y_OFFSET });
-          await setTimeout(500);
-          await screenCapture.expectColorAtPointOnDisplayMatches(
-            HexColors.GREEN,
-            () => ({
-              x: item.bounds.x + SELECT_OPTION_HEIGHT_OFFSET,
-              y: item.bounds.y + item.bounds.height - SELECT_OPTION_WIDTH_OFFSET
-            })
-          );
+      windowBounds.forEach(({ description, bounds }) => {
+        windowTransforms.forEach((transform) => {
+          it(`${transform.description}: ${description}`, async () => {
+            w = new BrowserWindow({ ...bounds, frame: false, webPreferences: { windowTransform: transform.name } });
+            await w.loadURL(url);
+            await verifyWindowTransform(bounds, transform);
+          });
         });
       });
     });
@@ -7812,230 +7809,30 @@ describe('BrowserWindow module', () => {
         await closeWindow(w);
         w = null as unknown as BrowserWindow;
       });
-      afterEach(() => { clickMouse(w, { x: 500, y: 500 }); });
-
-      it('rot90', async () => {
-        w.setWindowTransform('rot90');
-        await setTimeout(500);
-        const { windowWidth, windowHeight } = await w.webContents.executeJavaScript('({windowWidth: window.innerWidth, windowHeight: window.innerHeight})');
-        expect(windowWidth).to.be.equal(landscapeBounds.height);
-        expect(windowHeight).to.be.equal(landscapeBounds.width);
-        expectBoundsEqual(w.getBounds(), landscapeBounds);
-
-        const screenCapture = new ScreenCapture(display);
-        await screenCapture.expectColorAtPointOnDisplayMatches(
-          HexColors.RED,
-          () => ({
-            x: landscapeBounds.x + landscapeBounds.width - SELECT_HEIGHT_OFFSET,
-            y: landscapeBounds.y + SELECT_WIDTH_OFFSET
-          })
-        );
-
-        clickMouse(w, { x: MOUSE_X_OFFSET, y: MOUSE_Y_OFFSET });
-        await setTimeout(500);
-        await screenCapture.expectColorAtPointOnDisplayMatches(
-          HexColors.GREEN,
-          () => ({
-            x: landscapeBounds.x + landscapeBounds.width - SELECT_OPTION_HEIGHT_OFFSET,
-            y: landscapeBounds.y + SELECT_OPTION_WIDTH_OFFSET
-          })
-        );
+      afterEach(async () => {
+        clickMouse(w, { x: 200, y: 200 });
+        await setTimeout(100);
       });
 
-      it('rot180', async () => {
-        w.setWindowTransform('rot180');
-        await setTimeout(500);
-        const { windowWidth, windowHeight } = await w.webContents.executeJavaScript('({windowWidth: window.innerWidth, windowHeight: window.innerHeight})');
-        expect(windowWidth).to.be.equal(landscapeBounds.width);
-        expect(windowHeight).to.be.equal(landscapeBounds.height);
-        expectBoundsEqual(w.getBounds(), landscapeBounds);
+      windowTransforms
+        .filter(({ name }) => name !== 'none')
+        .forEach((transform) => {
+          it(transform.description, async () => {
+            w.setWindowTransform(transform.name);
+            await verifyWindowTransform(landscapeBounds, transform);
+          });
+        });
 
-        const screenCapture = new ScreenCapture(display);
-        await screenCapture.expectColorAtPointOnDisplayMatches(
-          HexColors.RED,
-          () => ({
-            x: landscapeBounds.x + landscapeBounds.width - SELECT_WIDTH_OFFSET,
-            y: landscapeBounds.y + landscapeBounds.height - SELECT_HEIGHT_OFFSET
-          })
-        );
-
-        clickMouse(w, { x: MOUSE_X_OFFSET, y: MOUSE_Y_OFFSET });
-        await setTimeout(500);
-        await screenCapture.expectColorAtPointOnDisplayMatches(
-          HexColors.GREEN,
-          () => ({
-            x: landscapeBounds.x + landscapeBounds.width - SELECT_OPTION_WIDTH_OFFSET,
-            y: landscapeBounds.y + landscapeBounds.height - SELECT_OPTION_HEIGHT_OFFSET
-          })
-        );
-      });
-
-      it('rot270', async () => {
-        w.setWindowTransform('rot270');
-        await setTimeout(500);
-        const { windowWidth, windowHeight } = await w.webContents.executeJavaScript('({windowWidth: window.innerWidth, windowHeight: window.innerHeight})');
-        expect(windowWidth).to.be.equal(landscapeBounds.height);
-        expect(windowHeight).to.be.equal(landscapeBounds.width);
-        expectBoundsEqual(w.getBounds(), landscapeBounds);
-
-        const screenCapture = new ScreenCapture(display);
-        await screenCapture.expectColorAtPointOnDisplayMatches(
-          HexColors.RED,
-          () => ({
-            x: landscapeBounds.x + SELECT_HEIGHT_OFFSET,
-            y: landscapeBounds.y + landscapeBounds.height - SELECT_WIDTH_OFFSET
-          })
-        );
-
-        clickMouse(w, { x: MOUSE_X_OFFSET, y: MOUSE_Y_OFFSET });
-        await setTimeout(500);
-        await screenCapture.expectColorAtPointOnDisplayMatches(
-          HexColors.GREEN,
-          () => ({
-            x: landscapeBounds.x + SELECT_OPTION_HEIGHT_OFFSET,
-            y: landscapeBounds.y + landscapeBounds.height - SELECT_OPTION_WIDTH_OFFSET
-          })
-        );
-      });
-
-      it('Resize while rotated to portraitBounds', async () => {
-        w.setBounds(portraitBounds);
-        await setTimeout(500);
-        const { windowWidth, windowHeight } = await w.webContents.executeJavaScript('({windowWidth: window.innerWidth, windowHeight: window.innerHeight})');
-        expect(windowWidth).to.be.equal(portraitBounds.height);
-        expect(windowHeight).to.be.equal(portraitBounds.width);
-        expectBoundsEqual(w.getBounds(), portraitBounds);
-
-        const screenCapture = new ScreenCapture(display);
-        await screenCapture.expectColorAtPointOnDisplayMatches(
-          HexColors.RED,
-          () => ({
-            x: portraitBounds.x + SELECT_HEIGHT_OFFSET,
-            y: portraitBounds.y + portraitBounds.height - SELECT_WIDTH_OFFSET
-          })
-        );
-
-        clickMouse(w, { x: MOUSE_X_OFFSET, y: MOUSE_Y_OFFSET });
-        await setTimeout(500);
-        await screenCapture.expectColorAtPointOnDisplayMatches(
-          HexColors.GREEN,
-          () => ({
-            x: portraitBounds.x + SELECT_OPTION_HEIGHT_OFFSET,
-            y: portraitBounds.y + portraitBounds.height - SELECT_OPTION_WIDTH_OFFSET
-          })
-        );
-      });
-
-      it('Resize while rotated to squareBounds', async () => {
-        w.setBounds(squareBounds);
-        await setTimeout(500);
-        const { windowWidth, windowHeight } = await w.webContents.executeJavaScript('({windowWidth: window.innerWidth, windowHeight: window.innerHeight})');
-        expect(windowWidth).to.be.equal(squareBounds.height);
-        expect(windowHeight).to.be.equal(squareBounds.width);
-        expectBoundsEqual(w.getBounds(), squareBounds);
-
-        const screenCapture = new ScreenCapture(display);
-        await screenCapture.expectColorAtPointOnDisplayMatches(
-          HexColors.RED,
-          () => ({
-            x: squareBounds.x + SELECT_HEIGHT_OFFSET,
-            y: squareBounds.y + squareBounds.height - SELECT_WIDTH_OFFSET
-          })
-        );
-
-        clickMouse(w, { x: MOUSE_X_OFFSET, y: MOUSE_Y_OFFSET });
-        await setTimeout(500);
-        await screenCapture.expectColorAtPointOnDisplayMatches(
-          HexColors.GREEN,
-          () => ({
-            x: squareBounds.x + SELECT_OPTION_HEIGHT_OFFSET,
-            y: squareBounds.y + squareBounds.height - SELECT_OPTION_WIDTH_OFFSET
-          })
-        );
-      });
-
-      it('Resize while rotated to bounds with x,y offsets', async () => {
-        w.setBounds(offsetBounds);
-        await setTimeout(500);
-        const { windowWidth, windowHeight } = await w.webContents.executeJavaScript('({windowWidth: window.innerWidth, windowHeight: window.innerHeight})');
-        expect(windowWidth).to.be.equal(offsetBounds.height);
-        expect(windowHeight).to.be.equal(offsetBounds.width);
-        expectBoundsEqual(w.getBounds(), offsetBounds);
-
-        const screenCapture = new ScreenCapture(display);
-        await screenCapture.expectColorAtPointOnDisplayMatches(
-          HexColors.RED,
-          () => ({
-            x: offsetBounds.x + SELECT_HEIGHT_OFFSET,
-            y: offsetBounds.y + offsetBounds.height - SELECT_WIDTH_OFFSET
-          })
-        );
-
-        clickMouse(w, { x: MOUSE_X_OFFSET, y: MOUSE_Y_OFFSET });
-        await setTimeout(500);
-        await screenCapture.expectColorAtPointOnDisplayMatches(
-          HexColors.GREEN,
-          () => ({
-            x: offsetBounds.x + SELECT_OPTION_HEIGHT_OFFSET,
-            y: offsetBounds.y + offsetBounds.height - SELECT_OPTION_WIDTH_OFFSET
-          })
-        );
-      });
-
-      it('Resize while rotated to bounds with negative x,y offsets', async () => {
-        w.setBounds(negativeOffsetBounds);
-        await setTimeout(500);
-        const { windowWidth, windowHeight } = await w.webContents.executeJavaScript('({windowWidth: window.innerWidth, windowHeight: window.innerHeight})');
-        expect(windowWidth).to.be.equal(negativeOffsetBounds.height);
-        expect(windowHeight).to.be.equal(negativeOffsetBounds.width);
-        expectBoundsEqual(w.getBounds(), negativeOffsetBounds);
-
-        const screenCapture = new ScreenCapture(display);
-        await screenCapture.expectColorAtPointOnDisplayMatches(
-          HexColors.RED,
-          () => ({
-            x: negativeOffsetBounds.x + SELECT_HEIGHT_OFFSET,
-            y: negativeOffsetBounds.y + negativeOffsetBounds.height - SELECT_WIDTH_OFFSET
-          })
-        );
-
-        clickMouse(w, { x: MOUSE_X_OFFSET, y: MOUSE_Y_OFFSET });
-        await setTimeout(500);
-        await screenCapture.expectColorAtPointOnDisplayMatches(
-          HexColors.GREEN,
-          () => ({
-            x: negativeOffsetBounds.x + SELECT_OPTION_HEIGHT_OFFSET,
-            y: negativeOffsetBounds.y + negativeOffsetBounds.height - SELECT_OPTION_WIDTH_OFFSET
-          })
-        );
+      rotatedResizeBounds.forEach(({ description, bounds }) => {
+        it(`Resize while rotated to ${description}`, async () => {
+          w.setBounds(bounds);
+          await verifyWindowTransform(bounds, rot270Transform);
+        });
       });
 
       it('identity', async () => {
         w.setWindowTransform('none');
-        await setTimeout(500);
-        const { windowWidth, windowHeight } = await w.webContents.executeJavaScript('({windowWidth: window.innerWidth, windowHeight: window.innerHeight})');
-        expect(windowWidth).to.be.equal(negativeOffsetBounds.width);
-        expect(windowHeight).to.be.equal(negativeOffsetBounds.height);
-        expectBoundsEqual(w.getBounds(), negativeOffsetBounds);
-
-        const screenCapture = new ScreenCapture(display);
-        await screenCapture.expectColorAtPointOnDisplayMatches(
-          HexColors.RED,
-          () => ({
-            x: negativeOffsetBounds.x + SELECT_WIDTH_OFFSET,
-            y: negativeOffsetBounds.y + SELECT_HEIGHT_OFFSET
-          })
-        );
-
-        clickMouse(w, { x: MOUSE_X_OFFSET, y: MOUSE_Y_OFFSET });
-        await setTimeout(500);
-        await screenCapture.expectColorAtPointOnDisplayMatches(
-          HexColors.GREEN,
-          () => ({
-            x: negativeOffsetBounds.x + SELECT_OPTION_WIDTH_OFFSET,
-            y: negativeOffsetBounds.y + SELECT_OPTION_HEIGHT_OFFSET
-          })
-        );
+        await verifyWindowTransform(negativeOffsetBounds, identityTransform);
       });
 
       it('Check fullscreen bottom right option in correct location', async () => {

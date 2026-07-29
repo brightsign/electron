@@ -1153,7 +1153,19 @@ void BaseWindow::SetWindowTransform(const std::string& transform) {
   blink::mojom::WindowTransformType transform_type =
       blink::mojom::WindowTransformType::kWindowTransformTypeNone;
 
-  if (transform == "rot180") {
+  if (transform == "mirror") {
+    transform_type =
+        blink::mojom::WindowTransformType::kWindowTransformTypeMirror;
+  } else if (transform == "mirror_rot90") {
+    transform_type =
+        blink::mojom::WindowTransformType::kWindowTransformTypeMirrorRotate90;
+  } else if (transform == "mirror_rot180") {
+    transform_type =
+        blink::mojom::WindowTransformType::kWindowTransformTypeMirrorRotate180;
+  } else if (transform == "mirror_rot270") {
+    transform_type =
+        blink::mojom::WindowTransformType::kWindowTransformTypeMirrorRotate270;
+  } else if (transform == "rot180") {
     transform_type =
         blink::mojom::WindowTransformType::kWindowTransformTypeRotate180;
   } else if (transform == "rot270") {
@@ -1163,6 +1175,7 @@ void BaseWindow::SetWindowTransform(const std::string& transform) {
     transform_type =
         blink::mojom::WindowTransformType::kWindowTransformTypeRotate90;
   }
+
   window_->SetWindowTransform(transform_type);
 }
 #endif
