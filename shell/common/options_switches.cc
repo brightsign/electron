@@ -277,6 +277,8 @@ const char kRendererProcessUid[] = "renderer-process-uid";
 
 const char kRendererProcessGids[] = "renderer-process-gids";
 
+const char kDisableBluez[] = "disable-bluez";
+
 }  // namespace switches
 
 }  // namespace electron
