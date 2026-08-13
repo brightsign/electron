@@ -11,6 +11,7 @@
 #include "base/files/file_path.h"
 #include "base/functional/bind.h"
 #include "base/logging.h"
+#include "shell/common/options_switches.h"
 #include "device/bluetooth/dbus/bluez_dbus_manager.h"
 #include "device/bluetooth/dbus/bluez_dbus_thread_manager.h"
 #include "device/bluetooth/dbus/dbus_bluez_manager_wrapper_linux.h"
@@ -36,6 +37,9 @@ PowerObserverLinux::PowerObserverLinux(
     base::PowerSuspendObserver* suspend_observer)
     : suspend_observer_(suspend_observer),
       lock_owner_name_(GetExecutableBaseName()) {
+  if (base::CommandLine::ForCurrentProcess()->HasSwitch(electron::switches::kDisableBluez))
+    return;
+
   if (!bluez::BluezDBusManager::IsInitialized())
     bluez::DBusBluezManagerWrapperLinux::Initialize();
 
@@ -75,6 +79,8 @@ void PowerObserverLinux::OnLoginServiceAvailable(bool service_available) {
 }
 
 void PowerObserverLinux::BlockSleep() {
+  if (!logind_) return;
+
   dbus::MethodCall sleep_inhibit_call(kLogindManagerInterface, "Inhibit");
   dbus::MessageWriter inhibit_writer(&sleep_inhibit_call);
   inhibit_writer.AppendString("sleep");  // what
@@ -94,6 +100,8 @@ void PowerObserverLinux::UnblockSleep() {
 }
 
 void PowerObserverLinux::BlockShutdown() {
+  if (!logind_) return;
+
   if (shutdown_lock_.is_valid()) {
     LOG(WARNING) << "Trying to subscribe to shutdown multiple times";
     return;

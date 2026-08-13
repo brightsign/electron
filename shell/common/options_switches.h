@@ -137,6 +137,8 @@ extern const char kEnableWebSQL[];
 extern const char kRendererProcessUid[];
 extern const char kRendererProcessGids[];
 
+extern const char kDisableBluez[];
+
 }  // namespace switches
 
 }  // namespace electron

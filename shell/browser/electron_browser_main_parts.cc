@@ -64,6 +64,7 @@
 #include "shell/common/logging.h"
 #include "shell/common/node_bindings.h"
 #include "shell/common/node_includes.h"
+#include "shell/common/options_switches.h"
 #include "third_party/abseil-cpp/absl/types/optional.h"
 #include "ui/base/idle/idle.h"
 #include "ui/base/l10n/l10n_util.h"
@@ -390,8 +391,10 @@ void ElectronBrowserMainParts::PostDestroyThreads() {
   extensions::ExtensionsBrowserClient::Set(nullptr);
 #endif
 #if BUILDFLAG(IS_LINUX)
-  device::BluetoothAdapterFactory::Shutdown();
-  bluez::DBusBluezManagerWrapperLinux::Shutdown();
+  if(!base::CommandLine::ForCurrentProcess()->HasSwitch(electron::switches::kDisableBluez)) {
+    device::BluetoothAdapterFactory::Shutdown();
+    bluez::DBusBluezManagerWrapperLinux::Shutdown();
+  }
 #endif
   fake_browser_process_->PostDestroyThreads();
 }
@@ -471,7 +474,7 @@ int ElectronBrowserMainParts::PreMainMessageLoopRun() {
       ElectronWebUIControllerFactory::GetInstance());
 
   auto* command_line = base::CommandLine::ForCurrentProcess();
-  if (command_line->HasSwitch(switches::kRemoteDebuggingPipe)) {
+  if (command_line->HasSwitch(::switches::kRemoteDebuggingPipe)) {
     // --remote-debugging-pipe
     auto on_disconnect = base::BindOnce([]() {
       content::GetUIThreadTaskRunner({})->PostTask(
@@ -479,7 +482,7 @@ int ElectronBrowserMainParts::PreMainMessageLoopRun() {
     });
     content::DevToolsAgentHost::StartRemoteDebuggingPipeHandler(
         std::move(on_disconnect));
-  } else if (command_line->HasSwitch(switches::kRemoteDebuggingPort)) {
+  } else if (command_line->HasSwitch(::switches::kRemoteDebuggingPort)) {
     // --remote-debugging-port
     DevToolsManagerDelegate::StartHttpHandler();
   }
@@ -515,8 +518,11 @@ void ElectronBrowserMainParts::PostCreateMainMessageLoop() {
   ui::OzonePlatform::GetInstance()->PostCreateMainMessageLoop(
       std::move(shutdown_cb),
       content::GetUIThreadTaskRunner({content::BrowserTaskType::kUserInput}));
-  if (!bluez::BluezDBusManager::IsInitialized())
-    bluez::DBusBluezManagerWrapperLinux::Initialize();
+
+  if(!base::CommandLine::ForCurrentProcess()->HasSwitch(electron::switches::kDisableBluez)) {
+    if (!bluez::BluezDBusManager::IsInitialized())
+      bluez::DBusBluezManagerWrapperLinux::Initialize();
+  }
 
   // Set up crypt config. This needs to be done before anything starts the
   // network service, as the raw encryption key needs to be shared with the
