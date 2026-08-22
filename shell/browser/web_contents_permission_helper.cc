@@ -10,6 +10,7 @@
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/web_contents_user_data.h"
 #include "shell/browser/electron_permission_manager.h"
+#include "shell/browser/native_window.h"
 // #include "shell/browser/media/media_stream_devices_controller.h"
 #include "components/content_settings/core/common/content_settings.h"
 #include "components/webrtc/media_stream_devices_controller.h"
@@ -68,8 +69,28 @@ void HandleUserMediaRequest(const content::MediaStreamRequest& request,
     // If the device id wasn't specified then this is a screen capture request
     // (i.e. chooseDesktopMedia() API wasn't used to generate device id).
     if (request.requested_video_device_id.empty()) {
-      screen_id = content::DesktopMediaID(content::DesktopMediaID::TYPE_SCREEN,
-                                          -1 /* kFullDesktopScreenId */);
+      // TYPE_SCREEN with id -1 (kFullDesktopScreenId) does not work on
+      // ozone/wayland + nexus. Fall back to capturing the requesting
+      // BrowserWindow itself via its NativeWindow DesktopMediaID, which
+      // uses TYPE_WINDOW and works on all platforms.
+      content::RenderFrameHost* rfh = content::RenderFrameHost::FromID(
+          request.render_process_id, request.render_frame_id);
+      NativeWindow* native_window = nullptr;
+      if (rfh) {
+        auto* web_contents = content::WebContents::FromRenderFrameHost(rfh);
+        if (web_contents) {
+          auto* relay = NativeWindowRelay::FromWebContents(web_contents);
+          if (relay)
+            native_window = relay->GetNativeWindow();
+        }
+      }
+      if (native_window) {
+        screen_id = native_window->GetDesktopMediaID();
+      } else {
+        screen_id =
+            content::DesktopMediaID(content::DesktopMediaID::TYPE_SCREEN,
+                                    -1 /* kFullDesktopScreenId */);
+      }
     } else {
       screen_id =
           content::DesktopMediaID::Parse(request.requested_video_device_id);
