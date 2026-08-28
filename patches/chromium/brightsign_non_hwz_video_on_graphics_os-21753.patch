@@ -1,0 +1,439 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Caner Altinbasak <cal@brightsign.biz>
+Date: Fri, 28 Aug 2026 13:37:43 +0100
+Subject: feat: BrightSign non-HWZ video on graphics OS-21753
+
+Map the native player's shared-memory frames as media::VideoFrames and
+composite them at z-index:0 (hwz:off): per-slot mmap cache, ring-slot
+release via a destruction observer, sRGB tagging, and metadata bounds
+validation. Retires the colour experiment and restores the overlay path
+for hwz:on.
+
+diff --git a/third_party/blink/renderer/platform/media/brightsign/video_player_proxy.cc b/third_party/blink/renderer/platform/media/brightsign/video_player_proxy.cc
+index 6f66fe001dbb919372d3294db5ef57627541ee41..1f7cca2e1834fdd8ea23d440e2b87eb68791d98c 100644
+--- a/third_party/blink/renderer/platform/media/brightsign/video_player_proxy.cc
++++ b/third_party/blink/renderer/platform/media/brightsign/video_player_proxy.cc
+@@ -110,10 +110,21 @@ void VidPlayerListenerProxy::SubtitleUpdatedCallback(
+ 
+ void VidPlayerListenerProxy::TextureMailboxReadyCallback(
+     const VidPlayerMailboxData& mbox) {
++  // The C struct's |name| pointer is only valid for this call.
++  BrightsignTextureFrameInfo info;
++  if (mbox.name && mbox.name_size) {
++    info.name.assign(reinterpret_cast<const char*>(mbox.name), mbox.name_size);
++  }
++  info.width = mbox.width;
++  info.height = mbox.height;
++  info.stride = mbox.stride;
++  info.format = mbox.format;
++  info.slot = mbox.slot;
++  info.kind = static_cast<int>(mbox.kind);
+   main_task_runner_->PostTask(
+       FROM_HERE,
+       base::BindOnce(&WebMediaPlayerBrightsign::TextureMailboxReadyCallback,
+-                     web_media_player_, mbox));
++                     web_media_player_, std::move(info)));
+ }
+ 
+ }  // namespace blink
+diff --git a/third_party/blink/renderer/platform/media/brightsign/web_media_player_brightsign.cc b/third_party/blink/renderer/platform/media/brightsign/web_media_player_brightsign.cc
+index 52de707cbba1feded7a75e257e9a752deadb94cf..e57921068ded18689d5c4f4a6e220dee474a6ed0 100644
+--- a/third_party/blink/renderer/platform/media/brightsign/web_media_player_brightsign.cc
++++ b/third_party/blink/renderer/platform/media/brightsign/web_media_player_brightsign.cc
+@@ -4,6 +4,7 @@
+ 
+ #include "third_party/blink/renderer/platform/media/brightsign/web_media_player_brightsign.h"
+ #include "base/functional/bind.h"
++#include "base/functional/callback_helpers.h"
+ #include "base/command_line.h"
+ #include "base/task/bind_post_task.h"
+ #include "base/task/thread_pool.h"
+@@ -26,6 +27,14 @@
+ #include "gpu/GLES2/gl2extchromium.h"
+ #include "gpu/command_buffer/client/gles2_interface.h"
+ 
++#include <fcntl.h>
++#include <sys/mman.h>
++#include <sys/stat.h>
++#include <unistd.h>
++
++#include "base/compiler_specific.h"
++#include "base/containers/span.h"
++
+ template <typename... Args>
+ inline base::RepeatingCallback<void(Args...)> BindToCurrentLoop(
+     base::RepeatingCallback<void(Args...)> cb) {
+@@ -234,14 +243,30 @@ WebMediaPlayerBrightsign::~WebMediaPlayerBrightsign() {
+ void WebMediaPlayerBrightsign::Shutdown() {
+   VLOG(1) << __func__;
+   DCHECK(main_task_runner_->BelongsToCurrentThread());
+-  frame_ready_timer_.Stop();
+   pump_timer_.Stop();
+ 
++  if (video_textures_requested_ && vid_player_) {
++    vid_player_request_video_textures(vid_player_, false);
++    video_textures_requested_ = false;
++  }
++
++  // Cancel any mailbox/frame callbacks the listener proxy has already queued so
++  // they cannot repopulate state after teardown.
++  weak_factory_.InvalidateWeakPtrs();
++
++  // Detach the compositor and drop the retained frame before releasing the
++  // shared-memory cache.
++  SetVideoFrameProviderClient(nullptr);
++  {
++    base::AutoLock auto_lock(current_frame_lock_);
++    current_frame_ = nullptr;
++  }
++  UnmapAllVideoShm();
++
+   delegate_->PlayerGone(delegate_id_);
+   delegate_->RemoveObserver(delegate_id_);
+   delegate_ = nullptr;
+ 
+-  SetVideoFrameProviderClient(nullptr);
+   client_->SetCcLayer(nullptr);
+ 
+   for (auto connection : bvp_connections_)
+@@ -267,6 +292,7 @@ void WebMediaPlayerBrightsign::Shutdown() {
+   }
+ 
+   vid_player_destroy(vid_player_);
++  vid_player_ = nullptr;
+   main_task_runner_->DeleteSoon(FROM_HERE,
+                                 std::move(vid_player_listener_proxy_));
+   vfc_task_runner_->DeleteSoon(FROM_HERE, std::move(compositor_));
+@@ -1386,7 +1412,92 @@ void WebMediaPlayerBrightsign::LoadCallback(
+ }
+ 
+ void WebMediaPlayerBrightsign::TextureMailboxReadyCallback(
+-    const VidPlayerMailboxData& mbox) {}
++    BrightsignTextureFrameInfo info) {
++  DCHECK(main_task_runner_->BelongsToCurrentThread());
++  // A callback queued before teardown must not repopulate state afterwards.
++  if (!vid_player_)
++    return;
++
++  constexpr uint32_t kMaxDim = 8192;
++  // The producer packs rows tightly (stride == width*4); reject anything else
++  // because the frame below is wrapped with a tightly packed layout.
++  if (info.kind != VID_PLAYER_SHMEM || info.width == 0 || info.height == 0 ||
++      info.width > kMaxDim || info.height > kMaxDim || info.slot > 0x7F ||
++      info.stride != info.width * 4) {
++    return;
++  }
++
++  // The slot is now ours; return it to the producer on every early exit until
++  // ownership transfers to the frame's destruction observer below.
++  base::ScopedClosureRunner slot_releaser(base::BindOnce(
++      &WebMediaPlayerBrightsign::ReleaseSlot, weak_this_, info.slot));
++
++  // A mailbox queued before a switch to hwz:on must not overwrite the overlay.
++  if (!video_on_graphics_)
++    return;
++
++  const size_t needed = static_cast<size_t>(info.stride) * info.height;
++
++  auto it = video_shm_maps_.find(info.name);
++  scoped_refptr<ShmMapping> mapping;
++  if (it != video_shm_maps_.end() && it->second->size >= needed) {
++    mapping = it->second;
++  } else {
++    int fd = ::shm_open(info.name.c_str(), O_RDONLY, 0);
++    if (fd < 0) {
++      LOG(ERROR) << "shm_open failed for " << info.name;
++      return;
++    }
++    // mmap can map past the object's end and fault (SIGBUS) on access, so
++    // require the object to actually back |needed| bytes.
++    struct stat st;
++    if (::fstat(fd, &st) != 0 || static_cast<size_t>(st.st_size) < needed) {
++      ::close(fd);
++      LOG(ERROR) << "shm object smaller than frame for " << info.name;
++      return;
++    }
++    void* p = ::mmap(nullptr, needed, PROT_READ, MAP_SHARED, fd, 0);
++    if (p == MAP_FAILED) {
++      ::close(fd);
++      LOG(ERROR) << "mmap failed for " << info.name;
++      return;
++    }
++    // Replacing the cache entry drops our reference to any older mapping;
++    // frames still using it keep it alive via their destruction observer.
++    mapping = base::MakeRefCounted<ShmMapping>(fd, p, needed);
++    video_shm_maps_[info.name] = mapping;
++  }
++
++  // SAFETY: |mapping->ptr| maps at least |needed| readable bytes; the mapping
++  // is kept alive for the frame's lifetime by the destruction observer below.
++  auto data = UNSAFE_BUFFERS(base::span<const uint8_t>(
++      static_cast<const uint8_t*>(mapping->ptr), needed));
++  scoped_refptr<media::VideoFrame> frame = media::VideoFrame::WrapExternalData(
++      media::PIXEL_FORMAT_ARGB, gfx::Size(info.width, info.height),
++      gfx::Rect(info.width, info.height), gfx::Size(info.width, info.height),
++      data, base::TimeDelta());
++  if (!frame) {
++    LOG(ERROR) << "WrapExternalData failed";
++    return;
++  }
++  // The native blit already produced full-range RGB.
++  frame->set_color_space(gfx::ColorSpace::CreateSRGB());
++
++  frame->AddDestructionObserver(base::DoNothingWithBoundArgs(mapping));
++  // Ownership of the ring slot moves to the frame: released once it is dropped.
++  frame->AddDestructionObserver(
++      base::BindPostTask(main_task_runner_, slot_releaser.Release()));
++
++  natural_size_ = gfx::Size(info.width, info.height);
++  if (!video_layer_) {
++    video_layer_ = cc::VideoLayer::Create(this, media::VIDEO_ROTATION_0);
++    client_->SetCcLayer(video_layer_.get());
++  }
++  SetCurrentFrame(frame);
++  compositor_task_runner_->PostTask(
++      FROM_HERE,
++      base::BindOnce(&WebMediaPlayerBrightsign::DidReceiveFrame, weak_this_));
++}
+ 
+ void WebMediaPlayerBrightsign::SeekCompletedCallback(std::chrono::microseconds current_time) {
+   VLOG(1) << __func__;
+@@ -1411,22 +1522,35 @@ void WebMediaPlayerBrightsign::VideoSizeChangedCallback(uint32_t width,
+   VLOG(1) << __func__;
+   DCHECK(main_task_runner_->BelongsToCurrentThread());
+   natural_size_ = gfx::Size(width, height);
++  // z-index 0 (hwz:off) composites the video into the page.
++  video_on_graphics_ = (z_index == 0);
+   // Lazily allocate compositing layer.
+   if (!video_layer_) {
+     video_layer_ = cc::VideoLayer::Create(this, media::VIDEO_ROTATION_0);
+     client_->SetCcLayer(video_layer_.get());
+   }
+-
+-  // Set current frame
+-  scoped_refptr<media::VideoFrame> frame = video_overlay_factory_->CreateFrame(
+-      gfx::Size(width, height),
+-      base::CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
+-          switches::kVideoServerFactoryName),
+-      z_index);
+-  SetCurrentFrame(frame);
+-  compositor_task_runner_->PostTask(
+-    FROM_HERE, base::BindOnce(&WebMediaPlayerBrightsign::DidReceiveFrame, weak_this_));
+-  StartFrameReadyTimerIfRequired();
++  if (video_on_graphics_) {
++    if (!video_textures_requested_) {
++      video_textures_requested_ = true;
++      vid_player_request_video_textures(vid_player_, true);
++    }
++  } else {
++    // hwz:on: stop the shared-memory stream so its queued mailbox frames can't
++    // overwrite the overlay, then let the overlay drive the VideoHoleDrawQuad.
++    if (video_textures_requested_ && vid_player_) {
++      vid_player_request_video_textures(vid_player_, false);
++      video_textures_requested_ = false;
++    }
++    scoped_refptr<media::VideoFrame> frame = video_overlay_factory_->CreateFrame(
++        gfx::Size(width, height),
++        base::CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
++            switches::kVideoServerFactoryName),
++        z_index);
++    SetCurrentFrame(frame);
++    compositor_task_runner_->PostTask(
++        FROM_HERE,
++        base::BindOnce(&WebMediaPlayerBrightsign::DidReceiveFrame, weak_this_));
++  }
+ 
+   client_->SizeChanged();
+   client_->DidPlayerSizeChange(NaturalSize());
+@@ -1520,18 +1644,6 @@ void WebMediaPlayerBrightsign::OnIdleTimeout() {
+   VLOG(1) << __func__;
+ }
+ 
+-void WebMediaPlayerBrightsign::StartFrameReadyTimerIfRequired() {
+-  // Start frame timer if it is not already running.
+-  // It will ask compositor to aim 60fps.
+-  // If brightsign compositor is not fast enough, it will
+-  // drop frames, but that is ok.
+-  if (video_on_graphics_ && !frame_ready_timer_.IsRunning()) {
+-    frame_ready_timer_.SetTaskRunner(compositor_task_runner_);
+-    frame_ready_timer_.Start(FROM_HERE, base::Microseconds(16666), this,
+-                             &WebMediaPlayerBrightsign::DidReceiveFrame);
+-  }
+-}
+-
+ void WebMediaPlayerBrightsign::DidReceiveFrame() {
+   // DidReceiveFrame is called on Timer thread.
+   // It is set/changed on render thread and compositor thread(when
+@@ -1549,6 +1661,28 @@ void WebMediaPlayerBrightsign::SetCurrentFrame(
+   DCHECK(main_task_runner_->BelongsToCurrentThread());
+   base::AutoLock auto_lock(current_frame_lock_);
+   current_frame_ = video_frame;
++  current_frame_dirty_ = true;
++}
++
++WebMediaPlayerBrightsign::ShmMapping::~ShmMapping() {
++  if (ptr)
++    ::munmap(ptr, size);
++  if (fd >= 0)
++    ::close(fd);
++}
++
++void WebMediaPlayerBrightsign::UnmapAllVideoShm() {
++  // Drops the cache's references; each mapping is unmapped once the last
++  // referencing VideoFrame is also destroyed.
++  video_shm_maps_.clear();
++}
++
++void WebMediaPlayerBrightsign::ReleaseSlot(uint32_t slot) {
++  DCHECK(main_task_runner_->BelongsToCurrentThread());
++  if (!vid_player_ || slot > 0x7F)
++    return;
++  int8_t s = static_cast<int8_t>(slot);
++  vid_player_release_texture_mailbox(vid_player_, &s, 1);
+ }
+ 
+ scoped_refptr<media::VideoFrame>
+@@ -1558,23 +1692,35 @@ WebMediaPlayerBrightsign::GetCurrentFrameThenUpdate() {
+ 
+ std::optional<media::VideoFrame::ID> WebMediaPlayerBrightsign::CurrentFrameId()
+     const {
++  base::AutoLock auto_lock(current_frame_lock_);
++  if (!current_frame_)
++    return std::nullopt;
+   return current_frame_->unique_id();
+ }
+ 
+ void WebMediaPlayerBrightsign::SetVideoFrameProviderClient(Client* client) {
+-  // This is called from both the main renderer thread and the compositor
+-  // thread (when the main thread is blocked).
++  // Called on the main thread and on the compositor thread (while the main
++  // thread is blocked). Hold the lock across the whole transition so the client
++  // cannot be swapped between the assignment and StartRendering().
++  base::AutoLock auto_lock(video_frame_provider_client_lock_);
+   if (video_frame_provider_client_ && video_frame_provider_client_ != client) {
+     video_frame_provider_client_->StopUsingProvider();
+   }
+-  base::AutoLock auto_lock(video_frame_provider_client_lock_);
+   video_frame_provider_client_ = client;
++  // Active rendering drives UpdateCurrentFrame() every compositor loop; only
++  // the video-on-graphics path supplies frames, so leave the overlay alone.
++  if (client && video_on_graphics_)
++    client->StartRendering();
+ }
+ 
+ bool WebMediaPlayerBrightsign::UpdateCurrentFrame(
+     base::TimeTicks deadline_min,
+     base::TimeTicks deadline_max) {
+-  return true;
++  // Only report a change when SetCurrentFrame() supplied a new frame.
++  base::AutoLock auto_lock(current_frame_lock_);
++  bool dirty = current_frame_dirty_;
++  current_frame_dirty_ = false;
++  return dirty && current_frame_ != nullptr;
+ }
+ 
+ bool WebMediaPlayerBrightsign::HasCurrentFrame() {
+diff --git a/third_party/blink/renderer/platform/media/brightsign/web_media_player_brightsign.h b/third_party/blink/renderer/platform/media/brightsign/web_media_player_brightsign.h
+index e257f0c57070825b7ae430992ef7abeec86fc1aa..c83accfc740c041aa66256c62ffd2e9ffd14f186 100644
+--- a/third_party/blink/renderer/platform/media/brightsign/web_media_player_brightsign.h
++++ b/third_party/blink/renderer/platform/media/brightsign/web_media_player_brightsign.h
+@@ -5,11 +5,15 @@
+ #ifndef THIRD_PARTY_BLINK_RENDERER_PLATFORM_MEDIA_BRIGHTSIGN_WEB_MEDIA_PLAYER_BRIGHTSIGN_H_
+ #define THIRD_PARTY_BLINK_RENDERER_PLATFORM_MEDIA_BRIGHTSIGN_WEB_MEDIA_PLAYER_BRIGHTSIGN_H_
+ 
++#include <atomic>
+ #include <chrono>
++#include <cstdint>
+ #include <libbvp/bvp_c_bindings.h>
+ #include <libvid/vid_player_c_bindings.h>
+ #include <set>
++#include <string>
+ #include "base/functional/callback.h"
++#include "base/memory/ref_counted.h"
+ #include "base/memory/weak_ptr.h"
+ #include "base/task/single_thread_task_runner.h"
+ #include "cc/layers/video_frame_provider.h"
+@@ -36,6 +40,18 @@ class WebLocalFrame;
+ class MediaPlayerClient;
+ class VidPlayerListenerProxy;
+ 
++// Owned copy of a shared-memory frame description; the C mailbox's |name|
++// pointer is only valid during the callback.
++struct BrightsignTextureFrameInfo {
++  std::string name;
++  uint32_t width = 0;
++  uint32_t height = 0;
++  uint32_t stride = 0;
++  uint32_t format = 0;
++  uint32_t slot = 0;
++  int kind = 0;
++};
++
+ // An empty WebMediaPlayer used only for tests. This class defines the methods
+ // of WebMediaPlayer so that mock WebMediaPlayers don't need to redefine them if
+ // they don't care their behavior.
+@@ -180,7 +196,7 @@ class WebMediaPlayerBrightsign
+   void ReleasedCallback();
+   void FrameReadyCallback();
+   void SubtitleUpdatedCallback(const std::vector< std::map<std::string, std::string> >& text_tracks);
+-  void TextureMailboxReadyCallback(const VidPlayerMailboxData& mbox);
++  void TextureMailboxReadyCallback(BrightsignTextureFrameInfo info);
+ 
+   void SetAttribute(const std::string& name, const std::string& value) override;
+   void SetSyncParams(const std::string& domain, const std::string& id, const std::string& timestamp) override;
+@@ -206,8 +222,6 @@ class WebMediaPlayerBrightsign
+   void DidReceiveFrame();
+   void SetCurrentFrame(scoped_refptr<media::VideoFrame>& frame);
+ 
+-  void StartFrameReadyTimerIfRequired();
+-
+   base::WeakPtr<blink::WebMediaPlayer> AsWeakPtr() override;
+ 
+   // WebMediaPlayerDelegate::Observer implementation.
+@@ -242,6 +256,9 @@ class WebMediaPlayerBrightsign
+   base::Lock stream_proxy_lock_;
+   void PumpData();
+ 
++  void UnmapAllVideoShm();
++  void ReleaseSlot(uint32_t slot);
++
+   media::AudioDecoderConfig audio_decoder_config_sent_;
+   media::AudioDecoderConfig audio_decoder_config_;
+   media::VideoDecoderConfig video_decoder_config_sent_;
+@@ -297,11 +314,10 @@ class WebMediaPlayerBrightsign
+   bool playing_;
+   bool seeking_;
+   bool should_pause_when_frame_is_hidden_ = false;
+-  bool video_on_graphics_;
++  std::atomic<bool> video_on_graphics_;
+   blink::WebString error_message_;
+ 
+   base::Lock video_frame_provider_client_lock_;
+-  base::RepeatingTimer frame_ready_timer_;
+   base::RepeatingTimer pump_timer_;
+   bool audio_stream_callback_received_ = true;
+   bool video_stream_callback_received_ = true;
+@@ -312,7 +328,22 @@ class WebMediaPlayerBrightsign
+ 
+   // The video frame object used for rendering by the compositor.
+   scoped_refptr<media::VideoFrame> current_frame_;
+-  base::Lock current_frame_lock_;
++  mutable base::Lock current_frame_lock_;
++  bool current_frame_dirty_ = false;
++
++  bool video_textures_requested_ = false;
++  class ShmMapping : public base::RefCountedThreadSafe<ShmMapping> {
++   public:
++    ShmMapping(int fd, void* ptr, size_t size) : fd(fd), ptr(ptr), size(size) {}
++    int fd;
++    void* ptr;
++    size_t size;
++
++   private:
++    friend class base::RefCountedThreadSafe<ShmMapping>;
++    ~ShmMapping();
++  };
++  std::map<std::string, scoped_refptr<ShmMapping>> video_shm_maps_;
+ 
+   std::string url_;
+   std::map<std::string, std::string> attributes_;
