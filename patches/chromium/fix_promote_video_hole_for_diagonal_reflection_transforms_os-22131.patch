@@ -1,0 +1,39 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Caner Altinbasak <cal@brightsign.biz>
+Date: Wed, 2 Sep 2026 17:42:05 +0100
+Subject: fix: promote video hole for diagonal reflection transforms OS-22131
+
+OverlayStrategyUnderlayBrightsign::Propose built its
+OverlayCandidateFactory context with supports_mask_filter only, leaving
+supports_flip_rotate_transform at its default of false.
+FromVideoHoleQuad feeds that flag to GetOverlayTransform, which maps the
+two diagonal reflections to FLIP_VERTICAL_CLOCKWISE_90/270 only when it
+is set and otherwise returns OVERLAY_TRANSFORM_INVALID.
+
+As a result the kVideoHole quad failed as not-axis-aligned for
+mirror_rot90 and mirror_rot270, so no candidate was proposed, Attempt
+and VideoHoleDraw never ran, vid_player_set_geometry was never called
+and the player was hidden.  The hole punched in the graphics plane then
+composited as a solid black rectangle.
+
+The video plane applies the orientation itself via the firmware
+Transposer, so all eight orientations are overlayable.  Set the flag
+explicitly; the base class derives it from a capability checker that is
+private and defaults to false on this platform.
+
+diff --git a/components/viz/service/display/overlay_strategy_underlay_brightsign.cc b/components/viz/service/display/overlay_strategy_underlay_brightsign.cc
+index 5cfcbf2d85327f35abf08e209bc9ca8cfb8de137..df862b6e963d3b0fbab0e5fcb480863271290941 100644
+--- a/components/viz/service/display/overlay_strategy_underlay_brightsign.cc
++++ b/components/viz/service/display/overlay_strategy_underlay_brightsign.cc
+@@ -301,6 +301,11 @@ void OverlayStrategyUnderlayBrightsign::Propose(
+     auto overlay_iter = quad_list.end();
+     OverlayCandidateFactory::OverlayContext context;
+     context.supports_mask_filter = true;
++    // The video plane applies the orientation itself (firmware Transposer), so all eight
++    // orientations are overlayable. Without this the diagonal reflections (mirror_rot90 /
++    // mirror_rot270) yield OVERLAY_TRANSFORM_INVALID, the video hole is never promoted and
++    // it renders black instead (OS-22131).
++    context.supports_flip_rotate_transform = true;
+     OverlayCandidateFactory candidate_factory = OverlayCandidateFactory(
+         render_pass, resource_provider, surface_damage_rect_list,
+         &output_color_matrix, GetPrimaryPlaneDisplayRect(primary_plane), context);
