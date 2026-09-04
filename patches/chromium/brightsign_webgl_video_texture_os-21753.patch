@@ -1,0 +1,92 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Caner Altinbasak <cal@brightsign.biz>
+Date: Fri, 4 Sep 2026 18:16:07 +0100
+Subject: feat: texture a non-HWZ video into WebGL and canvas OS-21753
+
+Chromium routes every "video as a texture" operation through
+WebMediaPlayer::GetPaintCanvasVideoRenderer(), whose base declaration
+returns nullptr. WebMediaPlayerBrightsign did not override it, so WebGL
+texImage2D/texSubImage2D, 2D-canvas drawImage/createImageBitmap and
+WebGPU importExternalTexture all bailed out before touching the frame.
+
+Return an owned media::PaintCanvasVideoRenderer, exactly as
+WebMediaPlayerImpl does. The renderer caches the converted image keyed
+on the frame's unique_id, so re-texturing an unchanged frame does not
+re-upload.
+
+No new frame source and no second buffer: this reuses the CPU XRGB
+current_frame_ already published for compositing, so the native HDCP
+guard upstream of it covers the texture paths too. The native blit
+produces opaque BGRA memory, so use PIXEL_FORMAT_XRGB to preserve that
+alpha contract through 2D canvas premultiplication. Once the frame
+becomes a GPU SharedImage the same path upgrades to a GPU-to-GPU copy
+with no further change here.
+
+diff --git a/third_party/blink/renderer/platform/media/brightsign/web_media_player_brightsign.cc b/third_party/blink/renderer/platform/media/brightsign/web_media_player_brightsign.cc
+index e57921068ded18689d5c4f4a6e220dee474a6ed0..532e6c35b4ca8f9060261bca0a1d21010c764ed7 100644
+--- a/third_party/blink/renderer/platform/media/brightsign/web_media_player_brightsign.cc
++++ b/third_party/blink/renderer/platform/media/brightsign/web_media_player_brightsign.cc
+@@ -1473,14 +1473,14 @@ void WebMediaPlayerBrightsign::TextureMailboxReadyCallback(
+   auto data = UNSAFE_BUFFERS(base::span<const uint8_t>(
+       static_cast<const uint8_t*>(mapping->ptr), needed));
+   scoped_refptr<media::VideoFrame> frame = media::VideoFrame::WrapExternalData(
+-      media::PIXEL_FORMAT_ARGB, gfx::Size(info.width, info.height),
++      media::PIXEL_FORMAT_XRGB, gfx::Size(info.width, info.height),
+       gfx::Rect(info.width, info.height), gfx::Size(info.width, info.height),
+       data, base::TimeDelta());
+   if (!frame) {
+     LOG(ERROR) << "WrapExternalData failed";
+     return;
+   }
+-  // The native blit already produced full-range RGB.
++  // The native blit already produced full-range opaque RGB.
+   frame->set_color_space(gfx::ColorSpace::CreateSRGB());
+ 
+   frame->AddDestructionObserver(base::DoNothingWithBoundArgs(mapping));
+@@ -1698,6 +1698,14 @@ std::optional<media::VideoFrame::ID> WebMediaPlayerBrightsign::CurrentFrameId()
+   return current_frame_->unique_id();
+ }
+ 
++// Returning a renderer is what enables WebGL texImage2D, 2D-canvas drawImage
++// and WebGPU importExternalTexture; they all bail out on a null one.
++media::PaintCanvasVideoRenderer*
++WebMediaPlayerBrightsign::GetPaintCanvasVideoRenderer() {
++  DCHECK(main_task_runner_->BelongsToCurrentThread());
++  return &video_renderer_;
++}
++
+ void WebMediaPlayerBrightsign::SetVideoFrameProviderClient(Client* client) {
+   // Called on the main thread and on the compositor thread (while the main
+   // thread is blocked). Hold the lock across the whole transition so the client
+diff --git a/third_party/blink/renderer/platform/media/brightsign/web_media_player_brightsign.h b/third_party/blink/renderer/platform/media/brightsign/web_media_player_brightsign.h
+index c83accfc740c041aa66256c62ffd2e9ffd14f186..06e0f28e4ec00159edafb21eba7460535427af1c 100644
+--- a/third_party/blink/renderer/platform/media/brightsign/web_media_player_brightsign.h
++++ b/third_party/blink/renderer/platform/media/brightsign/web_media_player_brightsign.h
+@@ -21,6 +21,7 @@
+ #include "media/base/demuxer.h"
+ #include "media/base/demuxer_stream.h"
+ #include "media/filters/chunk_demuxer.h"
++#include "media/renderers/paint_canvas_video_renderer.h"
+ #include "media/renderers/video_overlay_factory.h"
+ #include "third_party/blink/renderer/platform/media/video_frame_compositor.h"
+ #include "third_party/blink/public/platform/media/web_media_player_delegate.h"
+@@ -177,6 +178,8 @@ class WebMediaPlayerBrightsign
+ 
+   std::optional<media::VideoFrame::ID> CurrentFrameId() const override;
+ 
++  media::PaintCanvasVideoRenderer* GetPaintCanvasVideoRenderer() override;
++
+   //
+   void ErrorCallback(enum VidPlayerErrorCode code, const std::string& message);
+   void PlaybackStartedCallback();
+@@ -331,6 +334,10 @@ class WebMediaPlayerBrightsign
+   mutable base::Lock current_frame_lock_;
+   bool current_frame_dirty_ = false;
+ 
++  // Caches the uploaded image so repeated texturing of an unchanged frame does
++  // not re-upload. Main thread only.
++  media::PaintCanvasVideoRenderer video_renderer_;
++
+   bool video_textures_requested_ = false;
+   class ShmMapping : public base::RefCountedThreadSafe<ShmMapping> {
+    public:
