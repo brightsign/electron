@@ -21,6 +21,8 @@
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_switches.h"
 #include "components/content_settings/core/common/content_settings_pattern.h"
+#include "components/memory_system/initializer.h"
+#include "components/memory_system/parameters.h"
 #include "content/public/app/initialize_mojo_core.h"
 #include "content/public/common/content_switches.h"
 #include "electron/buildflags/buildflags.h"
@@ -396,6 +398,24 @@ void ElectronMainDelegate::SandboxInitialized(const std::string& process_type) {
   logging::InitElectronLogging(*base::CommandLine::ForCurrentProcess(),
                                /* is_preinit = */ process_type.empty());
 #endif
+}
+
+absl::optional<int> ElectronMainDelegate::PostEarlyInitialization(
+    InvokedIn invoked_in) {
+  // Installs the allocation dispatcher so PoissonAllocationSampler observes
+  // allocations; without it --memlog records no samples.
+  const std::string process_type =
+      base::CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
+          ::switches::kProcessType);
+  memory_system::Initializer()
+      .SetDispatcherParameters(
+          memory_system::DispatcherParameters::
+              PoissonAllocationSamplerInclusion::kEnforce,
+          memory_system::DispatcherParameters::AllocationTraceRecorderInclusion::
+              kIgnore,
+          process_type)
+      .Initialize(memory_system_);
+  return absl::nullopt;
 }
 
 absl::optional<int> ElectronMainDelegate::PreBrowserMain() {
