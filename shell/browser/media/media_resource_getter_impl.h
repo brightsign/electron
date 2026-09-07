@@ -6,6 +6,9 @@
 #ifndef ELECTRON_SHELL_BROWSER_MEDIA_RESOURCE_GETTER_IMPL_H_
 #define ELECTRON_SHELL_BROWSER_MEDIA_RESOURCE_GETTER_IMPL_H_
 
+#include <map>
+#include <string>
+
 #include "base/functional/callback.h"
 #include "base/memory/raw_ptr.h"
 #include "base/memory/weak_ptr.h"
@@ -14,6 +17,7 @@
 #include "net/base/io_buffer.h"
 #include "net/cookies/canonical_cookie.h"
 #include "net/cookies/site_for_cookies.h"
+#include "url/gurl.h"
 
 namespace content {
 
@@ -70,6 +74,8 @@ class MediaResourceGetterImpl {
       GetAuthCredentialsCB callback,
       const absl::optional<net::AuthCredentials>& credentials);
 
+  void CacheBlobUuid(const GURL& blob_url, const std::string& uuid);
+
   // BrowserContext to retrieve URLRequestContext and ResourceContext.
   raw_ptr<BrowserContext> browser_context_;
 
@@ -78,6 +84,11 @@ class MediaResourceGetterImpl {
 
   // Render frame id, used to check tab specific cookie policy.
   int render_frame_id_;
+
+  // Resolving a blob URL clones a Mojo Blob endpoint whose watcher state is
+  // owned by the pipe stored in BlobUrlRegistry, so it accumulates until the
+  // URL is revoked. Cache the resolved UUID to keep that to once per URL.
+  std::map<GURL, std::string> blob_url_to_uuid_;
 
   // NOTE: Weak pointers must be invalidated before all other member variables.
   base::WeakPtrFactory<MediaResourceGetterImpl> weak_factory_{this};

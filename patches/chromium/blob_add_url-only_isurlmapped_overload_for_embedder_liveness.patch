@@ -1,0 +1,52 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Tariq Bashir <tbashir@brightsign.biz>
+Date: Mon, 7 Sep 2026 10:00:45 +0100
+Subject: blob: Add URL-only IsUrlMapped() overload for embedder liveness
+ checks OS-21992
+
+Embedders like Electron that cache resolved blob UUIDs need a cheap way
+to validate that a cached blob URL is still mapped, so they can drop
+the cache entry once the URL is revoked. This mirrors GetBlobFromUrl()'s
+lookup semantics: ignoring StorageKey and handling fragment stripping.
+
+This unblocks fixing GetBlobFromUrl() call churn in media.GetBlobData(),
+where repeatedly cloning the Blob interface to resolve the same URL
+accumulates trap state in the ipcz backend that persists until revoke,
+causing memory to grow linearly with read count. Caching UUID lookups
+and using GetBlobDataFromUUID() eliminates the Mojo round-trip and
+reduces per-call memory allocation by ~48 MB (9000 reads at 5KB/read).
+
+diff --git a/storage/browser/blob/blob_url_registry.cc b/storage/browser/blob/blob_url_registry.cc
+index 08914321987be8d17478902bdb79685bcf2db738..6c75585d0a833ed8474fb79ba0af1e0f2a72d26e 100644
+--- a/storage/browser/blob/blob_url_registry.cc
++++ b/storage/browser/blob/blob_url_registry.cc
+@@ -112,6 +112,14 @@ bool BlobUrlRegistry::IsUrlMapped(const GURL& blob_url,
+   return false;
+ }
+ 
++bool BlobUrlRegistry::IsUrlMapped(const GURL& blob_url) const {
++  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
++  if (base::Contains(url_to_blob_, BlobUrlUtils::ClearUrlFragment(blob_url))) {
++    return true;
++  }
++  return fallback_ && fallback_->IsUrlMapped(BlobUrlUtils::ClearUrlFragment(blob_url));
++}
++
+ // TODO(https://crbug.com/1224926): Remove this once experiment is over.
+ absl::optional<base::UnguessableToken> BlobUrlRegistry::GetUnsafeAgentClusterID(
+     const GURL& blob_url) const {
+diff --git a/storage/browser/blob/blob_url_registry.h b/storage/browser/blob/blob_url_registry.h
+index 2c7d3fb2acaa49b8882fb4c420e6aa2d65fd6798..d985d5712f31dae8a4ca5a2d6a581fe481ed1fa6 100644
+--- a/storage/browser/blob/blob_url_registry.h
++++ b/storage/browser/blob/blob_url_registry.h
+@@ -75,6 +75,10 @@ class COMPONENT_EXPORT(STORAGE_BROWSER) BlobUrlRegistry {
+   bool IsUrlMapped(const GURL& blob_url,
+                    const blink::StorageKey& storage_key) const;
+ 
++  // Returns whether the URL is mapped to a blob, ignoring StorageKey. This
++  // mirrors the lookup performed by GetBlobFromUrl().
++  bool IsUrlMapped(const GURL& blob_url) const;
++
+   // TODO(https://crbug.com/1224926): Remove this once experiment is over.
+   absl::optional<base::UnguessableToken> GetUnsafeAgentClusterID(
+       const GURL& blob_url) const;
