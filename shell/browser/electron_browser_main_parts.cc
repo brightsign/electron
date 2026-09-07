@@ -12,6 +12,7 @@
 #include "base/base_switches.h"
 #include "base/command_line.h"
 #include "base/feature_list.h"
+#include "base/functional/callback_helpers.h"
 #include "base/i18n/rtl.h"
 #include "base/metrics/field_trial.h"
 #include "base/nix/xdg_util.h"
@@ -24,9 +25,11 @@
 #include "chrome/browser/ui/color/chrome_color_mixers.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_switches.h"
+#include "components/heap_profiling/multi_process/supervisor.h"
 #include "components/os_crypt/sync/key_storage_config_linux.h"
 #include "components/os_crypt/sync/key_storage_util_linux.h"
 #include "components/os_crypt/sync/os_crypt.h"
+#include "components/services/heap_profiling/public/cpp/settings.h"
 #include "content/browser/browser_main_loop.h"  // nogncheck
 #include "content/public/browser/browser_child_process_host_delegate.h"
 #include "content/public/browser/browser_child_process_host_iterator.h"
@@ -371,6 +374,12 @@ void ElectronBrowserMainParts::PostCreateThreads() {
   content::GetIOThreadTaskRunner({})->PostTask(
       FROM_HERE,
       base::BindOnce(&tracing::TracingSamplerProfiler::CreateOnChildThread));
+
+  // Starts the out-of-process heap profiler when --memlog is passed, so that
+  // memory-infra traces include heap dumps with allocation stacks.
+  if (heap_profiling::GetModeForStartup() != heap_profiling::Mode::kNone) {
+    heap_profiling::Supervisor::GetInstance()->Start(base::DoNothing());
+  }
 #if BUILDFLAG(ENABLE_PLUGINS)
   // PluginService can only be used on the UI thread
   // and ContentClient::AddPlugins gets called for both browser and render

@@ -8,6 +8,7 @@
 #include <memory>
 #include <string>
 
+#include "components/memory_system/memory_system.h"
 #include "content/public/app/content_main_delegate.h"
 #include "content/public/common/content_client.h"
 
@@ -37,6 +38,7 @@ class ElectronMainDelegate : public content::ContentMainDelegate {
   absl::optional<int> BasicStartupComplete() override;
   void PreSandboxStartup() override;
   void SandboxInitialized(const std::string& process_type) override;
+  absl::optional<int> PostEarlyInitialization(InvokedIn invoked_in) override;
   absl::optional<int> PreBrowserMain() override;
   content::ContentClient* CreateContentClient() override;
   content::ContentBrowserClient* CreateContentBrowserClient() override;
@@ -66,6 +68,7 @@ class ElectronMainDelegate : public content::ContentMainDelegate {
   std::unique_ptr<content::ContentRendererClient> renderer_client_;
   std::unique_ptr<content::ContentUtilityClient> utility_client_;
   std::unique_ptr<tracing::TracingSamplerProfiler> tracing_sampler_profiler_;
+  memory_system::MemorySystem memory_system_;
 };
 
 }  // namespace electron
