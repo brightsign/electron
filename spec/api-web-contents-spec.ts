@@ -3811,6 +3811,9 @@ describe('webContents module', () => {
         type : "text/plain;charset=utf-8"
       });
       downloadUrl = URL.createObjectURL( blob );
+      var makeBlobUrl = (text) => URL.createObjectURL(new Blob([ text ], {
+        type : "text/plain;charset=utf-8"
+      }));
       console.log(downloadUrl);
       </script></head></html>
     `;
@@ -3831,6 +3834,43 @@ describe('webContents module', () => {
       const result = await w.webContents.getBlobData(downloadUrl, 0, 10);
       expect(result.toString()).to.equal('BrightSign');
       expect(result.length).to.equal(10);
+    });
+
+    it('supports repeated reads from the same blob URL', async () => {
+      const cachedUrl = await w.webContents.executeJavaScript('makeBlobUrl("CachedBrightSign")');
+
+      const firstResult = await w.webContents.getBlobData(cachedUrl, 0, 16);
+      expect(firstResult.toString()).to.equal('CachedBrightSign');
+      expect(firstResult.length).to.equal(16);
+
+      const cachedResult = await w.webContents.getBlobData(cachedUrl, 6, 10);
+      expect(cachedResult.toString()).to.equal('BrightSign');
+      expect(cachedResult.length).to.equal(10);
+    });
+
+    it('uses the cached blob UUID for URL fragment variants', async () => {
+      const cachedUrl = await w.webContents.executeJavaScript('makeBlobUrl("FragmentBrightSign")');
+
+      const firstResult = await w.webContents.getBlobData(`${cachedUrl}#first`, 0, 18);
+      expect(firstResult.toString()).to.equal('FragmentBrightSign');
+      expect(firstResult.length).to.equal(18);
+
+      const cachedResult = await w.webContents.getBlobData(`${cachedUrl}#second`, 8, 10);
+      expect(cachedResult.toString()).to.equal('BrightSign');
+      expect(cachedResult.length).to.equal(10);
+    });
+
+    it('clears cached blob UUIDs after the URL is revoked', async () => {
+      const cachedUrl = await w.webContents.executeJavaScript('makeBlobUrl("RevokedBrightSign")');
+
+      const firstResult = await w.webContents.getBlobData(cachedUrl, 0, 17);
+      expect(firstResult.toString()).to.equal('RevokedBrightSign');
+      expect(firstResult.length).to.equal(17);
+
+      await w.webContents.executeJavaScript(`URL.revokeObjectURL(${JSON.stringify(cachedUrl)})`);
+
+      const revokedResult = await w.webContents.getBlobData(cachedUrl, 0, 17);
+      expect(revokedResult).to.equal(null);
     });
 
     it('fetch in parallel', (done) => {
