@@ -1,0 +1,52 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Tariq Bashir <tbashir@brightsign.biz>
+Date: Mon, 7 Sep 2026 10:00:45 +0100
+Subject: blob: Add URL-only IsUrlMapped() overload for embedder liveness
+ checks OS-21992
+
+Embedders like Electron that cache resolved blob UUIDs need a cheap way
+to validate that a cached blob URL is still mapped, so they can drop
+the cache entry once the URL is revoked. This mirrors GetBlobFromUrl()'s
+lookup semantics: ignoring StorageKey and handling fragment stripping.
+
+This unblocks fixing GetBlobFromUrl() call churn in media.GetBlobData(),
+where repeatedly cloning the Blob interface to resolve the same URL
+accumulates trap state in the ipcz backend that persists until revoke,
+causing memory to grow linearly with read count. Caching UUID lookups
+and using GetBlobDataFromUUID() eliminates the Mojo round-trip and
+reduces per-call memory allocation by ~48 MB (9000 reads at 5KB/read).
+
+diff --git a/storage/browser/blob/blob_url_registry.cc b/storage/browser/blob/blob_url_registry.cc
+index b5bd1aa655562cbf5daafc1a5f9b8501680b3216..db4c4f8ecbb509d2272531800a1a98c19564ec65 100644
+--- a/storage/browser/blob/blob_url_registry.cc
++++ b/storage/browser/blob/blob_url_registry.cc
+@@ -184,6 +184,14 @@ BlobUrlRegistry::MappingStatus BlobUrlRegistry::IsUrlMapped(
+   return BlobUrlRegistry::MappingStatus::kNotMappedOther;
+ }
+ 
++BlobUrlRegistry::MappingStatus BlobUrlRegistry::IsUrlMapped(const GURL& blob_url) const {
++  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
++  if (url_to_data_.contains(BlobUrlUtils::ClearUrlFragment(blob_url))) {
++    return BlobUrlRegistry::MappingStatus::kIsMapped;
++  }
++  return fallback_ ? fallback_->IsUrlMapped(BlobUrlUtils::ClearUrlFragment(blob_url)) : BlobUrlRegistry::MappingStatus::kNotMappedOther;
++}
++
+ mojo::PendingRemote<blink::mojom::Blob> BlobUrlRegistry::GetBlobFromUrl(
+     const GURL& url) {
+   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+diff --git a/storage/browser/blob/blob_url_registry.h b/storage/browser/blob/blob_url_registry.h
+index 37b78a5e64920f3092ee0deeea34917f9971b513..7352b4d773b50720c9d00ef789c47abc7ff6ef16 100644
+--- a/storage/browser/blob/blob_url_registry.h
++++ b/storage/browser/blob/blob_url_registry.h
+@@ -107,6 +107,10 @@ class COMPONENT_EXPORT(STORAGE_BROWSER) BlobUrlRegistry {
+   MappingStatus IsUrlMapped(const GURL& blob_url,
+                             const blink::StorageKey& storage_key) const;
+ 
++  // Returns whether the URL is mapped to a blob, ignoring StorageKey. This
++  // mirrors the lookup performed by GetBlobFromUrl().
++  MappingStatus IsUrlMapped(const GURL& blob_url) const;
++
+   // Returns the blob from the given url. Returns a null remote if the mapping
+   // doesn't exist.
+   mojo::PendingRemote<blink::mojom::Blob> GetBlobFromUrl(const GURL& url);

@@ -8,6 +8,7 @@
 #include "base/functional/bind.h"
 #include "base/functional/callback_helpers.h"
 #include "base/path_service.h"
+#include "base/task/bind_post_task.h"
 #include "base/task/single_thread_task_runner.h"
 #include "content/browser/renderer_host/render_frame_host_impl.h"
 #include "content/browser/storage_partition_impl.h"
@@ -32,6 +33,7 @@
 #include "storage/browser/blob/blob_reader.h"
 #include "storage/browser/blob/blob_storage_context.h"
 #include "storage/browser/blob/blob_url_registry.h"
+#include "storage/browser/blob/blob_url_utils.h"
 #include "third_party/blink/public/common/storage_key/storage_key.h"
 #include "url/gurl.h"
 #include "url/origin.h"
@@ -260,18 +262,37 @@ void ReceivedBlobDataHandleOnIO(
     uint64_t location,
     uint64_t size,
     MediaResourceGetterImpl::GetMediaDataCB callback,
+    base::OnceCallback<void(const std::string&)> uuid_callback,
     std::unique_ptr<storage::BlobDataHandle> handle) {
-  std::string result;
-  if (handle) {
-    std::shared_ptr<storage::BlobReader> reader = handle->CreateReader();
-    auto status = reader->CalculateSize(base::BindOnce(
-        &CalculateSizeComplete, callback, location, size, reader));
-    if (status == BlobReader::Status::IO_PENDING)
-      return;
-    if (status == storage::BlobReader::Status::DONE)
-      CalculateSizeComplete(callback, location, size, reader,
-                            reader->total_size());
+  if (!handle) {
+    // Use OnReadCompleteOnIO to ensure callback is called on the UI thread.
+    OnReadCompleteOnIO(callback, nullptr, nullptr, /*bytes_read=*/0);
+    return;
   }
+
+  if (uuid_callback)
+    std::move(uuid_callback).Run(handle->uuid());
+
+  std::shared_ptr<storage::BlobReader> reader = handle->CreateReader();
+  auto status = reader->CalculateSize(
+      base::BindOnce(&CalculateSizeComplete, callback, location, size, reader));
+  if (status == BlobReader::Status::IO_PENDING)
+    return;
+  if (status == storage::BlobReader::Status::DONE)
+    CalculateSizeComplete(callback, location, size, reader,
+                          reader->total_size());
+}
+
+void ReadBlobByUuidOnIO(uint64_t location,
+                        uint64_t size,
+                        BrowserContext::BlobContextGetter blob_context_getter,
+                        const std::string& uuid,
+                        MediaResourceGetterImpl::GetMediaDataCB callback) {
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
+  auto blob_context = blob_context_getter.Run();
+  ReceivedBlobDataHandleOnIO(
+      location, size, callback, base::OnceCallback<void(const std::string&)>(),
+      blob_context ? blob_context->GetBlobDataFromUUID(uuid) : nullptr);
 }
 
 void RequestBlobDataHandleOnIO(
@@ -279,10 +300,12 @@ void RequestBlobDataHandleOnIO(
     uint64_t size,
     BrowserContext::BlobContextGetter blob_context_getter,
     mojo::PendingRemote<blink::mojom::Blob> blob_ptr,
-    MediaResourceGetterImpl::GetMediaDataCB callback) {
+    MediaResourceGetterImpl::GetMediaDataCB callback,
+    base::OnceCallback<void(const std::string&)> uuid_callback) {
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
   base::OnceCallback<void(std::unique_ptr<storage::BlobDataHandle>)> cb =
-      base::BindOnce(&ReceivedBlobDataHandleOnIO, location, size, callback);
+      base::BindOnce(&ReceivedBlobDataHandleOnIO, location, size, callback,
+                     std::move(uuid_callback));
   auto blob_context = blob_context_getter.Run();
   if (blob_context)
     blob_context->GetBlobDataFromBlobRemote(std::move(blob_ptr), std::move(cb));
@@ -297,21 +320,53 @@ void MediaResourceGetterImpl::ReadMediaData(const std::string& blob_url,
                                             GetMediaDataCB callback) {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
   DCHECK(callback);
-  StoragePartitionImpl* storage_partititon = static_cast<StoragePartitionImpl*>(
-      browser_context_->GetStoragePartitionForUrl(GURL(blob_url)));
-  auto blob_ptr =
-      storage_partititon->GetBlobUrlRegistry()->GetBlobFromUrl(GURL(blob_url));
+  const GURL url(blob_url);
+  const GURL cache_url = storage::BlobUrlUtils::ClearUrlFragment(url);
+  StoragePartitionImpl* storage_partition = static_cast<StoragePartitionImpl*>(
+      browser_context_->GetStoragePartitionForUrl(url));
+  storage::BlobUrlRegistry* registry = storage_partition->GetBlobUrlRegistry();
 
-  if (blob_ptr) {
-    BrowserContext::BlobContextGetter blob_context_getter =
-        browser_context_->GetBlobStorageContext();
-    content::GetIOThreadTaskRunner({})->PostTask(
-        FROM_HERE, base::BindOnce(&RequestBlobDataHandleOnIO, location, size,
-                                  std::move(blob_context_getter),
-                                  std::move(blob_ptr), callback));
-  } else {
-    callback.Run(nullptr);
+  // A revoked URL must stop resolving, so drop the entry once it is unmapped.
+  auto cached = blob_url_to_uuid_.find(cache_url);
+  if (cached != blob_url_to_uuid_.end() &&
+      storage::BlobUrlRegistry::MappingStatus::kIsMapped !=
+          registry->IsUrlMapped(cache_url)) {
+    blob_url_to_uuid_.erase(cached);
+    cached = blob_url_to_uuid_.end();
   }
+
+  BrowserContext::BlobContextGetter blob_context_getter =
+      browser_context_->GetBlobStorageContext();
+
+  if (cached != blob_url_to_uuid_.end()) {
+    content::GetIOThreadTaskRunner({})->PostTask(
+        FROM_HERE, base::BindOnce(&ReadBlobByUuidOnIO, location, size,
+                                  std::move(blob_context_getter),
+                                  cached->second, callback));
+    return;
+  }
+
+  auto blob_ptr = registry->GetBlobFromUrl(url);
+  if (!blob_ptr) {
+    callback.Run(nullptr);
+    return;
+  }
+
+  content::GetIOThreadTaskRunner({})->PostTask(
+      FROM_HERE,
+      base::BindOnce(
+          &RequestBlobDataHandleOnIO, location, size,
+          std::move(blob_context_getter), std::move(blob_ptr), callback,
+          base::BindPostTask(
+              content::GetUIThreadTaskRunner({}),
+              base::BindOnce(&MediaResourceGetterImpl::CacheBlobUuid,
+                             weak_factory_.GetWeakPtr(), cache_url))));
+}
+
+void MediaResourceGetterImpl::CacheBlobUuid(const GURL& blob_url,
+                                            const std::string& uuid) {
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
+  blob_url_to_uuid_[blob_url] = uuid;
 }
 
 }  // namespace content
