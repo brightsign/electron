@@ -1,0 +1,55 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Caner Altinbasak <cal@brightsign.biz>
+Date: Tue, 8 Sep 2026 15:10:00 +0100
+Subject: fix(blink): paint the published frame for non-HWZ 2D canvas video
+ OS-21753
+
+2D-canvas drawImage(videoElement) does not go through
+GetPaintCanvasVideoRenderer()/GetCurrentFrameThenUpdate(): for an
+HTMLVideoElement source, Canvas2DRecorderContext::drawImage() calls
+HTMLVideoElement::PaintCurrentFrame(), which calls
+WebMediaPlayer::Paint() directly. WebMediaPlayerBrightsign left Paint()
+as an empty stub, so drawImage(video) silently painted nothing while
+WebGL texImage2D (which does use the pull accessor) worked.
+
+Implement Paint() to render current_frame_ through the same
+video_renderer_ used by GetPaintCanvasVideoRenderer(), mirroring
+WebMediaPlayerImpl::Paint(). The frame is always CPU-backed here, so no
+RasterContextProvider is required.
+
+diff --git a/third_party/blink/renderer/platform/media/brightsign/web_media_player_brightsign.cc b/third_party/blink/renderer/platform/media/brightsign/web_media_player_brightsign.cc
+index 532e6c35b4ca8f9060261bca0a1d21010c764ed7..6e9066fe5b69058a25f044875cd1af6f246d7036 100644
+--- a/third_party/blink/renderer/platform/media/brightsign/web_media_player_brightsign.cc
++++ b/third_party/blink/renderer/platform/media/brightsign/web_media_player_brightsign.cc
+@@ -844,6 +844,18 @@ bool WebMediaPlayerBrightsign::HasReadableVideoFrame() const {
+   return HasAvailableVideoFrame();
+ }
+ 
++// 2D-canvas drawImage(video) calls this directly instead of pulling the frame
++// via GetPaintCanvasVideoRenderer(); paint the same frame that path would use.
++void WebMediaPlayerBrightsign::Paint(cc::PaintCanvas* canvas,
++                                    const gfx::Rect& rect,
++                                    const cc::PaintFlags& flags) {
++  DCHECK(main_task_runner_->BelongsToCurrentThread());
++  scoped_refptr<media::VideoFrame> video_frame = GetCurrentFrame();
++  media::PaintCanvasVideoRenderer::PaintParams paint_params;
++  paint_params.dest_rect = gfx::RectF(rect);
++  video_renderer_.Paint(video_frame, canvas, flags, paint_params, nullptr);
++}
++
+ void OnReleaseTexture(gpu::Mailbox mbox) {}
+ 
+ 
+diff --git a/third_party/blink/renderer/platform/media/brightsign/web_media_player_brightsign.h b/third_party/blink/renderer/platform/media/brightsign/web_media_player_brightsign.h
+index 06e0f28e4ec00159edafb21eba7460535427af1c..dd216c3645e883f7be2732ecd5c46ae09c5b60fd 100644
+--- a/third_party/blink/renderer/platform/media/brightsign/web_media_player_brightsign.h
++++ b/third_party/blink/renderer/platform/media/brightsign/web_media_player_brightsign.h
+@@ -172,7 +172,7 @@ class WebMediaPlayerBrightsign
+   bool HasAvailableVideoFrame() const override;
+   bool HasReadableVideoFrame() const override;
+ 
+-  void Paint(cc::PaintCanvas*, const gfx::Rect&, const cc::PaintFlags&) override {}
++  void Paint(cc::PaintCanvas*, const gfx::Rect&, const cc::PaintFlags&) override;
+ 
+   scoped_refptr<media::VideoFrame> GetCurrentFrameThenUpdate() override;
+ 
