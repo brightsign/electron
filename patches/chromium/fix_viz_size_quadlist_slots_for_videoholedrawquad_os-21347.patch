@@ -1,0 +1,54 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Caner Altinbasak <cal@brightsign.biz>
+Date: Thu, 24 Sep 2026 13:35:50 +0100
+Subject: fix(viz): size QuadList slots for VideoHoleDrawQuad OS-21347
+
+brightsign_add_support_for_brightsign_video_player.patch adds a 100-byte
+factory_name to VideoHoleDrawQuad, which makes it larger than every quad
+LargestDrawQuadSize() is computed from. Quads are constructed in place
+in fixed-size QuadList slots, so on 32-bit ARM (Thor), where
+VideoHoleDrawQuad is 176 bytes against a 168-byte slot, creating one
+wrote past its slot and corrupted the heap. VizCompositorThread then
+aborted with "free(): invalid pointer" in
+OverlayStrategyUnderlayBrightsign::VideoHoleDraw() as soon as HTML
+video played. 64-bit builds only fit by accident.
+
+Include VideoHoleDrawQuad in the size and alignment calculation, as
+draw_quad_unittest's LargestQuadType test expects.
+
+This fixes a BrightSign-only extension to VideoHoleDrawQuad; upstream's
+quad is small enough that it is not needed there, so it cannot be
+upstreamed.
+
+diff --git a/components/viz/common/quads/largest_draw_quad.cc b/components/viz/common/quads/largest_draw_quad.cc
+index a643a409740a5a256ef23dc12f226c09e6d30854..01e6c5a3e59195216d26f6aae1a1ffaa7f363e61 100644
+--- a/components/viz/common/quads/largest_draw_quad.cc
++++ b/components/viz/common/quads/largest_draw_quad.cc
+@@ -16,6 +16,7 @@
+ #include "components/viz/common/quads/surface_draw_quad.h"
+ #include "components/viz/common/quads/texture_draw_quad.h"
+ #include "components/viz/common/quads/tile_draw_quad.h"
++#include "components/viz/common/quads/video_hole_draw_quad.h"
+ 
+ namespace {
+ 
+@@ -40,7 +41,8 @@ constexpr size_t kLargestDrawQuadSize =
+             viz::SolidColorDrawQuad,
+             viz::SurfaceDrawQuad,
+             viz::TextureDrawQuad,
+-            viz::TileDrawQuad>::value;
++            viz::TileDrawQuad,
++            viz::VideoHoleDrawQuad>::value;
+ 
+ template <typename...>
+ struct MaxAlign {};
+@@ -63,7 +65,8 @@ constexpr size_t kLargestDrawQuadAlignment =
+              viz::SolidColorDrawQuad,
+              viz::SurfaceDrawQuad,
+              viz::TextureDrawQuad,
+-             viz::TileDrawQuad>::value;
++             viz::TileDrawQuad,
++             viz::VideoHoleDrawQuad>::value;
+ 
+ }  // namespace
+ 
