@@ -1,0 +1,92 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Tariq Bashir <tbashir@brightsign.biz>
+Date: Wed, 23 Sep 2026 15:06:05 +0100
+Subject: fix: Brightsign add rtsp and rtsps to the non special url scheme
+ OS-22135
+
+Chromium doesn't support rtsp. We support this when using the Brightsign
+native media player. In Chromium 120 the rtsp scheme was treated as
+part of the "Weird URLs" and handled in url_utils::DoCanonicalize
+using ReplacePathUrl. This was updated at some point and in
+Chromium 148 it will now use ReplaceNonSpecialUrl if the scheme
+is not in the opaque_non_special_schemes list. The problem is that
+the user and password are now recognised fields and will be stripped
+out of the URL that gets passed to the Brightsign native media player.
+To fix this we add rtsp and rtsps to the opaque_non_special_schemes
+list so that it gets handled as before.
+We also add a test for rtsp and rtsps URLs to the Chromium GURL unit
+tests.
+
+diff --git a/url/gurl_unittest.cc b/url/gurl_unittest.cc
+index 961deef452bea58bac1133ef5e3b95d52e07b1ea..537e008a49eafeef244f5f5bb130bb2b2a39e97e 100644
+--- a/url/gurl_unittest.cc
++++ b/url/gurl_unittest.cc
+@@ -154,7 +154,6 @@ TEST_F(GURLTest, Components) {
+   EXPECT_EQ("/foo;bar", url.GetPath());
+   EXPECT_EQ("q=a", url.GetQuery());
+   EXPECT_EQ("ref", url.GetRef());
+-
+   // Test parsing userinfo with special characters.
+   GURL url_special_pass("http://user:%40!$&'()*+,;=:@google.com:12345");
+   EXPECT_TRUE(url_special_pass.is_valid());
+@@ -183,6 +182,26 @@ TEST_F(GURLTest, Components) {
+   EXPECT_EQ("q=r%2Es", url_percent_escaped.GetQuery());
+ }
+ 
++TEST_F(GURLTest, OpaqueRTSPURL) {
++  GURL url("rtsp://user:password@172.30.1.152:554/0");
++
++  EXPECT_TRUE(url.is_valid());
++  EXPECT_EQ("rtsp://user:password@172.30.1.152:554/0", url.spec());
++  EXPECT_EQ("", url.GetUsername());
++  EXPECT_EQ("", url.GetPassword());
++  EXPECT_EQ("//user:password@172.30.1.152:554/0", url.GetPath());
++}
++
++TEST_F(GURLTest, OpaqueRTSPSURL) {
++  GURL url("rtsps://user:password@172.30.1.152:554/0");
++
++  EXPECT_TRUE(url.is_valid());
++  EXPECT_EQ("rtsps://user:password@172.30.1.152:554/0", url.spec());
++  EXPECT_EQ("", url.GetUsername());
++  EXPECT_EQ("", url.GetPassword());
++  EXPECT_EQ("//user:password@172.30.1.152:554/0", url.GetPath());
++}
++
+ TEST_F(GURLTest, Empty) {
+   GURL url;
+   EXPECT_FALSE(url.is_valid());
+@@ -795,7 +814,6 @@ TEST_F(GURLTest, Replacements) {
+              return url.ReplaceComponents(replacements);
+            },
+        .expected = "steam:b"},
+-
+       // Test cases that Chromium used to parse incorrectly.
+       {.base = "git://a1/a2?a3=a4#a5",
+        .apply_replacements =
+diff --git a/url/url_constants.h b/url/url_constants.h
+index c809d2a54cdfd702cc00250395b3de0cc23a0662..9de6028ca0ba2776e818892a6f038f780302e699 100644
+--- a/url/url_constants.h
++++ b/url/url_constants.h
+@@ -47,6 +47,8 @@ inline constexpr char16_t kJavaScriptScheme16[] = u"javascript";
+ inline constexpr char kMailToScheme[] = "mailto";
+ inline constexpr char16_t kMailToScheme16[] = u"mailto";
+ inline constexpr char kMaterializedViewScheme[] = "materialized-view";
++inline constexpr char kRtspScheme[] = "rtsp";
++inline constexpr char kRtspsScheme[] = "rtsps";
+ inline constexpr char kSteamScheme[] = "steam";
+ inline constexpr char kTelScheme[] = "tel";
+ inline constexpr char16_t kTelScheme16[] = u"tel";
+diff --git a/url/url_util.cc b/url/url_util.cc
+index 7412af58409285fbe9b426c5b2bb8510d362091c..003ff7f9191f537ffe87dec69d96dcd3d1bb2e7f 100644
+--- a/url/url_util.cc
++++ b/url/url_util.cc
+@@ -127,6 +127,8 @@ struct SchemeRegistry {
+       kDrivefsScheme,
+       // Temporarily opted-out. See https://crrev.com/c/5568919.
+       kChromeosSteamScheme,
++      kRtspScheme,
++      kRtspsScheme,
+       kSteamScheme,
+       // Temporarily opted-out. See https://crrev.com/c/5578066.
+       kMaterializedViewScheme,
