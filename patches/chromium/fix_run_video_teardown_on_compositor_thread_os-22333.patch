@@ -1,0 +1,64 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Caner Altinbasak <cal@brightsign.biz>
+Date: Tue, 29 Sep 2026 13:42:56 +0100
+Subject: fix: run video teardown on compositor thread OS-22333
+
+WebMediaPlayerBrightsign::Shutdown() called SetVideoFrameProviderClient(
+nullptr) on the main render thread, which reaches into cc::
+VideoFrameProviderClientImpl::StopUsingProvider() -> StopRendering() ->
+RemoveVideoFrameController(). That call chain assumes the compositor/impl
+task runner, but the assumption is only enforced by a DCHECK, which is
+compiled out in release builds.
+
+Under hwz:off create/destroy churn this let Shutdown() force a compositor
+draw from the wrong thread, crashing in Viz's mojo IPC
+(CHECK(sequence_checker_.CalledOnValidSequence()) in
+mojo::InterfaceEndpointClient::SendMessage). Confirmed on both Nexus and
+Rockchip crash dumps captured from tests/html/21701 and tests/html/21695,
+so this is a shared-code race rather than a native-backend bug.
+
+Hop the StopUsingProvider() call to compositor_task_runner_ and block on
+a WaitableEvent until it completes, instead of calling it inline on
+main_task_runner_. This still runs synchronously before vid_player_ and
+the shared-memory frame cache are torn down below (as the prior code
+required), but now on the thread cc actually expects; it also leaves the
+client's internal |provider_| pointer null, so a later cc-driven
+VideoLayerImpl teardown safely no-ops instead of touching a
+possibly-destroyed WebMediaPlayerBrightsign.
+
+diff --git a/third_party/blink/renderer/platform/media/brightsign/web_media_player_brightsign.cc b/third_party/blink/renderer/platform/media/brightsign/web_media_player_brightsign.cc
+index 445c9dd7741f81f33b1aab86194c05e4338677de..b4144ed8423495e6a8512b729aa320f2975718fd 100644
+--- a/third_party/blink/renderer/platform/media/brightsign/web_media_player_brightsign.cc
++++ b/third_party/blink/renderer/platform/media/brightsign/web_media_player_brightsign.cc
+@@ -8,6 +8,7 @@
+ #include "base/command_line.h"
+ #include "base/task/bind_post_task.h"
+ #include "base/task/thread_pool.h"
++#include "base/synchronization/waitable_event.h"
+ #include "base/time/time.h"
+ #include "cc/layers/video_layer.h"
+ #include "media/base/media_track.h"
+@@ -255,8 +256,21 @@ void WebMediaPlayerBrightsign::Shutdown() {
+   weak_factory_.InvalidateWeakPtrs();
+ 
+   // Detach the compositor and drop the retained frame before releasing the
+-  // shared-memory cache.
+-  SetVideoFrameProviderClient(nullptr);
++  // shared-memory cache. StopUsingProvider() must run on the compositor task
++  // runner (cc assumes this, only via a release-stripped DCHECK), so hop
++  // there and block rather than calling it inline on main_task_runner_. The
++  // client is only touched inside that task: cc frees it on the same thread.
++  base::WaitableEvent done;
++  if (compositor_task_runner_->PostTask(
++          FROM_HERE,
++          base::BindOnce(
++              [](WebMediaPlayerBrightsign* player, base::WaitableEvent* done) {
++                player->SetVideoFrameProviderClient(nullptr);
++                done->Signal();
++              },
++              base::Unretained(this), &done))) {
++    done.Wait();
++  }
+   {
+     base::AutoLock auto_lock(current_frame_lock_);
+     current_frame_ = nullptr;
