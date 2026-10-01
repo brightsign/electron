@@ -1,0 +1,37 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Tariq Bashir <tbashir@brightsign.biz>
+Date: Mon, 28 Sep 2026 16:30:07 +0100
+Subject: Brightsign: Do not initialize ICU datetime with serialized datetime
+ name string OS-21133
+
+Cherry pick of Chromium 87 change: I1435311d040541733865adc933f73bdb5f8ea289
+
+Chromium reads the timezone from ICU in Olson timezone id form. Sends it
+via IPC to render process. Render process reads it and initializes ICU
+with the given string.
+
+If a POSIX format doesn't exactly match the version in ICU, ICU cannot
+provide a Olson timezone name, it gives the first part of POSIX string
+as timezone name. When ICU is initialized with this string in render
+process, ICU sets the timezone name as a invalid string. Which in the
+end, causes an exception to be thrown when Int.DateTimeFormat() is
+called.
+
+This commit removes the ICU initialization with serialized string. ICU
+gets initialized itself by TZ without explicit initialization. In the
+end, it still cannot figure out the timezone name from POSIX date time
+format, but it doesn't throw an exception when queried.
+
+diff --git a/content/zygote/zygote_linux.cc b/content/zygote/zygote_linux.cc
+index 3bbfaf0c6f24866ff262827d849b799a1f7c69c2..9cdb1c35c9a3f3c43ec8c6997122b99ce8ccb7f4 100644
+--- a/content/zygote/zygote_linux.cc
++++ b/content/zygote/zygote_linux.cc
+@@ -568,8 +568,6 @@ base::ProcessId Zygote::ReadArgsAndFork(base::PickleIterator iter,
+   std::u16string timezone_id;
+   if (!iter.ReadString16(&timezone_id))
+     return -1;
+-  icu::TimeZone::adoptDefault(icu::TimeZone::createTimeZone(
+-      icu::UnicodeString(false, timezone_id.data(), timezone_id.length())));
+ 
+   if (!iter.ReadUInt32(&uid))
+     return -1;
