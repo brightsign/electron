@@ -1,0 +1,34 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Caner Altinbasak <cal@brightsign.biz>
+Date: Thu, 1 Oct 2026 15:15:31 +0100
+Subject: fix(ozone): allow the native EGL/GLES2 implementation on Wayland
+ OS-22105
+
+WaylandSurfaceFactory advertises only ANGLE backends, so --use-gl=egl is
+rejected by GetRequestedGLImplementation() and GPU initialisation returns
+kGLImplementationNone rather than falling back.
+
+The rest of the Wayland GL stack already copes with the native
+implementation: GetGLOzone() returns the EGL GLOzone for
+kGLImplementationEGLGLES2, and GLOzoneEGLWayland::CreateViewGLSurface()
+accepts it explicitly alongside kGLImplementationEGLANGLE. Only the
+allowed-implementation gate is missing.
+
+Advertise it last so allowed_impls[0] remains ANGLE and the default is
+unchanged; the native path is reachable only when asked for by name. It is
+worth having on embedded GLES-only drivers, where ANGLE's translation layer
+costs a substantial amount of WebGL throughput.
+
+diff --git a/ui/ozone/platform/wayland/gpu/wayland_surface_factory.cc b/ui/ozone/platform/wayland/gpu/wayland_surface_factory.cc
+index 2be9495aff424fa3686896cb20ce8607e7b076a4..2af54aee5cc47f15feabaab07d8a559befa23be0 100644
+--- a/ui/ozone/platform/wayland/gpu/wayland_surface_factory.cc
++++ b/ui/ozone/platform/wayland/gpu/wayland_surface_factory.cc
+@@ -230,6 +230,8 @@ WaylandSurfaceFactory::GetAllowedGLImplementations() {
+     impls.emplace_back(gl::ANGLEImplementation::kOpenGLES);
+     impls.emplace_back(gl::ANGLEImplementation::kSwiftShader);
+     impls.emplace_back(gl::ANGLEImplementation::kVulkan);
++    // Listed last so it never becomes the default; selected with --use-gl=egl.
++    impls.emplace_back(gl::kGLImplementationEGLGLES2);
+   }
+   return impls;
+ }
