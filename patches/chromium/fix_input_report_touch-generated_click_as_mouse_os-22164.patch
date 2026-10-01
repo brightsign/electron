@@ -1,0 +1,42 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Tariq Bashir <tbashir@brightsign.biz>
+Date: Thu, 1 Oct 2026 18:09:49 +0100
+Subject: fix(input): report touch-generated click as mouse OS-22164
+
+WebMouseEvent instances created from a WebGestureEvent default to pointer
+type `mouse`. During touch tap handling, GestureManager subsequently replaced
+that default with WebGestureEvent::primary_pointer_type before dispatching the
+synthetic click.
+
+On Wayland, Ozone receives external touchscreen input through the standard
+wl_touch protocol and creates TouchEvents with EventPointerType::kTouch.
+The gesture pipeline preserves that classification, so the replacement caused
+the compatibility click to surface to JavaScript as a PointerEvent with
+pointerType `touch`.
+
+Do not overwrite fake_mouse_up.pointer_type when dispatching the synthetic
+click. The event now retains WebMouseEvent's default `mouse` pointer type,
+matching the behavior observed on macOS for this click path.
+
+This is intentionally localized to the compatibility click dispatch. Changing
+Ozone Wayland's wl_touch classification would relabel all touchscreen contact
+events as mouse, affecting pointerdown, pointermove, pointerup, touch
+semantics, multi-touch handling, gesture recognition, stylus handling, and
+every Wayland touchscreen rather than only the JS click compatibility event.
+
+diff --git a/third_party/blink/renderer/core/input/gesture_manager.cc b/third_party/blink/renderer/core/input/gesture_manager.cc
+index d6dd7e4d3d3623e08da98b18d349f0857c5b7990..dff51268e52fdf142572c31473237ef21c717713 100644
+--- a/third_party/blink/renderer/core/input/gesture_manager.cc
++++ b/third_party/blink/renderer/core/input/gesture_manager.cc
+@@ -338,7 +338,11 @@ WebInputEventResult GestureManager::HandleGestureTap(
+           *tapped_element, event_handling_util::ParentForClickEvent);
+       auto* click_target_element = DynamicTo<Element>(click_target_node);
+       fake_mouse_up.id = GetPointerIdFromWebGestureEvent(gesture_event);
++      // Brightsign disabling setting the pointer type for fake mouse up events
++      // this will keep the type as default, which is mouse
++#if 0
+       fake_mouse_up.pointer_type = gesture_event.primary_pointer_type;
++#endif
+       click_event_result =
+           mouse_event_manager_->SetMousePositionAndDispatchMouseEvent(
+               click_target_element, event_type_names::kClick, fake_mouse_up);
