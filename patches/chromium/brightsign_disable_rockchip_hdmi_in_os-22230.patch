@@ -1,0 +1,34 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Tariq Bashir <tbashir@brightsign.biz>
+Date: Tue, 6 Oct 2026 11:08:19 +0100
+Subject: brightsign: disable rockchip hdmi in OS-22230
+
+Temporary patch to disable HDMI input on rk devices until support
+for this feature has been fully added and tested.
+
+diff --git a/media/capture/video/linux/video_capture_device_factory_v4l2.cc b/media/capture/video/linux/video_capture_device_factory_v4l2.cc
+index 71eac38b86d749486ab3a05ebde79bfc3747c7d7..04b0db78297edcca25e7d70302e56eed958745e6 100644
+--- a/media/capture/video/linux/video_capture_device_factory_v4l2.cc
++++ b/media/capture/video/linux/video_capture_device_factory_v4l2.cc
+@@ -182,9 +182,18 @@ void VideoCaptureDeviceFactoryV4L2::GetDevicesInfo(
+     // in the past and it is unclear if it breaks with existing devices. And if
+     // a device is accepted incorrectly then it will not have any usable
+     // formats and is skipped anyways.
+-    v4l2_capability cap;
+-    if ((DoIoctl(fd.get(), VIDIOC_QUERYCAP, &cap) == 0) &&
+-        ((cap.capabilities & V4L2_CAP_VIDEO_CAPTURE &&
++    v4l2_capability cap = {};
++    if (DoIoctl(fd.get(), VIDIOC_QUERYCAP, &cap) != 0) {
++      continue;
++    }
++    // Temporary workaround to skip devices with the "rk_hdmirx" driver or card.
++    if (std::strncmp(reinterpret_cast<const char*>(cap.driver), "rk_hdmirx",
++                     sizeof(cap.driver)) == 0 ||
++        std::strncmp(reinterpret_cast<const char*>(cap.card), "rk_hdmirx",
++                     sizeof(cap.card)) == 0) {
++      continue;
++    }
++    if (((cap.capabilities & V4L2_CAP_VIDEO_CAPTURE &&
+           !(cap.capabilities & V4L2_CAP_VIDEO_OUTPUT)) ||
+          (cap.capabilities & V4L2_CAP_DEVICE_CAPS &&
+           cap.device_caps & V4L2_CAP_VIDEO_CAPTURE &&
