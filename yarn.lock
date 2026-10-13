@@ -5895,17 +5895,17 @@ standard@^14.3.1:
   resolved "https://registry.yarnpkg.com/statuses/-/statuses-1.5.0.tgz#161c7dac177659fd9811f43771fa99381478628c"
   integrity sha1-Fhx9rBd2Wf2YEfQ3cfqZOBR4Yow=
 
-stream-chain@^2.2.3:
-  version "2.2.3"
-  resolved "https://registry.yarnpkg.com/stream-chain/-/stream-chain-2.2.3.tgz#44cfa21ab673e53a3f1691b3d1665c3aceb1983b"
-  integrity sha512-w+WgmCZ6BItPAD3/4HD1eDiDHRLhjSSyIV+F0kcmmRyz8Uv9hvQF22KyaiAUmOlmX3pJ6F95h+C191UbS8Oe/g==
+stream-chain@^4.2.5:
+  version "4.2.6"
+  resolved "https://registry.yarnpkg.com/stream-chain/-/stream-chain-4.2.6.tgz#0ff67bbf3e3fc05b46dd37fe39373229e1504776"
+  integrity sha512-1zeJ8CrtJfmiba26ui8jXkq/xLRFvhzkdH02D5QLO9Cnovgeb28IJxg88DdraWnjnkbOol/++uIAybJbJhk7ig==
 
-stream-json@^1.7.1:
-  version "1.7.1"
-  resolved "https://registry.yarnpkg.com/stream-json/-/stream-json-1.7.1.tgz#ec7e414c2eba456c89a4b4e5223794eabc3860c4"
-  integrity sha512-I7g0IDqvdJXbJ279/D3ZoTx0VMhmKnEF7u38CffeWdF8bfpMPsLo+5fWnkNjO2GU/JjWaRjdH+zmH03q+XGXFw==
+stream-json@^3.6.0:
+  version "3.6.0"
+  resolved "https://registry.yarnpkg.com/stream-json/-/stream-json-3.6.0.tgz#99fdad598dc2f887c561b4c0a5fb61c594777f62"
+  integrity sha512-NiJdqxKyau579z/E8vfqcjWfSDWxW/AT99javFXdPXF147Z5za85LRXSHEmSX9TKOakB7gaIccfD0fOIctb7KQ==
   dependencies:
-    stream-chain "^2.2.3"
+    stream-chain "^4.2.5"
 
 string-argv@0.3.1:
   version "0.3.1"
