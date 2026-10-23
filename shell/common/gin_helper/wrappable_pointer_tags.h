@@ -20,19 +20,20 @@ enum ElectronWrappablePointerTag : uint16_t {
   kElectronEvent,                           // gin_helper::internal::Event
   kElectronGlobalShortcut,                  // electron::api::GlobalShortcut
   kElectronExtensions,                      // electron::api::Extensions
-  kElectronMenu,                            // electron::api::Menu
-  kElectronNetLog,                          // electron::api::NetLog
-  kElectronPowerMonitor,                    // electron::api::PowerMonitor
-  kElectronPowerSaveBlocker,                // electron::api::PowerSaveBlocker
-  kElectronProtocol,                        // electron::api::Protocol
-  kElectronReplyChannel,          // gin_helper::internal::ReplyChannel
-  kElectronScreen,                // electron::api::Screen
-  kElectronServiceWorkerContext,  // electron::api::ServiceWorkerContext
-  kElectronSession,               // electron::api::Session
-  kElectronTray,                  // electron::api::Tray
-  kElectronUtilityProcess,        // electron::api::UtilityProcessWrapper
-  kElectronWebRequest,            // electron::api::WebRequest
-  kElectronWebSocket,             // electron::api::WebSocketWrapper
+  kElectronMemoryPressureMonitor,  // electron::api::MemoryPressureMonitor
+  kElectronMenu,                   // electron::api::Menu
+  kElectronNetLog,                 // electron::api::NetLog
+  kElectronPowerMonitor,           // electron::api::PowerMonitor
+  kElectronPowerSaveBlocker,       // electron::api::PowerSaveBlocker
+  kElectronProtocol,               // electron::api::Protocol
+  kElectronReplyChannel,           // gin_helper::internal::ReplyChannel
+  kElectronScreen,                 // electron::api::Screen
+  kElectronServiceWorkerContext,   // electron::api::ServiceWorkerContext
+  kElectronSession,                // electron::api::Session
+  kElectronTray,                   // electron::api::Tray
+  kElectronUtilityProcess,         // electron::api::UtilityProcessWrapper
+  kElectronWebRequest,             // electron::api::WebRequest
+  kElectronWebSocket,              // electron::api::WebSocketWrapper
   kLastElectronPointerTag = kElectronWebSocket,
 };
 
