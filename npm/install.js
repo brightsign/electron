@@ -2,7 +2,7 @@
 
 const { downloadArtifact } = require('@electron/get');
 
-const extract = require('extract-zip');
+const { extract } = require('@electron-internal/extract-zip');
 
 const childProcess = require('child_process');
 const fs = require('fs');
@@ -96,7 +96,7 @@ function extractFile(zipPath) {
 }
 
 function getPlatformPath() {
-  const platform = process.env.npm_config_platform || os.platform();
+  const platform = process.env.ELECTRON_INSTALL_PLATFORM || process.env.npm_config_platform || os.platform();
 
   switch (platform) {
     case 'mas':

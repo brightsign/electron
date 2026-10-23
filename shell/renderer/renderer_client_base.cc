@@ -25,6 +25,7 @@
 #include "shell/common/api/electron_api_native_image.h"
 #include "shell/common/color_util.h"
 #include "shell/common/gin_helper/dictionary.h"
+#include "shell/common/js2c_bundle_ids.h"
 #include "shell/common/node_includes.h"
 #include "shell/common/node_util.h"
 #include "shell/common/options_switches.h"
@@ -42,8 +43,11 @@
 #include "third_party/blink/public/common/associated_interfaces/associated_interface_registry.h"
 #include "third_party/blink/public/common/web_preferences/web_preferences.h"
 #include "third_party/blink/public/platform/web_runtime_features.h"
+#include "third_party/blink/public/platform/web_security_origin.h"
+#include "third_party/blink/public/platform/web_string.h"
 #include "third_party/blink/public/web/blink.h"
 #include "third_party/blink/public/web/web_custom_element.h"  // NOLINT(build/include_alpha)
+#include "third_party/blink/public/web/web_frame.h"
 #include "third_party/blink/public/web/web_frame_widget.h"
 #include "third_party/blink/public/web/web_local_frame.h"
 #include "third_party/blink/public/web/web_plugin_params.h"
@@ -131,9 +135,16 @@ bool IsDevTools(content::RenderFrame* render_frame) {
       "devtools");
 }
 
+// A DevTools extension panel or devtools_page: an extension document hosted
+// inside the DevTools front-end. A chrome-extension:// frame embedded anywhere
+// else (e.g. a web-accessible resource inside a regular page) is not one.
 bool IsDevToolsExtension(content::RenderFrame* render_frame) {
-  return render_frame->GetWebFrame()->GetDocument().Url().ProtocolIs(
-      "chrome-extension");
+  blink::WebLocalFrame* frame = render_frame->GetWebFrame();
+  if (!frame->GetDocument().Url().ProtocolIs("chrome-extension"))
+    return false;
+  blink::WebFrame* top = frame->Top();
+  return top && top != frame &&
+         top->GetSecurityOrigin().Protocol() == "devtools";
 }
 
 }  // namespace
@@ -309,6 +320,19 @@ void RendererClientBase::ExposeInterfacesToBrowser(mojo::BinderMap* binders) {
   // definition of |ExposeElectronRendererInterfacesToBrowser()| to ensure
   // security review coverage.
   ExposeElectronRendererInterfacesToBrowser(this, binders);
+}
+
+void RendererClientBase::SetPendingCreateNewWindowStartupData(
+    mojo_base::BigBuffer data) {
+  // Deserialize the opaque blob from CreateNewWindowReply and stash it for
+  // the about-to-be-created RenderFrame's ElectronApiServiceImpl. Same call
+  // stack, no reentrancy.
+  mojom::RendererStartupDataPtr deserialized;
+  if (mojom::RendererStartupData::Deserialize(base::span<const uint8_t>(data),
+                                              &deserialized)) {
+    ElectronApiServiceImpl::SetPendingNewWindowStartupData(
+        std::move(deserialized));
+  }
 }
 
 void RendererClientBase::RenderFrameCreated(
@@ -575,11 +599,26 @@ v8::Local<v8::Context> RendererClientBase::GetContext(
     v8::Isolate* isolate) const {
   auto* render_frame = content::RenderFrame::FromWebFrame(frame);
   DCHECK(render_frame);
+  if (render_frame) {
+    v8::Local<v8::Context> env_context = GetEnvironmentContext(render_frame);
+    if (!env_context.IsEmpty())
+      return env_context;
+  }
   if (render_frame && render_frame->GetBlinkPreferences().context_isolation)
     return frame->GetScriptContextFromWorldId(isolate,
                                               WorldIDs::ISOLATED_WORLD_ID);
   else
     return frame->MainWorldScriptContext();
+}
+
+v8::Local<v8::Context> RendererClientBase::GetEnvironmentContext(
+    content::RenderFrame* render_frame) const {
+  return {};
+}
+
+std::optional<int> RendererClientBase::GetEnvironmentWorldId(
+    content::RenderFrame* render_frame) const {
+  return std::nullopt;
 }
 
 bool RendererClientBase::IsWebViewFrame(
@@ -628,20 +667,20 @@ void RendererClientBase::SetupMainWorldOverrides(
   v8::Local<v8::Value> guest_view_internal;
   if (global.GetHidden("guestViewInternal", &guest_view_internal)) {
     auto result = api::PassValueToOtherContext(
-        isolate, source_context, isolate, context, guest_view_internal,
+        isolate, source_context, context, guest_view_internal,
         source_context->Global(), false, api::BridgeErrorTarget::kSource);
     if (!result.IsEmpty()) {
       isolated_api.Set("guestViewInternal", result.ToLocalChecked());
     }
   }
 
-  v8::LocalVector<v8::String> isolated_bundle_params(
-      isolate, {node::FIXED_ONE_BYTE_STRING(isolate, "isolatedApi")});
+  v8::LocalVector<v8::String> isolated_bundle_params =
+      js2c::MakeBundleParams(isolate, js2c::kIsolatedBundleParams);
 
   v8::LocalVector<v8::Value> isolated_bundle_args(isolate,
                                                   {isolated_api.GetHandle()});
 
-  util::CompileAndCall(isolate, context, "electron/js2c/isolated_bundle",
+  util::CompileAndCall(isolate, context, js2c::kIsolatedBundleId,
                        &isolated_bundle_params, &isolated_bundle_args);
 }
 

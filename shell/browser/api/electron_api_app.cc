@@ -39,6 +39,7 @@
 #include "content/public/browser/gpu_data_manager.h"
 #include "content/public/browser/network_service_instance.h"
 #include "content/public/browser/render_frame_host.h"
+#include "content/public/common/content_switches.h"
 #include "crypto/crypto_buildflags.h"
 #include "electron/mas.h"
 #include "media/audio/audio_manager.h"
@@ -78,6 +79,8 @@
 #include "shell/common/gin_helper/error_thrower.h"
 #include "shell/common/gin_helper/handle.h"
 #include "shell/common/gin_helper/object_template_builder.h"
+#include "shell/common/gin_helper/promise.h"
+#include "shell/common/gin_helper/wrappable_pointer_tags.h"
 #include "shell/common/language_util.h"
 #include "shell/common/node_includes.h"
 #include "shell/common/options_switches.h"
@@ -100,11 +103,14 @@
 #if BUILDFLAG(IS_MAC)
 #include <CoreFoundation/CoreFoundation.h>
 #include "base/no_destructor.h"
+#include "base/strings/utf_string_conversions.h"
 #include "content/browser/mac_helpers.h"
+#include "device/fido/strings/grit/fido_strings.h"
 #include "shell/browser/electron_child_process_host_flags.h"
 #include "shell/browser/ui/cocoa/electron_bundle_mover.h"
 #include "shell/browser/webauthn/electron_authenticator_request_delegate.h"
 #include "shell/common/process_util.h"
+#include "ui/base/resource/resource_bundle.h"
 #endif
 
 #if BUILDFLAG(IS_LINUX)
@@ -375,8 +381,8 @@ struct Converter<net::SecureDnsMode> {
 
 namespace electron::api {
 
-gin::WrapperInfo App::kWrapperInfo = {{gin::kEmbedderNativeGin},
-                                      gin::kElectronApp};
+gin::WrapperInfo App::kWrapperInfo =
+    electron::MakeWrapperInfo(electron::kElectronApp);
 
 namespace {
 
@@ -720,19 +726,8 @@ bool App::CanCreateWindow(
     bool user_gesture,
     bool opener_suppressed,
     bool* no_javascript_access) {
-  v8::Isolate* isolate = JavascriptEnvironment::GetIsolate();
-  v8::HandleScope handle_scope(isolate);
-  content::WebContents* web_contents =
-      content::WebContents::FromRenderFrameHost(opener);
-  if (web_contents) {
-    WebContents* api_web_contents = WebContents::From(web_contents);
-    // No need to emit any event if the WebContents is not available in JS.
-    if (api_web_contents) {
-      api_web_contents->OnCreateWindow(target_url, referrer, frame_name,
-                                       disposition, raw_features, body);
-    }
-  }
-
+  // Only reached for openers Electron did not create (no
+  // WebContentsPreferences); those may not open windows.
   return false;
 }
 
@@ -1149,6 +1144,14 @@ void App::DisableHardwareAcceleration(gin_helper::ErrorThrower thrower) {
     return;
   }
 
+  // Append --disable-gpu to the command line so that all Chromium subsystems
+  // that check the switch (e.g. GpuProcessHost, viz compositor) respect the
+  // decision.  The switch must be set before GpuDataManager is initialised
+  // because InitializeGpuModes() reads it to decide which GPU modes to add.
+  auto* command_line = base::CommandLine::ForCurrentProcess();
+  if (!command_line->HasSwitch(::switches::kDisableGpu))
+    command_line->AppendSwitch(::switches::kDisableGpu);
+
   // If the GpuDataManager is already initialized, disable hardware
   // acceleration immediately. Otherwise, set a flag to disable it in
   // OnPreCreateThreads().
@@ -1217,7 +1220,8 @@ v8::Local<v8::Value> App::GetAccessibilitySupportFeatures() {
 
   v8::Local<v8::Array> arr = v8::Array::New(isolate, features.size());
   for (uint32_t i = 0; i < features.size(); ++i) {
-    arr->Set(isolate->GetCurrentContext(), i, features[i]).Check();
+    arr->CreateDataProperty(isolate->GetCurrentContext(), i, features[i])
+        .Check();
   }
   return handle_scope.Escape(arr);
 }
@@ -1694,8 +1698,31 @@ void App::ConfigureWebAuthn(gin_helper::ErrorThrower thrower,
           "non-empty string");
       return;
     }
+
+    // Optional: lets apps customize the macOS Touch ID prompt. The OS renders
+    // it as `"<App Name>" is trying to <promptReason>`. A `$1` placeholder, if
+    // present, is replaced with the relying party ID; otherwise the string is
+    // used verbatim. The default, IDS_WEBAUTHN_TOUCH_ID_PROMPT_REASON, is
+    // "verify your identity on $1".
+    std::string prompt_reason;
+    if (touch_id.Has("promptReason")) {
+      if (!touch_id.Get("promptReason", &prompt_reason) ||
+          prompt_reason.empty()) {
+        thrower.ThrowTypeError(
+            "configureWebAuthn: 'touchID.promptReason' must be a non-empty "
+            "string");
+        return;
+      }
+    }
+
     ElectronWebAuthenticationDelegate::SetTouchIdKeychainAccessGroup(
         std::move(keychain_access_group));
+
+    if (!prompt_reason.empty()) {
+      ui::ResourceBundle::GetSharedInstance().OverrideLocaleStringResource(
+          IDS_WEBAUTHN_TOUCH_ID_PROMPT_REASON,
+          base::UTF8ToUTF16(prompt_reason));
+    }
   }
 }
 
@@ -1892,11 +1919,9 @@ gin::ObjectTemplateBuilder App::GetObjectTemplateBuilder(v8::Isolate* isolate) {
       .SetMethod(
           "removeAsDefaultProtocolClient",
           base::BindRepeating(&Browser::RemoveAsDefaultProtocolClient, browser))
-#if !BUILDFLAG(IS_LINUX)
       .SetMethod(
           "getApplicationInfoForProtocol",
           base::BindRepeating(&Browser::GetApplicationInfoForProtocol, browser))
-#endif
       .SetMethod(
           "getApplicationNameForProtocol",
           base::BindRepeating(&Browser::GetApplicationNameForProtocol, browser))

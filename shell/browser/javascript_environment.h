@@ -7,14 +7,24 @@
 
 #include <memory>
 
-#include "gin/public/isolate_holder.h"
-#include "uv.h"  // NOLINT(build/include_directory)
-#include "v8/include/v8-locker.h"
+#include "shell/common/uv_includes.h"
+#include "third_party/electron_node/src/tracing/agent.h"
+
+namespace gin {
+class IsolateHolder;
+}  // namespace gin
 
 namespace node {
 class Environment;
 class MultiIsolatePlatform;
+struct SnapshotData;
 }  // namespace node
+
+namespace v8 {
+class Isolate;
+class Locker;
+class TracingController;
+}  // namespace v8
 
 namespace electron {
 
@@ -23,7 +33,8 @@ class MicrotasksRunner;
 class JavascriptEnvironment {
  public:
   JavascriptEnvironment(uv_loop_t* event_loop,
-                        bool setup_wasm_streaming = false);
+                        bool setup_wasm_streaming = false,
+                        v8::TracingController* tracing_controller = nullptr);
   ~JavascriptEnvironment();
 
   // disable copy
@@ -34,17 +45,27 @@ class JavascriptEnvironment {
   void DestroyMicrotasksRunner();
 
   node::MultiIsolatePlatform* platform() const { return platform_.get(); }
-  [[nodiscard]] v8::Isolate* isolate() const {
-    return isolate_holder_->isolate();
-  }
+
   size_t max_young_generation_size_in_bytes() const {
     return max_young_generation_size_;
   }
 
-  static v8::Isolate* GetIsolate();
+  [[nodiscard]] v8::Isolate* isolate() const;
+  [[nodiscard]] static v8::Isolate* GetIsolate();
+
+  // The embedded Node.js startup snapshot this process's JavascriptEnvironment
+  // isolate is (to be) created from, or nullptr when the Node.js environment
+  // is bootstrapped from scratch: on builds without a Node snapshot
+  // (cross-compiled targets), when a custom V8 snapshot is loaded, and in
+  // process types that never have a JavascriptEnvironment. When non-null the
+  // constructor creates no context; the main context comes out of
+  // node::CreateEnvironment (pass it an empty one) and the caller enters it.
+  [[nodiscard]] static const node::SnapshotData* NodeSnapshot();
 
  private:
-  v8::Isolate* Initialize(uv_loop_t* event_loop, bool setup_wasm_streaming);
+  v8::Isolate* Initialize(uv_loop_t* event_loop,
+                          bool setup_wasm_streaming,
+                          v8::TracingController* tracing_controller);
   std::unique_ptr<node::MultiIsolatePlatform> platform_;
 
   size_t max_young_generation_size_ = 0;

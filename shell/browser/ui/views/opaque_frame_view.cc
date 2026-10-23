@@ -4,6 +4,8 @@
 
 #include "shell/browser/ui/views/opaque_frame_view.h"
 
+#include <optional>
+
 #include "base/containers/adapters.h"
 #include "chrome/browser/ui/views/frame/browser_frame_view_paint_utils_linux.h"  // nogncheck
 #include "chrome/browser/ui/views/frame/opaque_browser_frame_view_layout.h"  // nogncheck
@@ -57,12 +59,10 @@ const int kCaptionButtonBottomPadding = 3;
 // The content edge images have a shadow built into them.
 const int OpaqueFrameView::kContentEdgeShadowThickness = 2;
 
-OpaqueFrameView::OpaqueFrameView()
-    : frame_background_(std::make_unique<views::FrameBackground>()) {}
-OpaqueFrameView::~OpaqueFrameView() = default;
-
-void OpaqueFrameView::Init(NativeWindowViews* window, views::Widget* frame) {
-  FramelessView::Init(window, frame);
+OpaqueFrameView::OpaqueFrameView(NativeWindowViews* window,
+                                 views::Widget* frame)
+    : FramelessView{window, frame},
+      frame_background_{std::make_unique<views::FrameBackground>()} {
   linux_frame_layout_ = LinuxFrameLayout::Create(
       window, window->HasShadow(), LinuxFrameLayout::CSDStyle::kCustom);
 
@@ -100,6 +100,7 @@ void OpaqueFrameView::Init(NativeWindowViews* window, views::Widget* frame) {
                           base::Unretained(frame),
                           views::Widget::ClosedReason::kCloseButtonClicked));
 }
+OpaqueFrameView::~OpaqueFrameView() = default;
 
 int OpaqueFrameView::ResizingBorderHitTest(const gfx::Point& point) {
   return ResizingBorderHitTestImpl(
@@ -226,7 +227,9 @@ void OpaqueFrameView::OnPaint(gfx::Canvas* canvas) {
   frame_background_->set_frame_color(GetFrameColor());
   frame_background_->set_use_custom_frame(true);
   frame_background_->set_is_active(active);
-  frame_background_->set_top_area_height(GetTopAreaHeight());
+  // Prevent the default system titlebar background from being drawn at the top
+  // of frameless windows. Does not affect WCO which draws its own top area.
+  frame_background_->set_top_area_height(0);
 
   const bool draw_shadow = showing_shadow && !linux_frame_layout_->tiled();
   auto shadow_values =
@@ -248,10 +251,13 @@ void OpaqueFrameView::PaintAsActiveChanged() {
 
 void OpaqueFrameView::UpdateFrameCaptionButtons() {
   const bool active = ShouldPaintAsActive();
-  const SkColor symbol_color = window()->overlay_symbol_color();
-  const SkColor background_color = window()->overlay_button_color();
+  const SkColor symbol_color =
+      window()->overlay_symbol_color().value_or(SkColor());
+  const std::optional<SkColor> background_color =
+      window()->overlay_button_color();
+  // Frame color is used for blending, force it to be opaque
   SkColor frame_color =
-      background_color == SkColor() ? GetFrameColor() : background_color;
+      SkColorSetA(background_color.value_or(GetFrameColor()), SK_AlphaOPAQUE);
 
   for (views::Button* button :
        {minimize_button_, maximize_button_, restore_button_, close_button_}) {
@@ -267,8 +273,8 @@ void OpaqueFrameView::UpdateFrameCaptionButtons() {
 
 void OpaqueFrameView::UpdateCaptionButtonPlaceholderContainerBackground() {
   if (caption_button_placeholder_container_) {
-    const SkColor obc = window()->overlay_button_color();
-    const SkColor bg_color = obc == SkColor() ? GetFrameColor() : obc;
+    const std::optional<SkColor> obc = window()->overlay_button_color();
+    const SkColor bg_color = obc.value_or(GetFrameColor());
     caption_button_placeholder_container_->SetBackground(
         views::CreateSolidBackground(bg_color));
   }

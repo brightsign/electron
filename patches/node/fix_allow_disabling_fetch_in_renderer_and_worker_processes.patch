@@ -9,10 +9,10 @@ conflict with Blink's in renderer and worker processes.
 We should try to upstream some version of this.
 
 diff --git a/doc/api/cli.md b/doc/api/cli.md
-index ba9fcc3a3abf48f7ab4416a7ec13e689fd5802c7..4311a6e35ab85876b24c03036e5d91d5adb5c369 100644
+index f8da061fa2d0e852ae8d52ae4b1ab012b1be0332..674a5fd4091955a798831cca2690caaa3f9a1a57 100644
 --- a/doc/api/cli.md
 +++ b/doc/api/cli.md
-@@ -1802,6 +1802,14 @@ changes:
+@@ -1860,6 +1860,14 @@ changes:
  
  Disable using [syntax detection][] to determine module type.
  
@@ -27,7 +27,7 @@ index ba9fcc3a3abf48f7ab4416a7ec13e689fd5802c7..4311a6e35ab85876b24c03036e5d91d5
  ### `--no-experimental-global-navigator`
  
  <!-- YAML
-@@ -3516,6 +3524,7 @@ one is included in the list below.
+@@ -3608,6 +3616,7 @@ one is included in the list below.
  * `--no-addons`
  * `--no-async-context-frame`
  * `--no-deprecation`
@@ -36,10 +36,10 @@ index ba9fcc3a3abf48f7ab4416a7ec13e689fd5802c7..4311a6e35ab85876b24c03036e5d91d5
  * `--no-experimental-repl-await`
  * `--no-experimental-sqlite`
 diff --git a/doc/node.1 b/doc/node.1
-index bed0774b43a21a75eac7466905d7c06d6e9f4f8a..ebc364bbd79972f012a7489853530adc87b580a6 100644
+index 7e3c0628fc3f446a948d5df90b15f22226ee0bb2..8add4831ce68e564dd78e718450be9aba056fa1c 100644
 --- a/doc/node.1
 +++ b/doc/node.1
-@@ -201,6 +201,9 @@ Enable transformation of TypeScript-only syntax into JavaScript code.
+@@ -268,6 +268,9 @@ Enable transformation of TypeScript-only syntax into JavaScript code.
  .It Fl -experimental-eventsource
  Enable experimental support for the EventSource Web API.
  .
@@ -50,7 +50,7 @@ index bed0774b43a21a75eac7466905d7c06d6e9f4f8a..ebc364bbd79972f012a7489853530adc
  Disable experimental support for the WebSocket API.
  .
 diff --git a/lib/internal/process/pre_execution.js b/lib/internal/process/pre_execution.js
-index 4a42dd66f451eece98fded909a72dd5ffcfd9708..a693e35135fc8f7e918e1410a104d4607ece5489 100644
+index 5f664cf690e4dce585e40409c4340ee13e172ae9..677bd2756fb19daac359c1457b1c288949262689 100644
 --- a/lib/internal/process/pre_execution.js
 +++ b/lib/internal/process/pre_execution.js
 @@ -117,6 +117,7 @@ function prepareExecution(options) {
@@ -78,11 +78,31 @@ index 4a42dd66f451eece98fded909a72dd5ffcfd9708..a693e35135fc8f7e918e1410a104d460
  // https://websockets.spec.whatwg.org/
  function setupWebsocket() {
    if (getOptionValue('--no-experimental-websocket')) {
+diff --git a/src/api/environment.cc b/src/api/environment.cc
+index ea8ba25085c12f6180c879f19e543a8151e3792d..2ff363bb5ae6982fd1bd135edfe53075fc0b86a1 100644
+--- a/src/api/environment.cc
++++ b/src/api/environment.cc
+@@ -270,9 +270,13 @@ void SetIsolateMiscHandlers(v8::Isolate* isolate, const IsolateSettings& s) {
+   isolate->SetModifyCodeGenerationFromStringsCallback(
+       modify_code_generation_from_strings_callback);
+ 
+-  isolate->SetWasmStreamingCallback(wasm_web_api::StartStreamingCompilation);
+-
+   Mutex::ScopedLock lock(node::per_process::cli_options_mutex);
++  if (per_process::cli_options->get_per_isolate_options()
++          ->get_per_env_options()
++          ->experimental_fetch) {
++    isolate->SetWasmStreamingCallback(wasm_web_api::StartStreamingCompilation);
++  }
++
+   if (per_process::cli_options->get_per_isolate_options()
+           ->experimental_shadow_realm) {
+     isolate->SetHostCreateShadowRealmContextCallback(
 diff --git a/src/node_options.cc b/src/node_options.cc
-index 79d7c8cac002ba85b95c1d58a8e7cbf84fc35e89..cf66678164f4fca371f853c8afe3c0b7e7e3bc82 100644
+index a3660223bb93493c64c7b0c77d5eb1558fb461c9..684a23fbd11b53b71f32e40e6666dabc791d92d1 100644
 --- a/src/node_options.cc
 +++ b/src/node_options.cc
-@@ -551,7 +551,11 @@ EnvironmentOptionsParser::EnvironmentOptionsParser() {
+@@ -571,7 +571,11 @@ EnvironmentOptionsParser::EnvironmentOptionsParser() {
              &EnvironmentOptions::experimental_eventsource,
              kAllowedInEnvvar,
              false);
@@ -95,8 +115,20 @@ index 79d7c8cac002ba85b95c1d58a8e7cbf84fc35e89..cf66678164f4fca371f853c8afe3c0b7
    AddOption("--experimental-websocket",
              "experimental WebSocket API",
              &EnvironmentOptions::experimental_websocket,
+diff --git a/src/node_options.h b/src/node_options.h
+index ea75cca72d8c4cf247828414dc08dd0082d3e93c..546fd8060fe0abfb902ac75162b02d2dbf1bb52b 100644
+--- a/src/node_options.h
++++ b/src/node_options.h
+@@ -128,6 +128,7 @@ class EnvironmentOptions : public Options {
+   bool enable_source_maps = false;
+   bool experimental_addon_modules = true;
+   bool experimental_eventsource = EXPERIMENTALS_DEFAULT_VALUE;
++  bool experimental_fetch = true;
+   bool experimental_websocket = true;
+   bool experimental_sqlite = HAVE_SQLITE;
+   bool experimental_webstorage = false;
 diff --git a/test/parallel/test-process-env-allowed-flags-are-documented.js b/test/parallel/test-process-env-allowed-flags-are-documented.js
-index d62a2583523c6b3c1de394a18e8060199e446bf1..7d6c6ea7949fd6b52bb54c31a2d71257349e64a9 100644
+index 97301c99e1755645ecf37647b1feecf886f38c78..c3c23594a0123f822038a3b3341965f32b9d6ee6 100644
 --- a/test/parallel/test-process-env-allowed-flags-are-documented.js
 +++ b/test/parallel/test-process-env-allowed-flags-are-documented.js
 @@ -122,7 +122,6 @@ const undocumented = difference(process.allowedNodeEnvironmentFlags,
