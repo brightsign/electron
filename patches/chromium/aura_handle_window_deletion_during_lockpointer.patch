@@ -25,10 +25,10 @@ Commit-Queue: Mitsuru Oshima <oshima@chromium.org>
 Cr-Commit-Position: refs/heads/main@{#1668283}
 
 diff --git a/content/browser/renderer_host/render_widget_host_view_event_handler.cc b/content/browser/renderer_host/render_widget_host_view_event_handler.cc
-index 5eb13036de3e16aab63088ab29ab26631daa989e..044834e83acf892d3a228774bcd1b81fb537d41f 100644
+index 1bbaf5e667abdd72c1b668d75df094b36867bc05..fc7dd9d0637e1bd2f015111c9c880ca0cb35e12e 100644
 --- a/content/browser/renderer_host/render_widget_host_view_event_handler.cc
 +++ b/content/browser/renderer_host/render_widget_host_view_event_handler.cc
-@@ -149,6 +149,7 @@ blink::mojom::PointerLockResult RenderWidgetHostViewEventHandler::LockPointer(
+@@ -159,6 +159,7 @@ blink::mojom::PointerLockResult RenderWidgetHostViewEventHandler::LockPointer(
    }
    mouse_locked_ = true;
  

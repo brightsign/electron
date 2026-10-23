@@ -82,10 +82,10 @@ index fbe796dfe9a2323046f6e9d51475271b99ffed51..538f5520d2b04a4b56024f2946ab676d
      for (Node* node = child_fragment->firstChild(); node;
           node = node->nextSibling()) {
 diff --git a/third_party/blink/renderer/platform/runtime_enabled_features.json5 b/third_party/blink/renderer/platform/runtime_enabled_features.json5
-index 1e93a1da8fa56b022234c88f30f6bad934f4747f..63e309781397c892a885d3a33d0de9948ee8edae 100644
+index fee9da387d4cb1bfe75ecb3beb5eefea21fe8626..d7b9b8fa023e03945e2a1c3f93de9bb3d5b89b43 100644
 --- a/third_party/blink/renderer/platform/runtime_enabled_features.json5
 +++ b/third_party/blink/renderer/platform/runtime_enabled_features.json5
-@@ -4616,7 +4616,7 @@
+@@ -4620,7 +4620,7 @@
        status: "stable",
      },
      {

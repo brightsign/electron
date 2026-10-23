@@ -24,7 +24,7 @@ Reviewed-by: Thomas Lukaszewicz <tluk@chromium.org>
 Cr-Commit-Position: refs/heads/main@{#1686824}
 
 diff --git a/ui/aura/window_event_dispatcher.cc b/ui/aura/window_event_dispatcher.cc
-index 72db39f1cf636a16b5008799ddcf978988a8e636..ff800b0a49a3a5475d12990e515ab908826b3d54 100644
+index 5db244248d462a28e74f2fdc0ec1181a3f94edca..e57c9f806495127d5d270117d7e3f4a46fddea0f 100644
 --- a/ui/aura/window_event_dispatcher.cc
 +++ b/ui/aura/window_event_dispatcher.cc
 @@ -427,6 +427,9 @@ void WindowEventDispatcher::UpdateCapture(Window* old_capture,

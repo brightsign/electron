@@ -265,7 +265,7 @@ index 7d0e85f6739ffdc16c270277e0ac1b2e594975fd..d4efba7d7a3770c1b5a8d83aaca1afb3
  
  #endif  // SERVICES_NETWORK_PUBLIC_CPP_FEATURES_H_
 diff --git a/services/network/public/mojom/network_context.mojom b/services/network/public/mojom/network_context.mojom
-index f3f98c86bb08b0fe229d5dd57b30a696d6ad5952..450b62661498127cc28fefc8e9fa6fd7ca26657d 100644
+index 8776080f96ba107b30ec97ac7434b92078fa5719..7aa4dda298cde20eb665b2eee44a04b8ba283657 100644
 --- a/services/network/public/mojom/network_context.mojom
 +++ b/services/network/public/mojom/network_context.mojom
 @@ -830,6 +830,17 @@ struct URLLoaderFactoryParams {

@@ -62,10 +62,10 @@ index 44ff26546c1c8f498784afca1c26deb45ccb9e87..a756cf1eaa598dc3d237b62fa7d7f1f5
    transient_allow_popup_.Deactivate();
  
 diff --git a/content/browser/web_contents/web_contents_impl.cc b/content/browser/web_contents/web_contents_impl.cc
-index 8fcea8528de4c10a6a2b730f130f6c5fdc9c92a8..e24c2cd92be8f49703f2782409e2f2b88ffa0afa 100644
+index fcce6f50fb7b7fcd00fdc2f69e2cd5ab88d5ff78..4feb9acc4ba19d3184fd082aa653dee9de400cb5 100644
 --- a/content/browser/web_contents/web_contents_impl.cc
 +++ b/content/browser/web_contents/web_contents_impl.cc
-@@ -5639,12 +5639,20 @@ FrameTree* WebContentsImpl::CreateNewWindow(
+@@ -5646,12 +5646,20 @@ FrameTree* WebContentsImpl::CreateNewWindow(
    bool was_blocked = false;
    base::WeakPtr<WebContentsImpl> weak_new_contents =
        new_contents_impl->weak_factory_.GetWeakPtr();

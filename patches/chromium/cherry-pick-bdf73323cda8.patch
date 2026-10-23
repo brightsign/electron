@@ -61,7 +61,7 @@ index 9f1fed843c9f83c0791becce1ff68129d7e67b91..15b058b20a3a65452a7c63b0b53f232d
      EXPECT_TRUE(handle->IsWaitingToCommit());
    }
 diff --git a/content/browser/web_contents/web_contents_impl.cc b/content/browser/web_contents/web_contents_impl.cc
-index e24c2cd92be8f49703f2782409e2f2b88ffa0afa..2beb3ea411196e6f138596be68d91fef6f77482b 100644
+index 4feb9acc4ba19d3184fd082aa653dee9de400cb5..9762a61e2e0fad0d0106a6e40b2a259974f28fef 100644
 --- a/content/browser/web_contents/web_contents_impl.cc
 +++ b/content/browser/web_contents/web_contents_impl.cc
 @@ -761,9 +761,16 @@ class JavaScriptDialogDismissNotifier {

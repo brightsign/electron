@@ -65,7 +65,7 @@ index ef876a70515d7969f5966d076d59c519d84f6b02..99379bf16a5182dafd33df1d45d83bff
    subsurface_ =
        root_surface()->CreateSubsurface(parent_window()->root_surface());
 diff --git a/ui/ozone/platform/wayland/host/wayland_frame_manager.cc b/ui/ozone/platform/wayland/host/wayland_frame_manager.cc
-index 96448ba03b1bffd662299950d68e61db3e02395b..8e544d7a2f37585a64bd51a80d34945c2dbdf063 100644
+index fa15de1db7d04a5e5f3823314221fc11e113d6cb..ffa442e9dde1110184db9ab7d7548e8f8d9453e8 100644
 --- a/ui/ozone/platform/wayland/host/wayland_frame_manager.cc
 +++ b/ui/ozone/platform/wayland/host/wayland_frame_manager.cc
 @@ -198,7 +198,11 @@ void WaylandFrameManager::MaybeProcessPendingFrame() {
@@ -133,10 +133,10 @@ index 8b5b03e7579b43b496909f1fc0a909ab9f614f60..75c74757a552d5038eff6292bcef64ba
    }
    ProcessPendingConfigureState(serial);
 diff --git a/ui/ozone/platform/wayland/host/wayland_toplevel_window.cc b/ui/ozone/platform/wayland/host/wayland_toplevel_window.cc
-index 77bfc42bb211d138dd9c88fbf7627a8146ffa847..be83f61c2b36ead50e8ff93eccd11de756a53d04 100644
+index db44ee8b10cef7ab845e243bf890e59d8bec844d..3113d6f66a23e69cff7fc8f4a79dd052526ee33e 100644
 --- a/ui/ozone/platform/wayland/host/wayland_toplevel_window.cc
 +++ b/ui/ozone/platform/wayland/host/wayland_toplevel_window.cc
-@@ -530,7 +530,11 @@ void WaylandToplevelWindow::HandleToplevelConfigureWithOrigin(
+@@ -564,7 +564,11 @@ void WaylandToplevelWindow::HandleToplevelConfigureWithOrigin(
    if (window_states.tiled_edges != applied_state().tiled_edges) {
      // This configure changes the decoration insets.  We should adjust the
      // bounds appropriately.
@@ -148,7 +148,7 @@ index 77bfc42bb211d138dd9c88fbf7627a8146ffa847..be83f61c2b36ead50e8ff93eccd11de7
    }
  
    pending_configure_state_.tiled_edges = window_states.tiled_edges;
-@@ -868,7 +872,11 @@ void WaylandToplevelWindow::TriggerStateChanges(
+@@ -913,7 +917,11 @@ void WaylandToplevelWindow::TriggerStateChanges(
    // TODO(crbug.com/40276379): Remove this once this is async.
    auto previous_state = applied_state().window_state;
    ForceApplyWindowStateDoNotUse(window_state);
@@ -161,10 +161,10 @@ index 77bfc42bb211d138dd9c88fbf7627a8146ffa847..be83f61c2b36ead50e8ff93eccd11de7
  }
  
 diff --git a/ui/ozone/platform/wayland/host/wayland_window.cc b/ui/ozone/platform/wayland/host/wayland_window.cc
-index 36bf67c904288289ec05090631ac74ab518cb70b..3cb0cc54ce4cb52229ebba90c4d0ce1897585905 100644
+index 4db3c244135c73cc286ee9f643450842d9fdc084..0062835c6bb005a07477b5a04f60a83d77888d5e 100644
 --- a/ui/ozone/platform/wayland/host/wayland_window.cc
 +++ b/ui/ozone/platform/wayland/host/wayland_window.cc
-@@ -163,7 +163,11 @@ void WaylandWindow::UpdateWindowScale(bool update_bounds) {
+@@ -164,7 +164,11 @@ void WaylandWindow::UpdateWindowScale(bool update_bounds) {
    const auto window_scale = connection_->UsePerSurfaceScaling()
                                  ? GetPreferredScaleFactor()
                                  : GetScaleFactorFromEnteredOutputs();

@@ -33,7 +33,7 @@ index 8672211976053cc1ceea63a1e38c2d8b6fccff9b..5fca4fcc6608a2468e7f75db99bfafc7
    if (policy_container_host_) {
      params->policy_container =
 diff --git a/content/public/browser/content_browser_client.cc b/content/public/browser/content_browser_client.cc
-index a802bf1313efb37fffcf8a29acdcdb260e26232e..c7486e4a9f12f12a4fc0f77687f57f2619020326 100644
+index da701056c0a08ed66c81a40e00d1005df8f8aa9c..bbcfa3a006783366b891fe3b31de1f40c10261be 100644
 --- a/content/public/browser/content_browser_client.cc
 +++ b/content/public/browser/content_browser_client.cc
 @@ -870,6 +870,13 @@ ContentBrowserClient::GetExtraCreateNewWindowReplyData(

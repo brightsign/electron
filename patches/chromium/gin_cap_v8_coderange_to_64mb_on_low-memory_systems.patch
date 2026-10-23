@@ -21,7 +21,7 @@ set a code_range_size. This allows both processes to reserve their
 CodeRange within the kernel's overcommit budget (2x64MB = 128MB).
 
 diff --git a/gin/isolate_holder.cc b/gin/isolate_holder.cc
-index 24127c579e149345cc9b937b17dbfe630b0d3c35..406fc211731fd28e3047675e09c26e265e97cbb3 100644
+index 7c640559dc7a09730f0053be8798d10bc8ac1a1c..4e24bf90abf3902cf4c839adc18e764d9ed632d9 100644
 --- a/gin/isolate_holder.cc
 +++ b/gin/isolate_holder.cc
 @@ -198,6 +198,16 @@ IsolateHolder::getDefaultIsolateParams() {

@@ -14,7 +14,7 @@ Commit-Queue: Mitsuru Oshima <oshima@chromium.org>
 Cr-Commit-Position: refs/heads/main@{#1665117}
 
 diff --git a/ui/aura/window_event_dispatcher.cc b/ui/aura/window_event_dispatcher.cc
-index fbfab5c4f35df02418beebf145683ec8d39fd7e6..72db39f1cf636a16b5008799ddcf978988a8e636 100644
+index 5e78bd980ca04c4faba09cd639ee574d5023f5f6..5db244248d462a28e74f2fdc0ec1181a3f94edca 100644
 --- a/ui/aura/window_event_dispatcher.cc
 +++ b/ui/aura/window_event_dispatcher.cc
 @@ -376,6 +376,9 @@ void WindowEventDispatcher::OnWindowHidden(Window* invisible,

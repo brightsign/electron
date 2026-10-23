@@ -23,10 +23,10 @@ render_widget_host_view_aura_unittest.cc conflicted with unrelated test drift
 and were dropped; the production changes are unmodified.
 
 diff --git a/content/browser/renderer_host/render_widget_host_view_event_handler.cc b/content/browser/renderer_host/render_widget_host_view_event_handler.cc
-index 044834e83acf892d3a228774bcd1b81fb537d41f..2ad6f46e8b908658685370252178126ca54c0f4e 100644
+index fc7dd9d0637e1bd2f015111c9c880ca0cb35e12e..f7357b53c9b7b83a7f334a5d4eca0339355b912c 100644
 --- a/content/browser/renderer_host/render_widget_host_view_event_handler.cc
 +++ b/content/browser/renderer_host/render_widget_host_view_event_handler.cc
-@@ -375,7 +375,11 @@ void RenderWidgetHostViewEventHandler::OnMouseEvent(ui::MouseEvent* event) {
+@@ -385,7 +385,11 @@ void RenderWidgetHostViewEventHandler::OnMouseEvent(ui::MouseEvent* event) {
        // Confirm existing composition text on mouse press, to make sure
        // the input caret won't be moved with an ongoing composition text.
        if (event->type() == ui::EventType::kMousePressed) {
@@ -38,7 +38,7 @@ index 044834e83acf892d3a228774bcd1b81fb537d41f..2ad6f46e8b908658685370252178126c
        }
  
        blink::WebMouseEvent mouse_event = ui::MakeWebMouseEvent(*event);
-@@ -557,7 +561,11 @@ void RenderWidgetHostViewEventHandler::OnGestureEvent(ui::GestureEvent* event) {
+@@ -567,7 +571,11 @@ void RenderWidgetHostViewEventHandler::OnGestureEvent(ui::GestureEvent* event) {
    // Confirm existing composition text on TAP gesture, to make sure the input
    // caret won't be moved with an ongoing composition text.
    if (event->type() == ui::EventType::kGestureTap) {
@@ -50,7 +50,7 @@ index 044834e83acf892d3a228774bcd1b81fb537d41f..2ad6f46e8b908658685370252178126c
    }
  
    blink::WebGestureEvent gesture = ui::MakeWebGestureEvent(*event);
-@@ -675,8 +683,15 @@ void RenderWidgetHostViewEventHandler::FinishImeCompositionSession() {
+@@ -685,8 +693,15 @@ void RenderWidgetHostViewEventHandler::FinishImeCompositionSession() {
    // call to finish composition text should be made through the RWHVA itself
    // otherwise the following call to cancel composition will lead to an extra
    // IPC for finishing the ongoing composition (see https://crbug.com/723024).
@@ -67,7 +67,7 @@ index 044834e83acf892d3a228774bcd1b81fb537d41f..2ad6f46e8b908658685370252178126c
  }
  
 diff --git a/content/browser/renderer_host/render_widget_host_view_event_handler.h b/content/browser/renderer_host/render_widget_host_view_event_handler.h
-index d975a34154643bc6da28ab3b2f610bdc78aae93e..aabc595df57a30ad6e8b547eff90899190d3929b 100644
+index f4b2dbf7bd81fb91800c6de4c427e7ea5d315182..ddadf63c07d3c702f2e9fa2866133784881e5684 100644
 --- a/content/browser/renderer_host/render_widget_host_view_event_handler.h
 +++ b/content/browser/renderer_host/render_widget_host_view_event_handler.h
 @@ -11,6 +11,7 @@
@@ -78,7 +78,7 @@ index d975a34154643bc6da28ab3b2f610bdc78aae93e..aabc595df57a30ad6e8b547eff908991
  #include "build/build_config.h"
  #include "components/input/native_web_keyboard_event.h"
  #include "content/browser/renderer_host/input/mouse_wheel_phase_handler.h"
-@@ -322,6 +323,9 @@ class CONTENT_EXPORT RenderWidgetHostViewEventHandler
+@@ -324,6 +325,9 @@ class CONTENT_EXPORT RenderWidgetHostViewEventHandler
  
    // Used to identify pointing device that can fire fling events.
    base::flat_set<int> fling_capable_device_ids_;

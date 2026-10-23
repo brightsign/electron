@@ -139,7 +139,7 @@ index 8a0c3cdb36da4c80e858e10d3ea0d5c15f401771..b283438e45c4fd82aa5318e6cbb4d4d2
  };
  
 diff --git a/ui/aura/window_event_dispatcher.cc b/ui/aura/window_event_dispatcher.cc
-index 180a83d83d350712a3424d80c069fc71a6d6ebb8..fbfab5c4f35df02418beebf145683ec8d39fd7e6 100644
+index 4ce8b2ccb5e7df2be5230600b0808ab07475ce54..5e78bd980ca04c4faba09cd639ee574d5023f5f6 100644
 --- a/ui/aura/window_event_dispatcher.cc
 +++ b/ui/aura/window_event_dispatcher.cc
 @@ -424,6 +424,12 @@ void WindowEventDispatcher::UpdateCapture(Window* old_capture,

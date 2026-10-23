@@ -33,7 +33,7 @@ Cr-Commit-Position: refs/branch-heads/7871@{#3417}
 Cr-Branched-From: f542126b8c1b3e80104b26bb05ec830bd1206f29-refs/heads/main@{#1639810}
 
 diff --git a/ui/aura/window.cc b/ui/aura/window.cc
-index 6809e434c791cb8e1de21d2008e34a13ccd373ea..91ef981a6984acfbd8aab82daa8cba09c167da96 100644
+index 760489a6d080e0bf0af8a75949ffcf6465b3dd43..7cfe48599a56830cf239a8dbd9e99419eee1e643 100644
 --- a/ui/aura/window.cc
 +++ b/ui/aura/window.cc
 @@ -148,18 +148,31 @@ class ScopedCursorHider {

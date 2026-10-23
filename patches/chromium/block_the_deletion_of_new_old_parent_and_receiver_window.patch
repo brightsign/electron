@@ -14,10 +14,10 @@ Reviewed-by: Achuith Bhandarkar <achuith@chromium.org>
 Cr-Commit-Position: refs/heads/main@{#1666030}
 
 diff --git a/ui/aura/window.cc b/ui/aura/window.cc
-index 1409dad4b6c773ff8a2e1c80e70d8c4638e705c7..95f12e7371e07b1e3dd6373de5bc4ca80103c465 100644
+index 67acd3bcfb3846aedf802c93678915a006eb8649..b960cdd7c18853ff94e5055ed1156c3dc200fdf2 100644
 --- a/ui/aura/window.cc
 +++ b/ui/aura/window.cc
-@@ -1262,6 +1262,13 @@ void Window::NotifyAddedToRootWindow() {
+@@ -1268,6 +1268,13 @@ void Window::NotifyAddedToRootWindow() {
  
  void Window::NotifyWindowHierarchyChange(
      const WindowObserver::HierarchyChangeParams& params) {
@@ -31,7 +31,7 @@ index 1409dad4b6c773ff8a2e1c80e70d8c4638e705c7..95f12e7371e07b1e3dd6373de5bc4ca8
    params.target->NotifyWindowHierarchyChangeDown(params);
    switch (params.phase) {
      case WindowObserver::HierarchyChangeParams::HIERARCHY_CHANGING:
-@@ -1292,6 +1299,8 @@ void Window::NotifyWindowHierarchyChangeUp(
+@@ -1298,6 +1305,8 @@ void Window::NotifyWindowHierarchyChangeUp(
  
  void Window::NotifyWindowHierarchyChangeAtReceiver(
      const WindowObserver::HierarchyChangeParams& params) {
@@ -41,7 +41,7 @@ index 1409dad4b6c773ff8a2e1c80e70d8c4638e705c7..95f12e7371e07b1e3dd6373de5bc4ca8
    local_params.receiver = this;
  
 diff --git a/ui/aura/window.h b/ui/aura/window.h
-index 4762eb3ecc315e30566e268afde8d2e061b825bf..8425404df24a798e98480674f7d4b2844d51152e 100644
+index c04cadf90463358afa68913a2f8e77b115f61e7e..38ea875c5e16895dd97b1307991a3855b896f6a2 100644
 --- a/ui/aura/window.h
 +++ b/ui/aura/window.h
 @@ -127,15 +127,22 @@ class AURA_EXPORT Window : public ui::LayerDelegate,

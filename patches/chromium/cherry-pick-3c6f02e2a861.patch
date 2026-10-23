@@ -277,10 +277,10 @@ index aaea502bde5afaf31329dfc3c79e9a083e2aa95f..eeaa96754aaa79190958cf837f05e2cc
        // UI.
        /*pip_tucker=*/GetContentClient()
 diff --git a/content/browser/web_contents/web_contents_impl.cc b/content/browser/web_contents/web_contents_impl.cc
-index 2beb3ea411196e6f138596be68d91fef6f77482b..4ccd515ae8be62b5f0bc10765726efe3fc54d02b 100644
+index 9762a61e2e0fad0d0106a6e40b2a259974f28fef..87ec0e668369067dd68d80cd61368fd4d75c7231 100644
 --- a/content/browser/web_contents/web_contents_impl.cc
 +++ b/content/browser/web_contents/web_contents_impl.cc
-@@ -5857,7 +5857,9 @@ WebContents* WebContentsImpl::ShowCreatedWindow(
+@@ -5864,7 +5864,9 @@ WebContents* WebContentsImpl::ShowCreatedWindow(
    // Only drop fullscreen on the specific destination display, if it is known.
    // This supports sites using cross-screen window management capabilities to
    // retain fullscreen and open a window on another screen.
@@ -291,7 +291,7 @@ index 2beb3ea411196e6f138596be68d91fef6f77482b..4ccd515ae8be62b5f0bc10765726efe3
  
    // The delegate can be null in tests.
    if (!delegate) {
-@@ -7430,10 +7432,12 @@ void WebContentsImpl::ExitFullscreen(bool will_cause_resize) {
+@@ -7437,10 +7439,12 @@ void WebContentsImpl::ExitFullscreen(bool will_cause_resize) {
    ExitFullscreenMode(will_cause_resize);
  }
  
@@ -306,7 +306,7 @@ index 2beb3ea411196e6f138596be68d91fef6f77482b..4ccd515ae8be62b5f0bc10765726efe3
    // Make WebContentses "related" to this instance exit HTML element fullscreen,
    // ignoring browser fullscreen and fullscreen-within-tab modes. This needs to
    // be done with two passes, because it is simple to walk _up_ the chain of
-@@ -7461,6 +7465,9 @@ base::ScopedClosureRunner WebContentsImpl::ForSecurityDropFullscreen(
+@@ -7468,6 +7472,9 @@ base::ScopedClosureRunner WebContentsImpl::ForSecurityDropFullscreen(
    }
  
    for (auto& fullscreen_contents : fullscreen_contents_list) {
@@ -316,7 +316,7 @@ index 2beb3ea411196e6f138596be68d91fef6f77482b..4ccd515ae8be62b5f0bc10765726efe3
      if (!fullscreen_contents) {
        continue;
      }
-@@ -7473,6 +7480,10 @@ base::ScopedClosureRunner WebContentsImpl::ForSecurityDropFullscreen(
+@@ -7480,6 +7487,10 @@ base::ScopedClosureRunner WebContentsImpl::ForSecurityDropFullscreen(
      }
    }
  
@@ -327,7 +327,7 @@ index 2beb3ea411196e6f138596be68d91fef6f77482b..4ccd515ae8be62b5f0bc10765726efe3
    // Second, walk upstream from this WebContents, and drop the fullscreen of
    // all WebContentses that are in fullscreen. Block all the WebContentses in
    // the chain from entering fullscreen while the returned closure runner is
-@@ -7487,6 +7498,9 @@ base::ScopedClosureRunner WebContentsImpl::ForSecurityDropFullscreen(
+@@ -7494,6 +7505,9 @@ base::ScopedClosureRunner WebContentsImpl::ForSecurityDropFullscreen(
    }
  
    for (auto& opener : openers) {
@@ -337,7 +337,7 @@ index 2beb3ea411196e6f138596be68d91fef6f77482b..4ccd515ae8be62b5f0bc10765726efe3
      if (!opener) {
        continue;
      }
-@@ -8285,11 +8299,9 @@ void WebContentsImpl::ViewSource(RenderFrameHostImpl* frame) {
+@@ -8292,11 +8306,9 @@ void WebContentsImpl::ViewSource(RenderFrameHostImpl* frame) {
  
    // Any new WebContents opened while this WebContents is in fullscreen can be
    // used to confuse the user, so drop fullscreen.
@@ -352,7 +352,7 @@ index 2beb3ea411196e6f138596be68d91fef6f77482b..4ccd515ae8be62b5f0bc10765726efe3
  
    // We intentionally don't share the SiteInstance with the original frame so
    // that view source has a consistent process model and always ends up in a new
-@@ -8542,9 +8554,12 @@ void WebContentsImpl::EnumerateDirectory(
+@@ -8549,9 +8561,12 @@ void WebContentsImpl::EnumerateDirectory(
  
    // Any explicit focusing of another window while this WebContents is in
    // fullscreen can be used to confuse the user, so drop fullscreen.
@@ -367,7 +367,7 @@ index 2beb3ea411196e6f138596be68d91fef6f77482b..4ccd515ae8be62b5f0bc10765726efe3
  
    if (delegate_) {
      active_file_chooser_ = std::move(file_chooser);
-@@ -9119,14 +9134,17 @@ void WebContentsImpl::RunJavaScriptDialog(
+@@ -9126,14 +9141,17 @@ void WebContentsImpl::RunJavaScriptDialog(
  
    // Running a dialog causes an exit to webpage-initiated fullscreen.
    // http://crbug.com/728276
@@ -387,7 +387,7 @@ index 2beb3ea411196e6f138596be68d91fef6f77482b..4ccd515ae8be62b5f0bc10765726efe3
  
    std::vector<protocol::PageHandler*> page_handlers =
        protocol::PageHandler::EnabledForWebContents(this);
-@@ -9252,14 +9270,17 @@ void WebContentsImpl::RunBeforeUnloadConfirm(
+@@ -9259,14 +9277,17 @@ void WebContentsImpl::RunBeforeUnloadConfirm(
  
    // Running a dialog causes an exit to webpage-initiated fullscreen.
    // http://crbug.com/728276
@@ -407,7 +407,7 @@ index 2beb3ea411196e6f138596be68d91fef6f77482b..4ccd515ae8be62b5f0bc10765726efe3
  
    std::vector<protocol::PageHandler*> page_handlers =
        protocol::PageHandler::EnabledForWebContents(this);
-@@ -9356,9 +9377,12 @@ void WebContentsImpl::RunFileChooser(
+@@ -9363,9 +9384,12 @@ void WebContentsImpl::RunFileChooser(
  
    // Any explicit focusing of another window while this WebContents is in
    // fullscreen can be used to confuse the user, so drop fullscreen.
@@ -422,7 +422,7 @@ index 2beb3ea411196e6f138596be68d91fef6f77482b..4ccd515ae8be62b5f0bc10765726efe3
  
    if (delegate_) {
      active_file_chooser_ = std::move(file_chooser);
-@@ -9762,7 +9786,9 @@ void WebContentsImpl::SetWindowRect(const gfx::Rect& new_bounds) {
+@@ -9769,7 +9793,9 @@ void WebContentsImpl::SetWindowRect(const gfx::Rect& new_bounds) {
    // Only drop fullscreen on the specific destination display, which is known.
    // This supports sites using cross-screen window management capabilities to
    // retain fullscreen and place a window on another screen.
@@ -433,7 +433,7 @@ index 2beb3ea411196e6f138596be68d91fef6f77482b..4ccd515ae8be62b5f0bc10765726efe3
  
    delegate_->SetContentsBounds(this, bounds);
  }
-@@ -10468,11 +10494,9 @@ void WebContentsImpl::DidCallFocus() {
+@@ -10475,11 +10501,9 @@ void WebContentsImpl::DidCallFocus() {
    OPTIONAL_TRACE_EVENT0("content", "WebContentsImpl::DidCallFocus");
    // Any explicit focusing of another window while this WebContents is in
    // fullscreen can be used to confuse the user, so drop fullscreen.

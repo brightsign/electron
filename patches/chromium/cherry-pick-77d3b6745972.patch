@@ -25,10 +25,10 @@ Electron adaptation notes (42-x-y, Chromium 148.0.7778.280):
   side verbatim (the branch's brace-less if-statements were the only drift).
 
 diff --git a/content/browser/renderer_host/render_widget_host_view_aura.cc b/content/browser/renderer_host/render_widget_host_view_aura.cc
-index 59d70baff573aca770bcd2f8a39542bd57c68e24..e1e3abd5cc28f1168a91bde61060b2496954a7f0 100644
+index 54dfd9e62e3b45f49632d8d863116fbe2cd0cd7b..0dc7f57efbd1cc6ac871179f4992bdbef56f6be8 100644
 --- a/content/browser/renderer_host/render_widget_host_view_aura.cc
 +++ b/content/browser/renderer_host/render_widget_host_view_aura.cc
-@@ -3359,11 +3359,29 @@ void RenderWidgetHostViewAura::OnUpdateTextInputStateCalled(
+@@ -3426,11 +3426,29 @@ void RenderWidgetHostViewAura::OnUpdateTextInputStateCalled(
      bool did_update_state) {
    CHECK_EQ(text_input_manager_, text_input_manager);
  
@@ -60,7 +60,7 @@ index 59d70baff573aca770bcd2f8a39542bd57c68e24..e1e3abd5cc28f1168a91bde61060b249
  
    const ui::mojom::TextInputState* state =
        text_input_manager_->GetTextInputState();
-@@ -3377,6 +3395,12 @@ void RenderWidgetHostViewAura::OnUpdateTextInputStateCalled(
+@@ -3444,6 +3462,12 @@ void RenderWidgetHostViewAura::OnUpdateTextInputStateCalled(
                 ui::mojom::VirtualKeyboardVisibilityRequest::HIDE) {
        GetInputMethod()->SetVirtualKeyboardVisibilityIfEnabled(false);
      }
@@ -73,7 +73,7 @@ index 59d70baff573aca770bcd2f8a39542bd57c68e24..e1e3abd5cc28f1168a91bde61060b249
    }
  #endif
  
-@@ -3387,6 +3411,12 @@ void RenderWidgetHostViewAura::OnUpdateTextInputStateCalled(
+@@ -3454,6 +3478,12 @@ void RenderWidgetHostViewAura::OnUpdateTextInputStateCalled(
      if (state->show_ime_if_needed &&
          GetInputMethod()->GetTextInputClient() == this) {
        GetInputMethod()->SetVirtualKeyboardVisibilityIfEnabled(true);
@@ -86,7 +86,7 @@ index 59d70baff573aca770bcd2f8a39542bd57c68e24..e1e3abd5cc28f1168a91bde61060b249
      }
  // TODO(crbug.com/40110609): Remove this once TSF fix for input pane policy
  // is serviced
-@@ -3398,6 +3428,12 @@ void RenderWidgetHostViewAura::OnUpdateTextInputStateCalled(
+@@ -3465,6 +3495,12 @@ void RenderWidgetHostViewAura::OnUpdateTextInputStateCalled(
                                                             GetInputMethod());
        }
        virtual_keyboard_controller_win_->UpdateTextInputState(state);
@@ -99,7 +99,7 @@ index 59d70baff573aca770bcd2f8a39542bd57c68e24..e1e3abd5cc28f1168a91bde61060b249
      }
  #endif
    }
-@@ -3405,6 +3441,12 @@ void RenderWidgetHostViewAura::OnUpdateTextInputStateCalled(
+@@ -3472,6 +3508,12 @@ void RenderWidgetHostViewAura::OnUpdateTextInputStateCalled(
    // Ensure that selection bounds changes are sent to the IME.
    if (state && state->type != ui::TEXT_INPUT_TYPE_NONE) {
      text_input_manager->NotifySelectionBoundsChanged(updated_view);

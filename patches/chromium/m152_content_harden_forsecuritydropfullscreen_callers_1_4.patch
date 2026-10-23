@@ -58,10 +58,10 @@ earlier position. Browser test conflicts (includes and new tests) were
 taken from upstream.
 
 diff --git a/content/browser/web_contents/web_contents_impl.cc b/content/browser/web_contents/web_contents_impl.cc
-index 038703e8c671964c7492981f9b5e400dd7b391b7..79a70a2019f40bf9fe79c9108b082bf04039566e 100644
+index 4b7cf5b48d27ceedcb6acff4565206084a85de0b..744f251338608c142bfc18dc4c96e0455d16c8ca 100644
 --- a/content/browser/web_contents/web_contents_impl.cc
 +++ b/content/browser/web_contents/web_contents_impl.cc
-@@ -5852,10 +5852,6 @@ WebContents* WebContentsImpl::ShowCreatedWindow(
+@@ -5859,10 +5859,6 @@ WebContents* WebContentsImpl::ShowCreatedWindow(
  
    WebContentsImpl* created = owned_created->contents.get();
  
@@ -72,7 +72,7 @@ index 038703e8c671964c7492981f9b5e400dd7b391b7..79a70a2019f40bf9fe79c9108b082bf0
    // Individual members of |window_features.bounds| may be 0 to indicate that
    // the window.open() feature string did not specify a value. This code does
    // not distinguish between an unspecified value and 0.
-@@ -5872,7 +5868,11 @@ WebContents* WebContentsImpl::ShowCreatedWindow(
+@@ -5879,7 +5875,11 @@ WebContents* WebContentsImpl::ShowCreatedWindow(
      return nullptr;
    }
  
@@ -85,7 +85,7 @@ index 038703e8c671964c7492981f9b5e400dd7b391b7..79a70a2019f40bf9fe79c9108b082bf0
    if (!delegate) {
      return nullptr;
    }
-@@ -8294,6 +8294,20 @@ void WebContentsImpl::ViewSource(RenderFrameHostImpl* frame) {
+@@ -8301,6 +8301,20 @@ void WebContentsImpl::ViewSource(RenderFrameHostImpl* frame) {
      return;
    }
  
@@ -106,7 +106,7 @@ index 038703e8c671964c7492981f9b5e400dd7b391b7..79a70a2019f40bf9fe79c9108b082bf0
    // Use the last committed entry, since the pending entry hasn't loaded yet and
    // won't be copied into the cloned tab.
    NavigationEntryImpl* last_committed_entry =
-@@ -8308,15 +8322,6 @@ void WebContentsImpl::ViewSource(RenderFrameHostImpl* frame) {
+@@ -8315,15 +8329,6 @@ void WebContentsImpl::ViewSource(RenderFrameHostImpl* frame) {
      return;
    }
  
@@ -122,7 +122,7 @@ index 038703e8c671964c7492981f9b5e400dd7b391b7..79a70a2019f40bf9fe79c9108b082bf0
  
    // We intentionally don't share the SiteInstance with the original frame so
    // that view source has a consistent process model and always ends up in a new
-@@ -8546,12 +8551,15 @@ void WebContentsImpl::OnPageScaleFactorChanged(PageImpl& source) {
+@@ -8553,12 +8558,15 @@ void WebContentsImpl::OnPageScaleFactorChanged(PageImpl& source) {
  
  void WebContentsImpl::EnumerateDirectory(
      base::WeakPtr<FileChooserImpl> file_chooser,
@@ -139,7 +139,7 @@ index 038703e8c671964c7492981f9b5e400dd7b391b7..79a70a2019f40bf9fe79c9108b082bf0
    absl::Cleanup cancel_chooser = [&listener] {
      listener->FileSelectionCanceled();
    };
-@@ -8569,10 +8577,13 @@ void WebContentsImpl::EnumerateDirectory(
+@@ -8576,10 +8584,13 @@ void WebContentsImpl::EnumerateDirectory(
    }
  
    // Any explicit focusing of another window while this WebContents is in
@@ -155,7 +155,7 @@ index 038703e8c671964c7492981f9b5e400dd7b391b7..79a70a2019f40bf9fe79c9108b082bf0
      return;
    }
    listener->SetFullscreenBlock(std::move(*blocker));
-@@ -9816,7 +9827,7 @@ void WebContentsImpl::SetWindowRect(const gfx::Rect& new_bounds) {
+@@ -9823,7 +9834,7 @@ void WebContentsImpl::SetWindowRect(const gfx::Rect& new_bounds) {
    // Only drop fullscreen on the specific destination display, which is known.
    // This supports sites using cross-screen window management capabilities to
    // retain fullscreen and place a window on another screen.

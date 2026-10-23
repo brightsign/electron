@@ -259,10 +259,10 @@ index 1b86d43f5ede7401a60f10da792c62def7c7c1db..19e209b3ade596d3a799fdcc9179fdda
  }  // namespace
  }  // namespace blink
 diff --git a/third_party/blink/renderer/platform/runtime_enabled_features.json5 b/third_party/blink/renderer/platform/runtime_enabled_features.json5
-index 63e309781397c892a885d3a33d0de9948ee8edae..25711d53a0cfac14cebec379c0e945b682f70123 100644
+index d7b9b8fa023e03945e2a1c3f93de9bb3d5b89b43..777f206878105542a9e954fb504a33114146c50f 100644
 --- a/third_party/blink/renderer/platform/runtime_enabled_features.json5
 +++ b/third_party/blink/renderer/platform/runtime_enabled_features.json5
-@@ -5219,6 +5219,10 @@
+@@ -5223,6 +5223,10 @@
        name: "ServiceWorkerClientLifecycleState",
        status: "experimental",
      },

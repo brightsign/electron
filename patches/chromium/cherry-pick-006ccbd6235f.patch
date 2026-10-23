@@ -160,10 +160,10 @@ index b18e4af2d2b3fdecf7722dc836f7a14967d815d4..80e5c5e7c47b623d51f6dad0c87a8345
    uint32_t skip_byte_block_ = 0;   // Count of the unencrypted blocks.
  };
 diff --git a/media/base/media_switches.cc b/media/base/media_switches.cc
-index 1cdacae4522fed5cc8f5009a289f7d9d9d7af953..53483ad39f005c1d4f9cc83c4016f5d166598f96 100644
+index 079b5b49bdc5bec65c312d78ab3ea2014c2e028c..3f7bbcdc93ce2e385ab3cd2f983766b1972219d0 100644
 --- a/media/base/media_switches.cc
 +++ b/media/base/media_switches.cc
-@@ -1556,6 +1556,10 @@ BASE_FEATURE(kFuchsiaMediacodecVideoEncoder, base::FEATURE_DISABLED_BY_DEFAULT);
+@@ -1567,6 +1567,10 @@ BASE_FEATURE(kFuchsiaMediacodecVideoEncoder, base::FEATURE_DISABLED_BY_DEFAULT);
  // Note: This is controlled on a per-board basis by ChromeOS and must be kept.
  BASE_FEATURE(kVideoDecodeBatching, base::FEATURE_ENABLED_BY_DEFAULT);
  
@@ -175,10 +175,10 @@ index 1cdacae4522fed5cc8f5009a289f7d9d9d7af953..53483ad39f005c1d4f9cc83c4016f5d1
  // cached bounds when the permission prompt is visible. If this feature is
  // enabled (the default), we will clear the cached bounds, whenever the
 diff --git a/media/base/media_switches.h b/media/base/media_switches.h
-index ec136f49f1ed2dadef3159bd423cc65da7796d05..66d39f9c9b7b0d2871235f5da0ad8ebb5f42534e 100644
+index 2a345fe27d0a6151b040a2f1270acf3827d9fd95..5e5c6527366641be08df010e8e1b5564428c71c9 100644
 --- a/media/base/media_switches.h
 +++ b/media/base/media_switches.h
-@@ -477,6 +477,8 @@ MEDIA_EXPORT BASE_DECLARE_FEATURE(kFuchsiaMediacodecVideoEncoder);
+@@ -481,6 +481,8 @@ MEDIA_EXPORT BASE_DECLARE_FEATURE(kFuchsiaMediacodecVideoEncoder);
  
  MEDIA_EXPORT BASE_DECLARE_FEATURE(kVideoDecodeBatching);
  

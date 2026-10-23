@@ -32,10 +32,10 @@ html_media_element_test.cc conflicted with unrelated test drift and were
 dropped; the html_media_element.cc/.h changes are unmodified.
 
 diff --git a/third_party/blink/renderer/core/html/media/html_media_element.cc b/third_party/blink/renderer/core/html/media/html_media_element.cc
-index ed4fcd9ae7eefdcb6ad5415b4db5531514a31aa5..f146cf18f355d46396e80c50d3482ba5a7781dfe 100644
+index 349130744f17b56e03d8f2bf333f8e110dd521de..7120782db51d549ed8107de02152fab4aeaf6188 100644
 --- a/third_party/blink/renderer/core/html/media/html_media_element.cc
 +++ b/third_party/blink/renderer/core/html/media/html_media_element.cc
-@@ -898,8 +898,7 @@ Node::InsertionNotificationRequest HTMLMediaElement::InsertedInto(
+@@ -930,8 +930,7 @@ Node::InsertionNotificationRequest HTMLMediaElement::InsertedInto(
      if (lazy_media_load_state_ == LazyMediaLoadState::kDeferred) {
        LazyMediaHelper::StartMonitoring(this);
      } else if ((!FastGetAttribute(html_names::kSrcAttr).empty() ||
@@ -45,7 +45,7 @@ index ed4fcd9ae7eefdcb6ad5415b4db5531514a31aa5..f146cf18f355d46396e80c50d3482ba5
                 network_state_ == kNetworkEmpty) {
        ignore_preload_none_ = false;
        InvokeLoadAlgorithm();
-@@ -1252,7 +1251,7 @@ void HTMLMediaElement::SelectMediaResource() {
+@@ -1284,7 +1283,7 @@ void HTMLMediaElement::SelectMediaResource() {
  
    // 6 - If the media element has an assigned media provider object, then let
    //     mode be object.
@@ -54,7 +54,7 @@ index ed4fcd9ae7eefdcb6ad5415b4db5531514a31aa5..f146cf18f355d46396e80c50d3482ba5
      mode = kObject;
    } else if (FastHasAttribute(html_names::kSrcAttr)) {
      // Otherwise, if the media element has no assigned media provider object
-@@ -2970,8 +2969,7 @@ void HTMLMediaElement::LoadDeferredTracks() {
+@@ -3033,8 +3032,7 @@ void HTMLMediaElement::LoadDeferredTracks() {
  }
  
  bool HTMLMediaElement::HasMediaSources() const {
@@ -64,7 +64,7 @@ index ed4fcd9ae7eefdcb6ad5415b4db5531514a31aa5..f146cf18f355d46396e80c50d3482ba5
           Traversal<HTMLSourceElement>::FirstChild(*this);
  }
  
-@@ -3828,10 +3826,11 @@ void HTMLMediaElement::SourceWasAdded(HTMLSourceElement* source) {
+@@ -3918,10 +3916,11 @@ void HTMLMediaElement::SourceWasAdded(HTMLSourceElement* source) {
    DVLOG(3) << "sourceWasAdded(" << *this << ") - 'src' is "
             << UrlForLoggingMedia(url);
  
@@ -79,7 +79,7 @@ index ed4fcd9ae7eefdcb6ad5415b4db5531514a31aa5..f146cf18f355d46396e80c50d3482ba5
  
    // 4.8.8 - If a source element is inserted as a child of a media element that
    // has no src attribute and whose networkState has the value NETWORK_EMPTY,
-@@ -3857,8 +3856,17 @@ void HTMLMediaElement::SourceWasAdded(HTMLSourceElement* source) {
+@@ -3947,8 +3946,17 @@ void HTMLMediaElement::SourceWasAdded(HTMLSourceElement* source) {
    if (next_child_node_to_consider_)
      return;
  
@@ -98,7 +98,7 @@ index ed4fcd9ae7eefdcb6ad5415b4db5531514a31aa5..f146cf18f355d46396e80c50d3482ba5
  
    // 4.8.9.5, resource selection algorithm, source elements section:
    // 21. Wait until the node after pointer is a node other than the end of the
-@@ -3893,6 +3901,12 @@ void HTMLMediaElement::SourceWasRemoved(HTMLSourceElement* source) {
+@@ -3983,6 +3991,12 @@ void HTMLMediaElement::SourceWasRemoved(HTMLSourceElement* source) {
    DVLOG(3) << "sourceWasRemoved(" << *this << ") - 'src' is "
             << UrlForLoggingMedia(url);
  
@@ -112,7 +112,7 @@ index ed4fcd9ae7eefdcb6ad5415b4db5531514a31aa5..f146cf18f355d46396e80c50d3482ba5
      return;
  
 diff --git a/third_party/blink/renderer/core/html/media/html_media_element.h b/third_party/blink/renderer/core/html/media/html_media_element.h
-index e281fbdadfdb6635e3eeff5d664c286cec65f41e..3022e74e0e1a8a2896c282064c2926773ac32c65 100644
+index 038d490180e5b8d471011378bf18c0ab05711644..9460b3572de4166138c173e94440574360b8a0cf 100644
 --- a/third_party/blink/renderer/core/html/media/html_media_element.h
 +++ b/third_party/blink/renderer/core/html/media/html_media_element.h
 @@ -201,6 +201,9 @@ class CORE_EXPORT HTMLMediaElement

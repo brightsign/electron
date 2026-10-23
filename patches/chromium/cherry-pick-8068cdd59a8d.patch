@@ -49,10 +49,10 @@ Electron adaptation notes (42-x-y):
   version is kept (content_browsertests is not built by Electron).
 
 diff --git a/content/browser/web_contents/web_contents_impl.cc b/content/browser/web_contents/web_contents_impl.cc
-index 4ccd515ae8be62b5f0bc10765726efe3fc54d02b..0e76d0f551339b5372c100cfb850da04dafb0e85 100644
+index 87ec0e668369067dd68d80cd61368fd4d75c7231..0f549e70e810588db999ed51f495bc127056f002 100644
 --- a/content/browser/web_contents/web_contents_impl.cc
 +++ b/content/browser/web_contents/web_contents_impl.cc
-@@ -8299,9 +8299,13 @@ void WebContentsImpl::ViewSource(RenderFrameHostImpl* frame) {
+@@ -8306,9 +8306,13 @@ void WebContentsImpl::ViewSource(RenderFrameHostImpl* frame) {
  
    // Any new WebContents opened while this WebContents is in fullscreen can be
    // used to confuse the user, so drop fullscreen.
@@ -66,7 +66,7 @@ index 4ccd515ae8be62b5f0bc10765726efe3fc54d02b..0e76d0f551339b5372c100cfb850da04
  
    // We intentionally don't share the SiteInstance with the original frame so
    // that view source has a consistent process model and always ends up in a new
-@@ -8330,7 +8334,8 @@ void WebContentsImpl::ViewSource(RenderFrameHostImpl* frame) {
+@@ -8337,7 +8341,8 @@ void WebContentsImpl::ViewSource(RenderFrameHostImpl* frame) {
    // iframe, so preserve the IsolationInfo from the origin frame, to use the
    // same network shard and increase chances of a cache hit.
    navigation_entry->set_isolation_info(
@@ -76,7 +76,7 @@ index 4ccd515ae8be62b5f0bc10765726efe3fc54d02b..0e76d0f551339b5372c100cfb850da04
  
    // Do not restore scroller position.
    // TODO(creis, lukasza, arthursonzogni): Do not reuse the original PageState,
-@@ -9134,9 +9139,10 @@ void WebContentsImpl::RunJavaScriptDialog(
+@@ -9141,9 +9146,10 @@ void WebContentsImpl::RunJavaScriptDialog(
  
    // Running a dialog causes an exit to webpage-initiated fullscreen.
    // http://crbug.com/728276
@@ -88,7 +88,7 @@ index 4ccd515ae8be62b5f0bc10765726efe3fc54d02b..0e76d0f551339b5372c100cfb850da04
      return;
    }
  
-@@ -9270,9 +9276,10 @@ void WebContentsImpl::RunBeforeUnloadConfirm(
+@@ -9277,9 +9283,10 @@ void WebContentsImpl::RunBeforeUnloadConfirm(
  
    // Running a dialog causes an exit to webpage-initiated fullscreen.
    // http://crbug.com/728276
@@ -100,7 +100,7 @@ index 4ccd515ae8be62b5f0bc10765726efe3fc54d02b..0e76d0f551339b5372c100cfb850da04
      return;
    }
  
-@@ -9353,7 +9360,7 @@ void WebContentsImpl::RunBeforeUnloadConfirm(
+@@ -9360,7 +9367,7 @@ void WebContentsImpl::RunBeforeUnloadConfirm(
  
  void WebContentsImpl::RunFileChooser(
      base::WeakPtr<FileChooserImpl> file_chooser,
@@ -109,7 +109,7 @@ index 4ccd515ae8be62b5f0bc10765726efe3fc54d02b..0e76d0f551339b5372c100cfb850da04
      scoped_refptr<FileChooserImpl::FileSelectListenerImpl> listener,
      const blink::mojom::FileChooserParams& params) {
    OPTIONAL_TRACE_EVENT1("content", "WebContentsImpl::RunFileChooser",
-@@ -9377,16 +9384,18 @@ void WebContentsImpl::RunFileChooser(
+@@ -9384,16 +9391,18 @@ void WebContentsImpl::RunFileChooser(
  
    // Any explicit focusing of another window while this WebContents is in
    // fullscreen can be used to confuse the user, so drop fullscreen.

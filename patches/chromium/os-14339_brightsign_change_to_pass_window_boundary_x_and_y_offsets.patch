@@ -12,10 +12,10 @@ Also, some BrightSign customers create windows with zero width and height bounds
 This change also ensures that the bounds are always at least 1 pixel in size.
 
 diff --git a/ui/ozone/platform/wayland/host/wayland_toplevel_window.cc b/ui/ozone/platform/wayland/host/wayland_toplevel_window.cc
-index 072d543d347103393b1eb23f23f13f90aa110125..33b7d01af0da3564fa6ddc4f5467d9727d4adf17 100644
+index d22aa063f67ffacedd88a1264dc58ee1028a05fd..83ace17209448ec075fc33e6ce8fc3a83b812e9a 100644
 --- a/ui/ozone/platform/wayland/host/wayland_toplevel_window.cc
 +++ b/ui/ozone/platform/wayland/host/wayland_toplevel_window.cc
-@@ -652,17 +652,24 @@ void WaylandToplevelWindow::SetWindowGeometry(
+@@ -664,17 +664,24 @@ void WaylandToplevelWindow::SetWindowGeometry(
    auto insets_dip = delegate()->CalculateInsetsInDIP(state.window_state);
    if (!insets_dip.IsEmpty()) {
      geometry_dip.Inset(insets_dip);

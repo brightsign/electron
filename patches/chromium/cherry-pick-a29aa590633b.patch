@@ -38,10 +38,10 @@ Cr-Commit-Position: refs/branch-heads/7778@{#4430}
 Cr-Branched-From: 77f495ee216d4c3cc784d33658bad4778c0680ee-refs/heads/main@{#1610480}
 
 diff --git a/ui/ozone/platform/wayland/host/wayland_window.cc b/ui/ozone/platform/wayland/host/wayland_window.cc
-index 10b2f0275628694a9d6947b731b8029a8e61d2a2..17f883751ab8e686182ecc6f0600fefe051594e8 100644
+index a5b64623292cabb9797f2359e3b150574edf85dd..f139edf3f0128846144c9c60231e09cbe8a26053 100644
 --- a/ui/ozone/platform/wayland/host/wayland_window.cc
 +++ b/ui/ozone/platform/wayland/host/wayland_window.cc
-@@ -1316,7 +1316,13 @@ void WaylandWindow::ProcessPendingConfigureState(uint32_t serial) {
+@@ -1340,7 +1340,13 @@ void WaylandWindow::ProcessPendingConfigureState(uint32_t serial) {
      }
    }
  

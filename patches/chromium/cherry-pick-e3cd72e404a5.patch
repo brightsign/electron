@@ -87,10 +87,10 @@ index 28b7bfab21be3d0ecadb5c6adb1d13e9975cd658..c3564a0fe8b9a6428a19441af5a2c371
      if (entered_output == metrics.output_id ||
          (!entered_output && is_primary)) {
 diff --git a/ui/ozone/platform/wayland/host/wayland_window_manager.cc b/ui/ozone/platform/wayland/host/wayland_window_manager.cc
-index 50db3bd8e6060d2e7326b33e1fb51cabbdf6abec..82bf07642c644414445a972310ac96e730349080 100644
+index 8cd0bf0545f77b1e1667adb8d7d33a099b898647..bdc451b922a1f9e27a7570cb4b3cb103c20d50e2 100644
 --- a/ui/ozone/platform/wayland/host/wayland_window_manager.cc
 +++ b/ui/ozone/platform/wayland/host/wayland_window_manager.cc
-@@ -335,6 +335,16 @@ std::vector<WaylandWindow*> WaylandWindowManager::GetAllWindows() const {
+@@ -337,6 +337,16 @@ std::vector<WaylandWindow*> WaylandWindowManager::GetAllWindows() const {
    return result;
  }
  
@@ -107,7 +107,7 @@ index 50db3bd8e6060d2e7326b33e1fb51cabbdf6abec..82bf07642c644414445a972310ac96e7
  bool WaylandWindowManager::IsWindowValid(const WaylandWindow* window) const {
    for (auto& pair : window_map_) {
      if (pair.second == window)
-@@ -348,8 +358,10 @@ void WaylandWindowManager::SetFontScale(float new_font_scale) {
+@@ -350,8 +360,10 @@ void WaylandWindowManager::SetFontScale(float new_font_scale) {
      return;
    }
    font_scale_ = new_font_scale;

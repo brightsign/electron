@@ -47,7 +47,7 @@ index 75dcd69646123551f14fba569b2acbafd8cde1d0..c11505a0d6dcada81dd8ac6ab9e0e5ac
      readonly attribute unsigned long length;
      attribute EventHandler onaddsourcebuffer;
 diff --git a/third_party/blink/renderer/platform/runtime_enabled_features.json5 b/third_party/blink/renderer/platform/runtime_enabled_features.json5
-index 9c207b3927535ceeecb6f73a36f51566500c9ebb..287aa88900e8e9054685b2339894ba40389d4eae 100644
+index 1e93a1da8fa56b022234c88f30f6bad934f4747f..daa4b31d715c82914420fd528ac241c1a5a40577 100644
 --- a/third_party/blink/renderer/platform/runtime_enabled_features.json5
 +++ b/third_party/blink/renderer/platform/runtime_enabled_features.json5
 @@ -3794,6 +3794,10 @@

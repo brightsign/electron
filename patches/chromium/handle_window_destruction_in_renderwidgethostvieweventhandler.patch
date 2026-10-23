@@ -20,10 +20,10 @@ Commit-Queue: Mitsuru Oshima <oshima@chromium.org>
 Cr-Commit-Position: refs/heads/main@{#1666382}
 
 diff --git a/content/browser/renderer_host/render_widget_host_view_aura.cc b/content/browser/renderer_host/render_widget_host_view_aura.cc
-index de67e89b4f7c9cf2caee3a52a0c354b4636a0570..59d70baff573aca770bcd2f8a39542bd57c68e24 100644
+index 4a76d78a625a7ae1f8c75df2888abcf662018d3b..54dfd9e62e3b45f49632d8d863116fbe2cd0cd7b 100644
 --- a/content/browser/renderer_host/render_widget_host_view_aura.cc
 +++ b/content/browser/renderer_host/render_widget_host_view_aura.cc
-@@ -2342,6 +2342,8 @@ void RenderWidgetHostViewAura::OnDeviceScaleFactorChanged(
+@@ -2409,6 +2409,8 @@ void RenderWidgetHostViewAura::OnDeviceScaleFactorChanged(
  }
  
  void RenderWidgetHostViewAura::OnWindowDestroying(aura::Window* window) {
@@ -33,10 +33,10 @@ index de67e89b4f7c9cf2caee3a52a0c354b4636a0570..59d70baff573aca770bcd2f8a39542bd
    // this object is removed from the root window (i.e. this object loses access
    // to the input method).
 diff --git a/content/browser/renderer_host/render_widget_host_view_event_handler.cc b/content/browser/renderer_host/render_widget_host_view_event_handler.cc
-index a51a44a147e89c1f71bf31d7d13b150a6bc1faee..5eb13036de3e16aab63088ab29ab26631daa989e 100644
+index 74e8fd6c20cac940bb74f6ebe4a00f6b21a68e6c..1bbaf5e667abdd72c1b668d75df094b36867bc05 100644
 --- a/content/browser/renderer_host/render_widget_host_view_event_handler.cc
 +++ b/content/browser/renderer_host/render_widget_host_view_event_handler.cc
-@@ -193,13 +193,18 @@ RenderWidgetHostViewEventHandler::ChangePointerLock(
+@@ -203,13 +203,18 @@ RenderWidgetHostViewEventHandler::ChangePointerLock(
  void RenderWidgetHostViewEventHandler::UnlockPointer() {
    delegate_->SetTooltipsEnabled(true);
  
@@ -57,7 +57,7 @@ index a51a44a147e89c1f71bf31d7d13b150a6bc1faee..5eb13036de3e16aab63088ab29ab2663
    window_->GetHost()->UnlockMouse(window_);
  
    // Ensure that the global mouse position is updated here to its original
-@@ -207,7 +212,9 @@ void RenderWidgetHostViewEventHandler::UnlockPointer() {
+@@ -217,7 +222,9 @@ void RenderWidgetHostViewEventHandler::UnlockPointer() {
    // after the cursor is moved ends up getting a large movement delta which is
    // not what sites expect. The delta is computed in the
    // ModifyEventMovementAndCoords function.
@@ -68,7 +68,7 @@ index a51a44a147e89c1f71bf31d7d13b150a6bc1faee..5eb13036de3e16aab63088ab29ab2663
    synthetic_move_position_ =
        gfx::ToFlooredPoint(unlocked_global_mouse_position_);
  
-@@ -318,6 +325,11 @@ void RenderWidgetHostViewEventHandler::HandleMouseWheelEvent(
+@@ -328,6 +335,11 @@ void RenderWidgetHostViewEventHandler::HandleMouseWheelEvent(
  void RenderWidgetHostViewEventHandler::OnMouseEvent(ui::MouseEvent* event) {
    TRACE_EVENT0("input", "RenderWidgetHostViewBase::OnMouseEvent");
  

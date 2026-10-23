@@ -21,7 +21,7 @@ Prerequisite for the capture-window weak pointer backport; that change
 uses Window::ScopedDeleteBlocker, which is not in 148.
 
 diff --git a/ui/aura/window.cc b/ui/aura/window.cc
-index 91ef981a6984acfbd8aab82daa8cba09c167da96..1409dad4b6c773ff8a2e1c80e70d8c4638e705c7 100644
+index 7cfe48599a56830cf239a8dbd9e99419eee1e643..67acd3bcfb3846aedf802c93678915a006eb8649 100644
 --- a/ui/aura/window.cc
 +++ b/ui/aura/window.cc
 @@ -199,6 +199,8 @@ Window::Window(WindowDelegate* delegate, client::WindowType type)
@@ -34,7 +34,7 @@ index 91ef981a6984acfbd8aab82daa8cba09c167da96..1409dad4b6c773ff8a2e1c80e70d8c46
    // TODO(crbug.com/497548912): Continue crashing on re-entrant destruction
    // on Chrome M149 or newer.
 diff --git a/ui/aura/window.h b/ui/aura/window.h
-index e0a2cf4d2f41781573d9ffa4b6437997cd83d13f..4762eb3ecc315e30566e268afde8d2e061b825bf 100644
+index 99103855d2ea7da53ead540b1b58e3f232275c94..c04cadf90463358afa68913a2f8e77b115f61e7e 100644
 --- a/ui/aura/window.h
 +++ b/ui/aura/window.h
 @@ -124,6 +124,21 @@ class AURA_EXPORT Window : public ui::LayerDelegate,
@@ -59,7 +59,7 @@ index e0a2cf4d2f41781573d9ffa4b6437997cd83d13f..4762eb3ecc315e30566e268afde8d2e0
    // Initial value of id() for newly created windows.
    static constexpr int kInitialId = -1;
  
-@@ -868,6 +883,8 @@ class AURA_EXPORT Window : public ui::LayerDelegate,
+@@ -874,6 +889,8 @@ class AURA_EXPORT Window : public ui::LayerDelegate,
    // Used when this is embedding external content.
    base::WeakPtr<cc::LayerTreeFrameSink> frame_sink_;
  

@@ -82,10 +82,10 @@ index c0699afba8b8f61a182101c79bca621b48899b3b..5c425de1a07665bcbc31091debec129a
  TEST_P(WaylandDataDragControllerTest, DragToNonToplevelWindows) {
    auto* origin_window = window_.get();
 diff --git a/ui/ozone/platform/wayland/host/wayland_window.cc b/ui/ozone/platform/wayland/host/wayland_window.cc
-index 17f883751ab8e686182ecc6f0600fefe051594e8..36bf67c904288289ec05090631ac74ab518cb70b 100644
+index f139edf3f0128846144c9c60231e09cbe8a26053..4db3c244135c73cc286ee9f643450842d9fdc084 100644
 --- a/ui/ozone/platform/wayland/host/wayland_window.cc
 +++ b/ui/ozone/platform/wayland/host/wayland_window.cc
-@@ -911,16 +911,23 @@ void WaylandWindow::OnDragSessionClose(DragOperation operation) {
+@@ -912,16 +912,23 @@ void WaylandWindow::OnDragSessionClose(DragOperation operation) {
      // is about to shut down. Do nothing and return.
      return;
    }

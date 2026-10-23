@@ -21,10 +21,10 @@ Reviewed-by: Colin Blundell <blundell@chromium.org>
 Cr-Commit-Position: refs/heads/main@{#1666362}
 
 diff --git a/ui/aura/window_tree_host.cc b/ui/aura/window_tree_host.cc
-index d2f51a75454c3efecbf788bb13560e3a609c306a..7d3ae00b693852b9a27f326a580c30ebbe526914 100644
+index 49e22badb8e725be20b8c513a2c40a637d35f04b..ed07863442014b045c674c9f707abd5943676f73 100644
 --- a/ui/aura/window_tree_host.cc
 +++ b/ui/aura/window_tree_host.cc
-@@ -437,7 +437,9 @@ void WindowTreeHost::LockMouse(Window* window) {
+@@ -564,7 +564,9 @@ void WindowTreeHost::LockMouse(Window* window) {
  
  void WindowTreeHost::UnlockMouse(Window* window) {
    Window* root_window = window->GetRootWindow();

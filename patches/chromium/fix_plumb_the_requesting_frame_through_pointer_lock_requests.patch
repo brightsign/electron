@@ -185,10 +185,10 @@ index b9f33abafe4cf2a34f0d0a268941fbc7b56d44ef..6925765eeea30255da1ad41d71eebd01
        bool unadjusted_movement,
        input::InputRouterImpl::RequestMouseLockCallback response) override;
 diff --git a/content/browser/web_contents/web_contents_impl.cc b/content/browser/web_contents/web_contents_impl.cc
-index 0e76d0f551339b5372c100cfb850da04dafb0e85..038703e8c671964c7492981f9b5e400dd7b391b7 100644
+index 0f549e70e810588db999ed51f495bc127056f002..4b7cf5b48d27ceedcb6acff4565206084a85de0b 100644
 --- a/content/browser/web_contents/web_contents_impl.cc
 +++ b/content/browser/web_contents/web_contents_impl.cc
-@@ -5242,6 +5242,7 @@ blink::mojom::DisplayMode WebContentsImpl::GetDisplayMode() const {
+@@ -5249,6 +5249,7 @@ blink::mojom::DisplayMode WebContentsImpl::GetDisplayMode() const {
  
  void WebContentsImpl::RequestToLockPointer(
      RenderWidgetHostImpl* render_widget_host,
@@ -196,7 +196,7 @@ index 0e76d0f551339b5372c100cfb850da04dafb0e85..038703e8c671964c7492981f9b5e400d
      bool user_gesture,
      bool last_unlocked_by_target) {
    OPTIONAL_TRACE_EVENT1("content", "WebContentsImpl::RequestPointerLock",
-@@ -5272,11 +5273,21 @@ void WebContentsImpl::RequestToLockPointer(
+@@ -5279,11 +5280,21 @@ void WebContentsImpl::RequestToLockPointer(
      }
    }
  
@@ -218,7 +218,7 @@ index 0e76d0f551339b5372c100cfb850da04dafb0e85..038703e8c671964c7492981f9b5e400d
      observers_.NotifyObservers(&WebContentsObserver::PointerLockRequested);
      delegate_->RequestPointerLock(this, user_gesture, last_unlocked_by_target);
    } else {
-@@ -9550,6 +9561,16 @@ WebContentsImpl* WebContentsImpl::GetOuterWebContents() {
+@@ -9557,6 +9568,16 @@ WebContentsImpl* WebContentsImpl::GetOuterWebContents() {
    return node_.outer_web_contents();
  }
  

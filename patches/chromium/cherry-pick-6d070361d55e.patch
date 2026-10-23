@@ -112,10 +112,10 @@ index 03921abc8cbc8f73e0ae1ea5ed5888a7983cf6ef..1ee51c2fd835a0c6b1ff40e6e1fc3cd0
    EXPECT_EQ(WebInputEventResult::kHandledSystem,
              web_view->MainFrameWidget()->HandleInputEvent(
 diff --git a/third_party/blink/renderer/core/input/gesture_manager.cc b/third_party/blink/renderer/core/input/gesture_manager.cc
-index da5dda596b7a87017c713df1fa9612baccfc736e..18d6bb0068d5b2c6cd9ef1e9d8b2eb7d05204cee 100644
+index a86e5719aa0fc1cbf679995cb214ad414a55076e..3dc32cd96f8eabc5ae823b434b9c88bd421b5d1b 100644
 --- a/third_party/blink/renderer/core/input/gesture_manager.cc
 +++ b/third_party/blink/renderer/core/input/gesture_manager.cc
-@@ -483,10 +483,24 @@ WebInputEventResult GestureManager::HandleGestureLongPress(
+@@ -486,10 +486,24 @@ WebInputEventResult GestureManager::HandleGestureLongPress(
    // scenario that it's unlikely to matter much in practice.
  
    long_press_position_in_root_frame_ = gesture_event.PositionInRootFrame();
@@ -145,7 +145,7 @@ index da5dda596b7a87017c713df1fa9612baccfc736e..18d6bb0068d5b2c6cd9ef1e9d8b2eb7d
    gesture_context_menu_deferred_ = false;
  
 diff --git a/third_party/blink/renderer/platform/runtime_enabled_features.json5 b/third_party/blink/renderer/platform/runtime_enabled_features.json5
-index 57c554ff45c1eb4e4a98ae825af4177d821ccd3d..458e786ea86f9b42a056656b65c3c3880004e6e4 100644
+index bf8f66fd821c0e66d903b9ff48549ef36c95133c..61e638428a61d1691d18b089670e3b69b2755749 100644
 --- a/third_party/blink/renderer/platform/runtime_enabled_features.json5
 +++ b/third_party/blink/renderer/platform/runtime_enabled_features.json5
 @@ -3638,6 +3638,11 @@

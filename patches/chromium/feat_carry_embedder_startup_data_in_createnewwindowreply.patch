@@ -71,7 +71,7 @@ index ab9aeb852e5ea89583284386d9a78a3e3e17a310..cd5499f262ea5e9003f87185461e0272
  
  // A per-navigation interface passed along with the BeginNavigation call, used
 diff --git a/content/public/browser/content_browser_client.cc b/content/public/browser/content_browser_client.cc
-index d0b3e4bc348921df7e6446dbc1f14860b8a84d87..a802bf1313efb37fffcf8a29acdcdb260e26232e 100644
+index 1f3f1b59ee869599ca8bd9e5348e2878887eb261..da701056c0a08ed66c81a40e00d1005df8f8aa9c 100644
 --- a/content/public/browser/content_browser_client.cc
 +++ b/content/public/browser/content_browser_client.cc
 @@ -863,6 +863,13 @@ bool ContentBrowserClient::CanCreateWindow(

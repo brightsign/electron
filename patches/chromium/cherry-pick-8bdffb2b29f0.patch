@@ -662,10 +662,10 @@ index 7a4d9078ecb039b124b1b33465e0589105e37855..a5abac103692cb6ddbe1fe994668d14d
    //  - Use top level's policy if they are same-origin.
    //  - Use the default policy otherwise.
 diff --git a/content/browser/web_contents/web_contents_impl.cc b/content/browser/web_contents/web_contents_impl.cc
-index 0cd1a754a73adf901c179825ee8c44307e407f2a..8fcea8528de4c10a6a2b730f130f6c5fdc9c92a8 100644
+index bb3bd6e5c4cbc87153cbe5845f6dfd06f2776853..fcce6f50fb7b7fcd00fdc2f69e2cd5ab88d5ff78 100644
 --- a/content/browser/web_contents/web_contents_impl.cc
 +++ b/content/browser/web_contents/web_contents_impl.cc
-@@ -8340,6 +8340,7 @@ void WebContentsImpl::ViewSource(RenderFrameHostImpl* frame) {
+@@ -8347,6 +8347,7 @@ void WebContentsImpl::ViewSource(RenderFrameHostImpl* frame) {
  void WebContentsImpl::ResourceLoadComplete(
      RenderFrameHostImpl* render_frame_host,
      const GlobalRequestID& request_id,
@@ -673,7 +673,7 @@ index 0cd1a754a73adf901c179825ee8c44307e407f2a..8fcea8528de4c10a6a2b730f130f6c5f
      blink::mojom::ResourceLoadInfoPtr resource_load_info) {
    OPTIONAL_TRACE_EVENT2("content", "WebContentsImpl::ResourceLoadComplete",
                          "render_frame_host", render_frame_host, "request_id",
-@@ -8347,7 +8348,7 @@ void WebContentsImpl::ResourceLoadComplete(
+@@ -8354,7 +8355,7 @@ void WebContentsImpl::ResourceLoadComplete(
    const blink::mojom::ResourceLoadInfo& resource_load_info_ref =
        *resource_load_info;
    observers_.NotifyObservers(&WebContentsObserver::ResourceLoadComplete,
