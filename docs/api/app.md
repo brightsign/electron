@@ -357,6 +357,9 @@ Returns:
 * `authenticationResponseDetails` Object
   * `url` URL
   * `pid` number
+  * `isRequestForNavigation` boolean - Indicates whether the request is for a navigation.
+  * `firstAuthAttempt` boolean - Indicates whether this is the first authentication attempt.
+  * `responseHeaders` Record\<string, string | string[]\> (optional) - The headers returned in the response.
 * `authInfo` Object
   * `isProxy` boolean
   * `scheme` string
@@ -705,6 +708,19 @@ Overrides the current application's name.
 > [!NOTE]
 > This function overrides the name used internally by Electron; it does not affect the name that the OS uses.
 
+### `app.setDesktopName(name)` _Linux_
+
+* `name` string - The `.desktop` filename (e.g. `'my-app.desktop'`).
+
+Sets the [`.desktop` filename](https://specifications.freedesktop.org/desktop-entry/latest/file-naming.html) on Linux.
+This should match the base filename of the app's installed `.desktop` file. The `.desktop` suffix is optional.
+
+This value is used to determine the default XDG application ID on Wayland and `WM_CLASS` on X11. If it is not set,
+Electron will attempt to infer a name, but it may not match the packaged app's actual `.desktop` file. This could result
+in the app showing a generic icon or failing to respond to global keyboard shortcuts.
+
+This API must be called before the `ready` event. The value can also be set using `desktopName` in `package.json`.
+
 ### `app.getLocale()`
 
 Returns `string` - The current application locale, fetched using Chromium's `l10n_util` library.
@@ -882,7 +898,7 @@ Returns `string` - Name of the application handling the protocol, or an empty
 This method returns the application name of the default handler for the protocol
 (aka URI scheme) of a URL.
 
-### `app.getApplicationInfoForProtocol(url)` _macOS_ _Windows_
+### `app.getApplicationInfoForProtocol(url)`
 
 * `url` string - a URL with the protocol name to check. Unlike the other
   methods in this family, this accepts an entire URL, including `://` at a
@@ -980,7 +996,8 @@ app.setJumpList([
       { type: 'file', path: 'C:\\Projects\\project2.proj' }
     ]
   },
-  { // has a name so `type` is assumed to be "custom"
+  {
+    // has a name so `type` is assumed to be "custom"
     name: 'Tools',
     items: [
       {
@@ -1004,7 +1021,8 @@ app.setJumpList([
     ]
   },
   { type: 'frequent' },
-  { // has no name and no type so `type` is assumed to be "tasks"
+  {
+    // has no name and no type so `type` is assumed to be "tasks"
     items: [
       {
         type: 'task',
@@ -1047,6 +1065,12 @@ a second instance of your app in Finder, and the `open-file` and `open-url`
 events will be emitted for that. However when users start your app in command
 line, the system's single instance mechanism will be bypassed, and you have to
 use this method to ensure single instance.
+
+> [!NOTE]
+> On macOS and Linux, the second instance's command line arguments and
+> `additionalData` are sent to the primary instance in a single message that is
+> limited to 32 MB. Larger messages are dropped: this method still returns
+> `false`, but the primary instance does not emit `second-instance`.
 
 An example of activating the window of primary instance when a second instance
 starts:
@@ -1221,9 +1245,7 @@ const { app } = require('electron')
 app.whenReady().then(() => {
   app.configureHostResolver({
     secureDnsMode: 'secure',
-    secureDnsServers: [
-      'https://cloudflare-dns.com/dns-query'
-    ]
+    secureDnsServers: ['https://cloudflare-dns.com/dns-query']
   })
 })
 ```
@@ -1243,6 +1265,12 @@ This API must be called after the `ready` event is emitted.
       credentials will be stored under. This value **must** also be present in
       your app's `keychain-access-groups` code-signing entitlement, and is
       typically of the form `<TEAM_ID>.<BUNDLE_ID>.webauthn`.
+    * `promptReason` string (optional) - Customizes the reason text shown in
+      the macOS Touch ID prompt. macOS renders the prompt as
+      `"<App Name>" is trying to <promptReason>`, so the value should be a
+      lowercase sentence fragment. An optional `$1` placeholder is replaced
+      with the relying party ID (e.g. `example.com`) of the request being
+      authenticated. Defaults to `verify your identity on $1`.
 
 Configures platform authenticators for the Web Authentication API
 (`navigator.credentials.create()` / `navigator.credentials.get()`). Until this
@@ -1259,7 +1287,8 @@ const { app } = require('electron')
 
 app.configureWebAuthn({
   touchID: {
-    keychainAccessGroup: 'A1B2C3D4E5.com.example.app.webauthn'
+    keychainAccessGroup: 'A1B2C3D4E5.com.example.app.webauthn',
+    promptReason: 'sign in to $1'
   }
 })
 ```
@@ -1322,30 +1351,28 @@ For `infoType` equal to `complete`:
 For `infoType` equal to `basic`:
   Promise is fulfilled with `Object` containing fewer attributes than when requested with `complete`. Here's an example of basic response:
 
-<!-- eslint-skip -->
-
-```js
+```json5
 {
-  auxAttributes:
-   {
-     amdSwitchable: true,
-     canSupportThreadedTextureMailbox: false,
-     directComposition: false,
-     directRendering: true,
-     glResetNotificationStrategy: 0,
-     inProcessGpu: true,
-     initializationTime: 0,
-     jpegDecodeAcceleratorSupported: false,
-     optimus: false,
-     passthroughCmdDecoder: false,
-     sandboxed: false,
-     softwareRendering: false,
-     supportsOverlays: false,
-     videoDecodeAcceleratorFlags: 0
-   },
-  gpuDevice:
-   [{ active: true, deviceId: 26657, vendorId: 4098 },
-     { active: false, deviceId: 3366, vendorId: 32902 }],
+  auxAttributes: {
+    amdSwitchable: true,
+    canSupportThreadedTextureMailbox: false,
+    directComposition: false,
+    directRendering: true,
+    glResetNotificationStrategy: 0,
+    inProcessGpu: true,
+    initializationTime: 0,
+    jpegDecodeAcceleratorSupported: false,
+    optimus: false,
+    passthroughCmdDecoder: false,
+    sandboxed: false,
+    softwareRendering: false,
+    supportsOverlays: false,
+    videoDecodeAcceleratorFlags: 0
+  },
+  gpuDevice: [
+    { active: true, deviceId: 26657, vendorId: 4098 },
+    { active: false, deviceId: 3366, vendorId: 32902 }
+  ],
   machineModelName: 'MacBookPro',
   machineModelVersion: '11.5'
 }
@@ -1533,11 +1560,7 @@ const { app } = require('electron')
 
 app.whenReady().then(() => {
   // Enable a subset of features:
-  app.setAccessibilitySupportFeatures([
-    'screenReader',
-    'pdfPrinting',
-    'webContents'
-  ])
+  app.setAccessibilitySupportFeatures(['screenReader', 'pdfPrinting', 'webContents'])
 
   // Other logic
 
@@ -1643,12 +1666,14 @@ const { app, dialog } = require('electron')
 app.moveToApplicationsFolder({
   conflictHandler: (conflictType) => {
     if (conflictType === 'exists') {
-      return dialog.showMessageBoxSync({
-        type: 'question',
-        buttons: ['Halt Move', 'Continue Move'],
-        defaultId: 0,
-        message: 'An app of this name already exists'
-      }) === 1
+      return (
+        dialog.showMessageBoxSync({
+          type: 'question',
+          buttons: ['Halt Move', 'Continue Move'],
+          defaultId: 0,
+          message: 'An app of this name already exists'
+        }) === 1
+      )
     }
   }
 })
@@ -1710,7 +1735,7 @@ The handler is called when a password is needed to unlock a client certificate f
 ```js
 const { app } = require('electron')
 
-async function passwordPromptUI (text) {
+async function passwordPromptUI(text) {
   return new Promise((resolve, reject) => {
     // display UI to prompt user for password
     // ...

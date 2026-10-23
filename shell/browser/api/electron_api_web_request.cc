@@ -29,6 +29,7 @@
 #include "shell/browser/electron_browser_context.h"
 #include "shell/browser/javascript_environment.h"
 #include "shell/browser/login_handler.h"
+#include "shell/browser/net/url_loader_factory_gate.h"
 #include "shell/common/gin_converters/callback_converter.h"
 #include "shell/common/gin_converters/frame_converter.h"
 #include "shell/common/gin_converters/gurl_converter.h"
@@ -36,7 +37,7 @@
 #include "shell/common/gin_converters/std_converter.h"
 #include "shell/common/gin_converters/value_converter.h"
 #include "shell/common/gin_helper/dictionary.h"
-#include "shell/common/gin_helper/handle.h"
+#include "shell/common/gin_helper/wrappable_pointer_tags.h"
 #include "shell/common/node_util.h"
 
 static constexpr auto ResourceTypes =
@@ -205,8 +206,8 @@ CalculateOnBeforeSendHeadersDelta(const net::HttpRequestHeaders* old_headers,
 
 }  // namespace
 
-const gin::WrapperInfo WebRequest::kWrapperInfo = {{gin::kEmbedderNativeGin},
-                                                   gin::kElectronWebRequest};
+const gin::WrapperInfo WebRequest::kWrapperInfo =
+    electron::MakeWrapperInfo(electron::kElectronWebRequest);
 
 WebRequest::RequestFilter::RequestFilter(
     std::set<URLPattern> include_url_patterns,
@@ -315,7 +316,9 @@ WebRequest::ResponseListenerInfo::ResponseListenerInfo(
 WebRequest::ResponseListenerInfo::ResponseListenerInfo() = default;
 WebRequest::ResponseListenerInfo::~ResponseListenerInfo() = default;
 
-WebRequest::WebRequest(base::PassKey<Session>) {}
+WebRequest::WebRequest(base::PassKey<Session>,
+                       base::WeakPtr<ElectronBrowserContext> browser_context)
+    : browser_context_{std::move(browser_context)} {}
 WebRequest::~WebRequest() = default;
 
 gin::ObjectTemplateBuilder WebRequest::GetObjectTemplateBuilder(
@@ -744,6 +747,10 @@ void WebRequest::SetListener(Event event,
     listeners->erase(event);
   else
     (*listeners)[event] = {std::move(filter), std::move(listener)};
+  if (browser_context_) {
+    browser_context_->intercept_state()->SetHasWebRequestListeners(
+        HasListener());
+  }
 }
 
 template <typename... Args>
@@ -790,10 +797,13 @@ WebRequest* WebRequest::FromOrCreate(v8::Isolate* isolate,
 }
 
 // static
-WebRequest* WebRequest::Create(v8::Isolate* isolate,
-                               base::PassKey<Session> passkey) {
+WebRequest* WebRequest::Create(
+    v8::Isolate* isolate,
+    base::PassKey<Session> passkey,
+    base::WeakPtr<ElectronBrowserContext> browser_context) {
   return cppgc::MakeGarbageCollected<WebRequest>(
-      isolate->GetCppHeap()->GetAllocationHandle(), std::move(passkey));
+      isolate->GetCppHeap()->GetAllocationHandle(), std::move(passkey),
+      std::move(browser_context));
 }
 
 }  // namespace electron::api

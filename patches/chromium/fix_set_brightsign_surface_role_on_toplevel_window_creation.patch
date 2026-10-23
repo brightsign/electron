@@ -53,7 +53,7 @@ index f4b1513809c0a70bd8b3ab712eade05818b8a190..5bcc70873c42c79541c67cd2680381fc
    // (a non-default `event_queue_` is created using this display). This is
    // necessary to avoid any possible deadlocks (in case of API's misuse. See
 diff --git a/ui/ozone/platform/wayland/host/wayland_toplevel_window.cc b/ui/ozone/platform/wayland/host/wayland_toplevel_window.cc
-index 9c4509919893ed26f43403a261f6d48650a02b4c..e8605bc35454d82dad48ec543ba77d4519226cc2 100644
+index 91486746fbec7b586f4c71bda4bb9e813cf6717d..e033f383a18d749f80fa4c80367ff3ba84519ed1 100644
 --- a/ui/ozone/platform/wayland/host/wayland_toplevel_window.cc
 +++ b/ui/ozone/platform/wayland/host/wayland_toplevel_window.cc
 @@ -105,6 +105,13 @@ bool WaylandToplevelWindow::CreateXdgToplevel() {

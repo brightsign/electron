@@ -17,6 +17,7 @@
 #include "base/task/thread_pool.h"
 #include "base/time/time.h"
 #include "base/timer/timer.h"
+#include "base/types/expected.h"
 #include "base/values.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/file_system_access/chrome_file_system_access_permission_context.h"  // nogncheck
@@ -32,11 +33,15 @@
 #include "content/public/browser/web_contents.h"
 #include "gin/data_object_builder.h"
 #include "shell/browser/api/electron_api_session.h"
+#include "shell/browser/api/electron_api_web_contents.h"
 #include "shell/browser/electron_permission_manager.h"
 #include "shell/browser/web_contents_permission_helper.h"
 #include "shell/common/gin_converters/callback_converter.h"
+#include "shell/common/gin_converters/content_converter.h"
 #include "shell/common/gin_converters/file_path_converter.h"
+#include "shell/common/gin_converters/frame_converter.h"
 #include "third_party/blink/public/common/features_generated.h"
+#include "third_party/blink/public/common/storage_key/storage_key.h"
 #include "third_party/blink/public/mojom/file_system_access/file_system_access_manager.mojom.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "url/origin.h"
@@ -119,6 +124,8 @@ constexpr base::TimeDelta kPermissionRevocationTimeout = base::Seconds(5);
   });
 }
 
+// Returns true if the path is a Universal Naming Convention (UNC) path pointing
+// to a local system path, device namespace, or WSL loopback redirector.
 bool MaybeIsLocalUNCPath(const base::FilePath& path) {
   if (!path.IsNetwork()) {
     return false;
@@ -133,6 +140,10 @@ bool MaybeIsLocalUNCPath(const base::FilePath& path) {
   if (components.size() >= 2 &&
       (base::FilePath::CompareEqualIgnoreCase(components[1],
                                               FILE_PATH_LITERAL("localhost")) ||
+       base::FilePath::CompareEqualIgnoreCase(
+           components[1], FILE_PATH_LITERAL("wsl.localhost")) ||
+       base::FilePath::CompareEqualIgnoreCase(
+           components[1], FILE_PATH_LITERAL("wsl.localhost.")) ||
        components[1] == FILE_PATH_LITERAL("127.0.0.1") ||
        components[1] == FILE_PATH_LITERAL(".") ||
        components[1] == FILE_PATH_LITERAL("?") ||
@@ -162,10 +173,12 @@ bool ShouldBlockAccessToPath(
   DCHECK(!path.empty());
   DCHECK(path.IsAbsolute());
 
-  path = ChromeFileSystemAccessPermissionContext::NormalizeFilePath(path);
+  path = ChromeFileSystemAccessPermissionContext::NormalizeFilePathForBlocklist(
+      path, /*should_normalize_file_path=*/true);
   for (auto& rule : extra_rules) {
     rule.path =
-        ChromeFileSystemAccessPermissionContext::NormalizeFilePath(rule.path);
+        ChromeFileSystemAccessPermissionContext::NormalizeFilePathForBlocklist(
+            rule.path, /*should_normalize_file_path=*/true);
   }
 
 #if BUILDFLAG(IS_WIN)
@@ -293,11 +306,52 @@ class FileSystemAccessPermissionContext::PermissionGrantImpl
     return path_info_.display_name;
   }
 
+  // Validates that the requesting frame is authorized to access the File System
+  // Access API before checking or granting permissions.
+  //
+  // Returns a failure outcome if `rfh` is null, embedded within a fenced frame,
+  // or executing in a cross-origin or third-party context. Returns base::ok()
+  // when the frame context is authorized.
+  base::expected<void, PermissionRequestOutcome> ValidateRequestingFrame(
+      content::RenderFrameHost* rfh) {
+    if (!rfh) {
+      return base::unexpected(PermissionRequestOutcome::kInvalidFrame);
+    }
+
+    // Fenced frames must not access local file system data or prompt the user.
+    if (rfh->IsNestedWithinFencedFrame()) {
+      return base::unexpected(PermissionRequestOutcome::kInvalidFrame);
+    }
+
+    // Reject third-party iframes and partitioned contexts before checking
+    // existing grants. This prevents cross-origin frames from inheriting or
+    // upgrading permissions granted to the top-level origin.
+    const url::Origin embedding_origin =
+        rfh->GetMainFrame()->GetLastCommittedOrigin();
+    if (embedding_origin != origin_ ||
+        rfh->GetStorageKey().IsThirdPartyContext()) {
+      return base::unexpected(PermissionRequestOutcome::kThirdPartyContext);
+    }
+
+    return base::ok();
+  }
+
   void RequestPermission(
       content::GlobalRenderFrameHostId frame_id,
       UserActivationState user_activation_state,
       base::OnceCallback<void(PermissionRequestOutcome)> callback) override {
     DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+
+    content::RenderFrameHost* rfh = content::RenderFrameHost::FromID(frame_id);
+
+    // Validate the security context of the calling frame before evaluating
+    // grants. Cross-origin frames must be rejected even if the target origin
+    // already holds an active or persisted grant.
+    if (auto validation_result = ValidateRequestingFrame(rfh);
+        !validation_result.has_value()) {
+      std::move(callback).Run(validation_result.error());
+      return;
+    }
 
     // Check if a permission request has already been processed previously. This
     // check is done first because we don't want to reset the status of a
@@ -310,16 +364,9 @@ class FileSystemAccessPermissionContext::PermissionGrantImpl
       return;
     }
 
-    content::RenderFrameHost* rfh = content::RenderFrameHost::FromID(frame_id);
-    if (!rfh) {
-      // Requested from a no longer valid RenderFrameHost.
-      std::move(callback).Run(PermissionRequestOutcome::kInvalidFrame);
-      return;
-    }
-
-    // Don't request permission for an inactive RenderFrameHost as the
-    // page might not distinguish properly between user denying the permission
-    // and automatic rejection.
+    // Verify prerequisites for prompting the user. Inactive documents in
+    // BackForwardCache or prerendering cannot present dialogs; evict or cancel
+    // them to prevent inconsistent UI state.
     if (rfh->IsInactiveAndDisallowActivation(
             content::DisallowActivationReasonId::
                 kFileSystemAccessPermissionRequest)) {
@@ -327,12 +374,7 @@ class FileSystemAccessPermissionContext::PermissionGrantImpl
       return;
     }
 
-    // We don't allow file system access from fenced frames.
-    if (rfh->IsNestedWithinFencedFrame()) {
-      std::move(callback).Run(PermissionRequestOutcome::kInvalidFrame);
-      return;
-    }
-
+    // Prevent background permission dialog spam by requiring a user gesture.
     if (user_activation_state == UserActivationState::kRequired &&
         !rfh->HasTransientUserActivation()) {
       // No permission prompts without user activation.
@@ -346,11 +388,6 @@ class FileSystemAccessPermissionContext::PermissionGrantImpl
     }
 
     auto origin = rfh->GetLastCommittedOrigin().GetURL();
-    if (url::Origin::Create(origin) != origin_) {
-      // Third party iframes are not allowed to request more permissions.
-      std::move(callback).Run(PermissionRequestOutcome::kThirdPartyContext);
-      return;
-    }
 
     auto* permission_manager =
         static_cast<electron::ElectronPermissionManager*>(
@@ -698,14 +735,15 @@ void FileSystemAccessPermissionContext::ConfirmSensitiveEntryAccess(
     base::OnceCallback<void(SensitiveEntryResult)> callback) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
 
-  auto [it, inserted] = callback_map_.try_emplace(path_info.path);
-  it->second.push_back(std::move(callback));
-  if (!inserted)
-    return;
-
+  // Every request is checked and, if needed, confirmed with the app on its
+  // own, so the app sees each requesting origin/frame and one requester's
+  // answer is never applied to another's.
+  const int request_id = next_restricted_path_request_id_++;
+  restricted_path_callbacks_.emplace(request_id, std::move(callback));
   auto after_blocklist_check_callback = base::BindOnce(
       &FileSystemAccessPermissionContext::DidCheckPathAgainstBlocklist,
-      GetWeakPtr(), origin, path_info, handle_type, user_action, frame_id);
+      GetWeakPtr(), request_id, origin, path_info, handle_type, user_action,
+      frame_id);
   CheckPathAgainstBlocklist(path_info, handle_type,
                             std::move(after_blocklist_check_callback));
 }
@@ -771,24 +809,23 @@ void FileSystemAccessPermissionContext::PerformAfterWriteChecks(
 }
 
 void FileSystemAccessPermissionContext::RunRestrictedPathCallback(
-    const base::FilePath& file_path,
+    int request_id,
     SensitiveEntryResult result) {
-  if (auto val = callback_map_.extract(file_path)) {
-    for (auto& callback : val.mapped()) {
-      std::move(callback).Run(result);
-    }
+  if (auto node = restricted_path_callbacks_.extract(request_id)) {
+    std::move(node.mapped()).Run(result);
   }
 }
 
 void FileSystemAccessPermissionContext::OnRestrictedPathResult(
-    const base::FilePath& file_path,
+    int request_id,
     gin::Arguments* args) {
   SensitiveEntryResult result = SensitiveEntryResult::kAbort;
   args->GetNext(&result);
-  RunRestrictedPathCallback(file_path, result);
+  RunRestrictedPathCallback(request_id, result);
 }
 
 void FileSystemAccessPermissionContext::DidCheckPathAgainstBlocklist(
+    int request_id,
     const url::Origin& origin,
     const content::PathInfo& path_info,
     HandleType handle_type,
@@ -800,7 +837,7 @@ void FileSystemAccessPermissionContext::DidCheckPathAgainstBlocklist(
   if (user_action == UserAction::kNone) {
     auto result = should_block ? SensitiveEntryResult::kAbort
                                : SensitiveEntryResult::kAllowed;
-    RunRestrictedPathCallback(path_info.path, result);
+    RunRestrictedPathCallback(request_id, result);
     return;
   }
 
@@ -810,22 +847,30 @@ void FileSystemAccessPermissionContext::DidCheckPathAgainstBlocklist(
     if (session && session->Get()) {
       v8::Isolate* isolate = JavascriptEnvironment::GetIsolate();
       v8::HandleScope scope(isolate);
+      content::RenderFrameHost* rfh =
+          content::RenderFrameHost::FromID(frame_id);
       v8::Local<v8::Object> details =
           gin::DataObjectBuilder(isolate)
               .Set("origin", origin.GetURL().spec())
               .Set("isDirectory", handle_type == HandleType::kDirectory)
               .Set("path", path_info.path)
+              .Set("frame", rfh)
+              .Set("webContents",
+                   rfh ? content::WebContents::FromRenderFrameHost(rfh)
+                       : nullptr)
               .Build();
       session->Get()->Emit(
           "file-system-access-restricted", details,
           base::BindRepeating(
               &FileSystemAccessPermissionContext::OnRestrictedPathResult,
-              weak_factory_.GetWeakPtr(), path_info.path));
+              weak_factory_.GetWeakPtr(), request_id));
+    } else {
+      RunRestrictedPathCallback(request_id, SensitiveEntryResult::kAbort);
     }
     return;
   }
 
-  RunRestrictedPathCallback(path_info.path, SensitiveEntryResult::kAllowed);
+  RunRestrictedPathCallback(request_id, SensitiveEntryResult::kAllowed);
 }
 
 void FileSystemAccessPermissionContext::MaybeEvictEntries(
@@ -1150,6 +1195,18 @@ void FileSystemAccessPermissionContext::NavigatedAwayFromOrigin(
 void FileSystemAccessPermissionContext::CleanupPermissions(
     const url::Origin& origin) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  // Keep the grants while any top-level document of |origin| is still open in
+  // this session.
+  for (api::WebContents* api_web_contents :
+       api::WebContents::GetWebContentsList()) {
+    content::WebContents* web_contents = api_web_contents->web_contents();
+    if (web_contents && !web_contents->IsBeingDestroyed() &&
+        web_contents->GetBrowserContext() == browser_context() &&
+        web_contents->GetPrimaryMainFrame()->GetLastCommittedOrigin() ==
+            origin) {
+      return;
+    }
+  }
   RevokeActiveGrants(origin);
 }
 

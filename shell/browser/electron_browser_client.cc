@@ -59,13 +59,14 @@
 #include "extensions/browser/extension_navigation_ui_data.h"
 #include "extensions/common/extension_id.h"
 #include "ipc/constants.mojom.h"
+#include "media/mojo/mojom/speech_recognizer.mojom.h"
 #include "mojo/public/cpp/bindings/binder_map.h"
 #include "mojo/public/cpp/bindings/self_owned_associated_receiver.h"
+#include "mojo/public/cpp/bindings/self_owned_receiver.h"
 #include "net/ssl/ssl_cert_request_info.h"
 #include "net/ssl/ssl_private_key.h"
 #include "printing/buildflags/buildflags.h"
 #include "services/device/public/cpp/geolocation/geolocation_system_permission_manager.h"
-#include "services/device/public/cpp/geolocation/location_provider.h"
 #include "services/network/public/cpp/features.h"
 #include "services/network/public/cpp/is_potentially_trustworthy.h"
 #include "services/network/public/cpp/network_switches.h"
@@ -104,10 +105,13 @@
 #include "shell/browser/net/proxying_url_loader_factory.h"
 #include "shell/browser/net/proxying_websocket.h"
 #include "shell/browser/net/system_network_context_manager.h"
+#include "shell/browser/net/url_loader_factory_gate.h"
 #include "shell/browser/network_hints_handler_impl.h"
 #include "shell/browser/notifications/notification_presenter.h"
 #include "shell/browser/notifications/platform_notification_service.h"
+#include "shell/browser/preload_script.h"
 #include "shell/browser/protocol_registry.h"
+#include "shell/browser/renderer_startup_data.h"
 #include "shell/browser/serial/electron_serial_delegate.h"
 #include "shell/browser/session_preferences.h"
 #include "shell/browser/tracing/electron_tracing_delegate.h"
@@ -154,10 +158,6 @@
 #include "chrome/browser/spellchecker/spell_check_initialization_host_impl.h"  // nogncheck
 #include "components/spellcheck/common/spellcheck.mojom.h"  // nogncheck
 #endif
-
-#if BUILDFLAG(OVERRIDE_LOCATION_PROVIDER)
-#include "shell/browser/fake_location_provider.h"
-#endif  // BUILDFLAG(OVERRIDE_LOCATION_PROVIDER)
 
 #if BUILDFLAG(ENABLE_ELECTRON_EXTENSIONS)
 #include "base/functional/bind.h"
@@ -257,6 +257,30 @@ void BindNetworkHintsHandler(
     mojo::PendingReceiver<network_hints::mojom::NetworkHintsHandler> receiver) {
   NetworkHintsHandlerImpl::Create(frame_host, std::move(receiver));
 }
+
+// On-device speech recognition is not supported; bind a stub that says so, as
+// an unbound frame interface is a bad message that kills the renderer.
+class OnDeviceSpeechRecognitionStub final
+    : public media::mojom::OnDeviceSpeechRecognition {
+ public:
+  static void Bind(
+      content::RenderFrameHost* frame_host,
+      mojo::PendingReceiver<media::mojom::OnDeviceSpeechRecognition> receiver) {
+    mojo::MakeSelfOwnedReceiver(
+        std::make_unique<OnDeviceSpeechRecognitionStub>(), std::move(receiver));
+  }
+
+  void Available(const std::vector<std::string>& languages,
+                 media::mojom::SpeechRecognitionQuality quality,
+                 AvailableCallback callback) override {
+    std::move(callback).Run(media::mojom::AvailabilityStatus::kUnavailable);
+  }
+  void Install(const std::vector<std::string>& languages,
+               media::mojom::SpeechRecognitionQuality quality,
+               InstallCallback callback) override {
+    std::move(callback).Run(false);
+  }
+};
 
 #if BUILDFLAG(ENABLE_ELECTRON_EXTENSIONS)
 // Used by the GetPrivilegeRequiredByUrl() and GetProcessPrivilege() functions
@@ -724,6 +748,58 @@ bool ElectronBrowserClient::CanCreateWindow(
   return false;
 }
 
+std::optional<mojo_base::BigBuffer>
+ElectronBrowserClient::GetExtraCreateNewWindowReplyData(
+    content::RenderFrameHost* new_window_main_frame,
+    const GURL& target_url) {
+  // A window.open() popup's synchronous about:blank fires
+  // DidCreateScriptContext — and runs the preload — before any async push can
+  // land. We've just run setWindowOpenHandler so the popup's WebContents has
+  // its (possibly overridden) preload set; attach it to the reply.
+  //
+  // Only the about:blank document needs this. A popup that navigates
+  // (window.open(url)) does not run the preload on its initial document and
+  // gets a normal ElectronFrameStartup push at ReadyToCommitNavigation, so
+  // building the data here for it would be pure waste.
+  if (!target_url.is_empty() && !target_url.IsAboutBlank())
+    return std::nullopt;
+
+  auto* web_contents =
+      content::WebContents::FromRenderFrameHost(new_window_main_frame);
+  if (!web_contents)
+    return std::nullopt;
+  if (!WebContentsPreferences::ShouldUseSandbox(web_contents))
+    return std::nullopt;
+
+  mojom::RendererStartupDataPtr data;
+  {
+    ScopedAllowBlockingForElectron allow_blocking;
+    data = renderer_startup_data::BuildForFrame(new_window_main_frame);
+  }
+  // Opaque blob — Chromium can't depend on Electron's mojom types.
+  return mojo_base::BigBuffer(mojom::RendererStartupData::Serialize(&data));
+}
+
+std::optional<mojo_base::BigBuffer>
+ElectronBrowserClient::GetServiceWorkerStartupData(
+    content::BrowserContext* browser_context,
+    const GURL& scope) {
+  // Only the service-worker preload realm consumes this, and it's only created
+  // when SW preloads are registered. Skip the asar reads + serialization
+  // otherwise — this runs on every service worker start.
+  auto* session_prefs = SessionPreferences::FromBrowserContext(browser_context);
+  if (!session_prefs || !session_prefs->HasServiceWorkerPreloadScript())
+    return std::nullopt;
+
+  mojom::RendererStartupDataPtr data;
+  {
+    ScopedAllowBlockingForElectron allow_blocking;
+    data = renderer_startup_data::Build(
+        browser_context, PreloadScript::ScriptType::kServiceWorker);
+  }
+  return mojo_base::BigBuffer(mojom::RendererStartupData::Serialize(&data));
+}
+
 std::unique_ptr<content::VideoOverlayWindow>
 ElectronBrowserClient::CreateWindowForVideoPictureInPicture(
     content::VideoPictureInPictureWindowController* controller) {
@@ -760,8 +836,7 @@ void ElectronBrowserClient::GetAdditionalWebUISchemes(
 void ElectronBrowserClient::SiteInstanceGotProcessAndSite(
     content::SiteInstance* site_instance) {
 #if BUILDFLAG(ENABLE_ELECTRON_EXTENSIONS)
-  auto* browser_context =
-      static_cast<ElectronBrowserContext*>(site_instance->GetBrowserContext());
+  auto* browser_context = site_instance->GetBrowserContext();
   extensions::ExtensionRegistry* registry =
       extensions::ExtensionRegistry::Get(browser_context);
   const extensions::Extension* extension =
@@ -839,15 +914,6 @@ ElectronBrowserClient::CreateClientCertStore(
   return std::make_unique<net::ClientCertStoreMac>();
 #elif defined(USE_OPENSSL)
   return ();
-#endif
-}
-
-std::unique_ptr<device::LocationProvider>
-ElectronBrowserClient::OverrideSystemLocationProvider() {
-#if BUILDFLAG(OVERRIDE_LOCATION_PROVIDER)
-  return std::make_unique<FakeLocationProvider>();
-#else
-  return {};
 #endif
 }
 
@@ -930,6 +996,9 @@ void OnOpenExternal(const GURL& escaped_url, bool allowed) {
 void HandleExternalProtocolInUI(
     const GURL& url,
     content::WeakDocumentPtr document_ptr,
+    const std::optional<WebContentsPermissionHelper::ExternalProtocolRequester>&
+        initiator,
+    const std::optional<url::Origin>& initiating_origin,
     content::WebContents::OnceGetter web_contents_getter,
     bool has_user_gesture,
     bool is_primary_main_frame,
@@ -943,12 +1012,32 @@ void HandleExternalProtocolInUI(
   if (!permission_helper)
     return;
 
+  // Who is asking to launch |url|:
+  //  * |rfh| is the document that started the navigation, if it still exists;
+  //    it is then the requester, exactly as for any other permission. It can
+  //    be gone by now (the navigation belongs to the navigating frame, e.g. a
+  //    popup, so its initiator can navigate away or be removed while a
+  //    redirect is in flight), and it is null for navigations the browser
+  //    started itself (e.g. webContents.loadURL()).
+  //  * |initiator| is that document's origin and main-frame-ness captured when
+  //    the request reached the browser, for use once the document is gone.
+  //  * |initiating_origin| is what content holds responsible: the origin that
+  //    redirected to |url| if there was a server redirect, otherwise the
+  //    initiator's origin; absent only for direct browser-initiated
+  //    navigations. It is the last resort when neither of the above exists,
+  //    and then isMainFrame describes the navigating frame.
+  // The navigating WebContents' main frame only ever anchors the request in
+  // those fallback cases; it is reported as the requester solely for direct
+  // browser-initiated navigations.
   content::RenderFrameHost* rfh = document_ptr.AsRenderFrameHostIfValid();
+  std::optional<WebContentsPermissionHelper::ExternalProtocolRequester>
+      requester;
   if (!rfh) {
-    // If the render frame host is not valid it means it was a top level
-    // navigation and the frame has already been disposed of.  In this case we
-    // take the current main frame and declare it responsible for the
-    // transition.
+    if (initiator) {
+      requester = initiator;
+    } else if (initiating_origin) {
+      requester.emplace(*initiating_origin, is_primary_main_frame);
+    }
     rfh = web_contents->GetPrimaryMainFrame();
   }
 
@@ -978,8 +1067,8 @@ void HandleExternalProtocolInUI(
 
   GURL escaped_url(base::EscapeExternalHandlerValue(url.spec()));
   auto callback = base::BindOnce(&OnOpenExternal, escaped_url);
-  permission_helper->RequestOpenExternalPermission(rfh, std::move(callback),
-                                                   has_user_gesture, url);
+  permission_helper->RequestOpenExternalPermission(
+      rfh, std::move(callback), has_user_gesture, url, requester);
 }
 
 }  // namespace
@@ -1000,12 +1089,18 @@ bool ElectronBrowserClient::HandleExternalProtocol(
     mojo::PendingRemote<network::mojom::URLLoaderFactory>* out_factory) {
   content::GetUIThreadTaskRunner({})->PostTask(
       FROM_HERE,
-      base::BindOnce(&HandleExternalProtocolInUI, url,
-                     initiator_document
-                         ? initiator_document->GetWeakDocumentPtr()
-                         : content::WeakDocumentPtr(),
-                     std::move(web_contents_getter), has_user_gesture,
-                     is_primary_main_frame, sandbox_flags));
+      base::BindOnce(
+          &HandleExternalProtocolInUI, url,
+          initiator_document ? initiator_document->GetWeakDocumentPtr()
+                             : content::WeakDocumentPtr(),
+          initiator_document
+              ? std::make_optional<
+                    WebContentsPermissionHelper::ExternalProtocolRequester>(
+                    initiator_document->GetLastCommittedOrigin(),
+                    initiator_document->GetParent() == nullptr)
+              : std::nullopt,
+          initiating_origin, std::move(web_contents_getter), has_user_gesture,
+          is_primary_main_frame, sandbox_flags));
   return true;
 }
 
@@ -1257,7 +1352,9 @@ void ElectronBrowserClient::RegisterNonNetworkSubresourceURLLoaderFactories(
     factories->emplace(content::kChromeUIScheme,
                        content::CreateWebUIURLLoaderFactory(
                            frame_host, content::kChromeUIScheme,
-                           {content::kChromeUIResourcesHost}));
+                           {content::kChromeUIResourcesHost},
+                           request_initiator_origin.value_or(
+                               frame_host->GetLastCommittedOrigin())));
   }
 
   // Extensions with the necessary permissions get access to file:// URLs that
@@ -1411,6 +1508,25 @@ void ElectronBrowserClient::WillCreateURLLoaderFactory(
 
   auto [proxied_receiver, target_factory_remote] = factory_builder.Append();
 
+  // Renderer-facing factories get an IO-thread gate in front of the proxy, so
+  // requests only detour through this thread while something observes them.
+  if (frame_host && type != URLLoaderFactoryType::kNavigation) {
+    mojo::Remote<network::mojom::URLLoaderFactory> target(
+        std::move(target_factory_remote));
+    mojo::PendingRemote<network::mojom::URLLoaderFactory> gate_to_network;
+    target->Clone(gate_to_network.InitWithNewPipeAndPassReceiver());
+    mojo::PendingRemote<network::mojom::URLLoaderFactory> gate_to_proxy;
+    mojo::PendingReceiver<network::mojom::URLLoaderFactory> proxy_receiver =
+        gate_to_proxy.InitWithNewPipeAndPassReceiver();
+    CreateURLLoaderFactoryGate(
+        static_cast<ElectronBrowserContext*>(browser_context)
+            ->intercept_state(),
+        std::move(proxied_receiver), std::move(gate_to_network),
+        std::move(gate_to_proxy));
+    proxied_receiver = std::move(proxy_receiver);
+    target_factory_remote = target.Unbind();
+  }
+
   // Required by WebRequestInfoInitParams.
   //
   // Note that in Electron we allow webRequest to capture requests sent from
@@ -1432,6 +1548,7 @@ void ElectronBrowserClient::WillCreateURLLoaderFactory(
   new ProxyingURLLoaderFactory{
       web_request,
       protocol_registry->intercept_handlers(),
+      static_cast<ElectronBrowserContext*>(browser_context)->GetWeakPtr(),
       render_process_id,
       frame_host ? frame_host->GetRoutingID() : IPC::mojom::kRoutingIdNone,
       &next_id_,
@@ -1736,6 +1853,8 @@ void ElectronBrowserClient::RegisterBrowserInterfaceBindersForFrame(
       base::BindRepeating(&badging::BadgeManager::BindFrameReceiver));
   map->Add<blink::mojom::KeyboardLockService>(base::BindRepeating(
       &content::KeyboardLockServiceImpl::CreateMojoService));
+  map->Add<media::mojom::OnDeviceSpeechRecognition>(
+      &OnDeviceSpeechRecognitionStub::Bind);
 #if BUILDFLAG(ENABLE_BUILTIN_SPELLCHECKER)
   map->Add<spellcheck::mojom::SpellCheckHost>(base::BindRepeating(
       [](content::RenderFrameHost* frame_host,

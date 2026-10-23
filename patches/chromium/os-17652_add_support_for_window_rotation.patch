@@ -103,10 +103,10 @@ index 9ff12d2c365172d08464f62fc01597cfcc699dbd..b964c316ac73df1b8811d03386ab9208
  };
  
 diff --git a/content/browser/renderer_host/render_widget_host_view_aura.cc b/content/browser/renderer_host/render_widget_host_view_aura.cc
-index ab18b92618d5a05055ff8c6428b5c79982875b43..6e03d616d77d1c9da483b8777142925f78d1427c 100644
+index b80df1c4368555fd1f3b8a08d68617e9a199abaa..97fb3f45b42c8aa6d31f7c5ae4e2138b593d564b 100644
 --- a/content/browser/renderer_host/render_widget_host_view_aura.cc
 +++ b/content/browser/renderer_host/render_widget_host_view_aura.cc
-@@ -134,6 +134,7 @@
+@@ -135,6 +135,7 @@
  #include "ui/base/ime/linux/text_edit_command_auralinux.h"
  #include "ui/base/ime/text_input_flags.h"
  #include "ui/linux/linux_ui.h"
@@ -114,7 +114,7 @@ index ab18b92618d5a05055ff8c6428b5c79982875b43..6e03d616d77d1c9da483b8777142925f
  #endif
  
  #if BUILDFLAG(IS_CHROMEOS)
-@@ -380,6 +381,22 @@ RenderWidgetHostViewAura::RenderWidgetHostViewAura(
+@@ -381,6 +382,22 @@ RenderWidgetHostViewAura::RenderWidgetHostViewAura(
              .double_tap_to_zoom_enabled;
  
      event_handler_->SetPinchZoomEnabled(owner_delegate->GetWebkitPreferencesForWidget().enable_pinch_zoom);
@@ -137,7 +137,7 @@ index ab18b92618d5a05055ff8c6428b5c79982875b43..6e03d616d77d1c9da483b8777142925f
    }
  
  #if BUILDFLAG(IS_WIN)
-@@ -408,6 +425,11 @@ void RenderWidgetHostViewAura::InitAsChild(gfx::NativeView parent_view) {
+@@ -409,6 +426,11 @@ void RenderWidgetHostViewAura::InitAsChild(gfx::NativeView parent_view) {
        UpdateSystemCursorSize(cursor_client->GetSystemCursorSize());
    }
  
@@ -149,7 +149,7 @@ index ab18b92618d5a05055ff8c6428b5c79982875b43..6e03d616d77d1c9da483b8777142925f
  #if BUILDFLAG(IS_WIN)
    // This will fetch and set the display features.
    ObserveDevicePosturePlatformProvider();
-@@ -465,14 +487,31 @@ void RenderWidgetHostViewAura::InitAsPopup(
+@@ -466,14 +488,31 @@ void RenderWidgetHostViewAura::InitAsPopup(
          popup_parent_host_view_->window_, window_);
    }
  
@@ -182,7 +182,7 @@ index ab18b92618d5a05055ff8c6428b5c79982875b43..6e03d616d77d1c9da483b8777142925f
                                          display::kInvalidDisplayId);
  
    SetBounds(bounds_in_screen);
-@@ -496,6 +535,11 @@ void RenderWidgetHostViewAura::InitAsPopup(
+@@ -497,6 +536,11 @@ void RenderWidgetHostViewAura::InitAsPopup(
    if (cursor_client)
      UpdateSystemCursorSize(cursor_client->GetSystemCursorSize());
  
@@ -194,7 +194,7 @@ index ab18b92618d5a05055ff8c6428b5c79982875b43..6e03d616d77d1c9da483b8777142925f
  #if BUILDFLAG(IS_WIN)
    // This will fetch and set the display features.
    ObserveDevicePosturePlatformProvider();
-@@ -516,7 +560,14 @@ void RenderWidgetHostViewAura::SetSize(const gfx::Size& size) {
+@@ -517,7 +561,14 @@ void RenderWidgetHostViewAura::SetSize(const gfx::Size& size) {
  }
  
  void RenderWidgetHostViewAura::SetBounds(const gfx::Rect& rect) {
@@ -210,7 +210,7 @@ index ab18b92618d5a05055ff8c6428b5c79982875b43..6e03d616d77d1c9da483b8777142925f
  
    // RenderWidgetHostViewAura::SetBounds() takes screen coordinates, but
    // Window::SetBounds() takes parent coordinates, so do the conversion here.
-@@ -530,7 +581,7 @@ void RenderWidgetHostViewAura::SetBounds(const gfx::Rect& rect) {
+@@ -531,7 +582,7 @@ void RenderWidgetHostViewAura::SetBounds(const gfx::Rect& rect) {
      }
    }
  
@@ -219,7 +219,7 @@ index ab18b92618d5a05055ff8c6428b5c79982875b43..6e03d616d77d1c9da483b8777142925f
  }
  
  gfx::NativeView RenderWidgetHostViewAura::GetNativeView() {
-@@ -3534,6 +3585,51 @@ ui::Compositor* RenderWidgetHostViewAura::GetCompositor() {
+@@ -3603,6 +3654,51 @@ ui::Compositor* RenderWidgetHostViewAura::GetCompositor() {
    return window_->GetHost()->compositor();
  }
  
@@ -362,7 +362,7 @@ index 0268d33da3150a37ca8206695a5f324d8fde22e6..d877f7c2e908f1f3188b4f499269da53
    // devtools extension panels.
    bool ai_ot_apis_enabled = false;
 diff --git a/ui/aura/window.cc b/ui/aura/window.cc
-index 1437ffcb458c0bfe4b60cf74e4de673314cc2929..42b961dcf5980972bf77ac872939434957ce4102 100644
+index 6809e434c791cb8e1de21d2008e34a13ccd373ea..760489a6d080e0bf0af8a75949ffcf6465b3dd43 100644
 --- a/ui/aura/window.cc
 +++ b/ui/aura/window.cc
 @@ -1069,10 +1069,16 @@ bool Window::HitTest(const gfx::Point& local_point) {
@@ -383,7 +383,7 @@ index 1437ffcb458c0bfe4b60cf74e4de673314cc2929..42b961dcf5980972bf77ac8729394349
  
    // If we are currently not the layer's delegate, we will not get bounds
    // changed notification from the layer (this typically happens after animating
-@@ -1554,6 +1560,11 @@ void Window::OnLayerBoundsChanged(const gfx::Rect& old_bounds,
+@@ -1562,6 +1568,11 @@ void Window::OnLayerBoundsChanged(const gfx::Rect& old_bounds,
    WindowOcclusionTracker::ScopedPause pause_occlusion_tracking;
  
    bounds_ = layer()->bounds();
@@ -396,7 +396,7 @@ index 1437ffcb458c0bfe4b60cf74e4de673314cc2929..42b961dcf5980972bf77ac8729394349
    if (!IsRootWindow() && old_bounds.size() != bounds_.size() &&
        IsEmbeddingExternalContent()) {
 diff --git a/ui/aura/window.h b/ui/aura/window.h
-index 7329105f765b7bf341dffe94a58eee0423299bd4..d006ccbd75c68ed79f52afca43e5511336a87bb6 100644
+index e0a2cf4d2f41781573d9ffa4b6437997cd83d13f..99103855d2ea7da53ead540b1b58e3f232275c94 100644
 --- a/ui/aura/window.h
 +++ b/ui/aura/window.h
 @@ -212,6 +212,7 @@ class AURA_EXPORT Window : public ui::LayerDelegate,
@@ -407,7 +407,7 @@ index 7329105f765b7bf341dffe94a58eee0423299bd4..d006ccbd75c68ed79f52afca43e55113
  
    Window* parent() { return parent_; }
    const Window* parent() const { return parent_; }
-@@ -758,6 +759,11 @@ class AURA_EXPORT Window : public ui::LayerDelegate,
+@@ -763,6 +764,11 @@ class AURA_EXPORT Window : public ui::LayerDelegate,
    // is relative to the parent Window.
    gfx::Rect bounds_;
  
@@ -420,10 +420,10 @@ index 7329105f765b7bf341dffe94a58eee0423299bd4..d006ccbd75c68ed79f52afca43e55113
  
    client::WindowType type_;
 diff --git a/ui/aura/window_event_dispatcher.cc b/ui/aura/window_event_dispatcher.cc
-index ea66e6bb159a3b14e9c9abfed642c19356b0b9c1..ce64ff7db0d37083f3da19a08386bf911d664860 100644
+index 180a83d83d350712a3424d80c069fc71a6d6ebb8..4ce8b2ccb5e7df2be5230600b0808ab07475ce54 100644
 --- a/ui/aura/window_event_dispatcher.cc
 +++ b/ui/aura/window_event_dispatcher.cc
-@@ -547,6 +547,14 @@ ui::EventDispatchDetails WindowEventDispatcher::PreDispatchEvent(
+@@ -545,6 +545,14 @@ ui::EventDispatchDetails WindowEventDispatcher::PreDispatchEvent(
      return details;
    }
  

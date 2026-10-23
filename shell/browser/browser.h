@@ -15,7 +15,6 @@
 #include "base/task/cancelable_task_tracker.h"
 #include "base/values.h"
 #include "shell/browser/window_list_observer.h"
-#include "shell/common/gin_helper/promise.h"
 
 #if BUILDFLAG(IS_WIN)
 #include <windows.h>
@@ -35,7 +34,17 @@ class Arguments;
 
 namespace gin_helper {
 class Arguments;
-}
+template <typename T>
+class Promise;
+}  // namespace gin_helper
+
+namespace v8 {
+template <typename T>
+class Local;
+class Isolate;
+class Promise;
+class Value;
+}  // namespace v8
 
 namespace electron {
 
@@ -75,9 +84,12 @@ struct LoginItemSettings {
   std::wstring name;
 
   // used in browser::getLoginItemSettings
-  bool executable_will_launch_at_login = false;
   std::vector<LaunchItem> launch_items;
 #endif
+
+  // used in browser::getLoginItemSettings; only meaningful on Windows but
+  // always emitted so consumers don't observe `undefined`.
+  bool executable_will_launch_at_login = false;
 
   LoginItemSettings();
   ~LoginItemSettings();
@@ -101,6 +113,9 @@ class Browser : private WindowListObserver {
 
   // Exit the application immediately and set exit code.
   void Exit(gin::Arguments* args);
+
+  // Same as Exit() but callable from native code (no gin arguments).
+  void ExitWithCode(int code);
 
   // Cleanup everything and shutdown the application gracefully.
   void Shutdown();
@@ -152,11 +167,9 @@ class Browser : private WindowListObserver {
 
   std::u16string GetApplicationNameForProtocol(const GURL& url);
 
-#if !BUILDFLAG(IS_LINUX)
   // get the name, icon and path for an application
   v8::Local<v8::Promise> GetApplicationInfoForProtocol(v8::Isolate* isolate,
                                                        const GURL& url);
-#endif
 
   // Set/Get the badge count.
   bool SetBadgeCount(std::optional<int> count);

@@ -1,12 +1,5 @@
-import {
-  app,
-  BaseWindow,
-  BrowserWindow,
-  session,
-  webContents,
-  WebContents,
-  MenuItemConstructorOptions
-} from 'electron/main';
+import { app, BaseWindow, session, webContents } from 'electron/main';
+import type { WebContents, MenuItemConstructorOptions } from 'electron/main';
 
 const isMac = process.platform === 'darwin';
 const isWindows = process.platform === 'win32';
@@ -67,6 +60,12 @@ interface Role {
   submenu?: MenuItemConstructorOptions[];
 }
 
+/**
+ * Returns the parent webContents if wc is a DevTools webContents. Returns undefined otherwise.
+ */
+const getDevToolsParentWebContents = (wc: WebContents): WebContents | undefined =>
+  webContents.getAllWebContents().find(({ devToolsWebContents }) => devToolsWebContents === wc);
+
 export const roleList: Record<RoleId, Role> = {
   about: {
     get label() {
@@ -99,10 +98,8 @@ export const roleList: Record<RoleId, Role> = {
     label: 'Force Reload',
     accelerator: 'Shift+CmdOrCtrl+R',
     nonNativeMacOSRole: true,
-    windowMethod: (window: BaseWindow) => {
-      if (window instanceof BrowserWindow) {
-        window.webContents.reloadIgnoringCache();
-      }
+    webContentsMethod: (wc: WebContents) => {
+      (getDevToolsParentWebContents(wc) || wc).reloadIgnoringCache();
     }
   },
   front: {
@@ -163,10 +160,8 @@ export const roleList: Record<RoleId, Role> = {
     label: 'Reload',
     accelerator: 'CmdOrCtrl+R',
     nonNativeMacOSRole: true,
-    windowMethod: (w: BaseWindow) => {
-      if (w instanceof BrowserWindow) {
-        w.reload();
-      }
+    webContentsMethod: (wc: WebContents) => {
+      (getDevToolsParentWebContents(wc) || wc).reload();
     }
   },
   resetzoom: {
@@ -214,8 +209,7 @@ export const roleList: Record<RoleId, Role> = {
     accelerator: isMac ? 'Alt+Command+I' : 'Ctrl+Shift+I',
     nonNativeMacOSRole: true,
     webContentsMethod: (wc) => {
-      const bw = wc.getOwnerBrowserWindow();
-      if (bw) bw.webContents.toggleDevTools();
+      (getDevToolsParentWebContents(wc) || wc).toggleDevTools();
     }
   },
   togglefullscreen: {

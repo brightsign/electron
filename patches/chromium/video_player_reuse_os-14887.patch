@@ -128,10 +128,10 @@ index b0c3d1c50fb04aac67a3068ec43ffe7211484075..045359b459c3191d36ad19e8140e7b2c
      AudioSourceProviderClientLockScope scope(*this);
      ClearMediaPlayerAndAudioSourceProviderClientWithoutLocking();
 diff --git a/third_party/blink/renderer/platform/runtime_enabled_features.json5 b/third_party/blink/renderer/platform/runtime_enabled_features.json5
-index 287aa88900e8e9054685b2339894ba40389d4eae..a89b74485410d39e2c784fb6ef861c78da5def15 100644
+index daa4b31d715c82914420fd528ac241c1a5a40577..fee9da387d4cb1bfe75ecb3beb5eefea21fe8626 100644
 --- a/third_party/blink/renderer/platform/runtime_enabled_features.json5
 +++ b/third_party/blink/renderer/platform/runtime_enabled_features.json5
-@@ -6795,5 +6795,8 @@
+@@ -6811,5 +6811,8 @@
        // crbug.com/435623334.
        name: "XSLTSpecialTrial",
      },

@@ -8,10 +8,10 @@ these transforms through Viz and the Linux Wayland, Vulkan, and DRM hardware
 presentation paths, and update Aura bounds, popup, and input transforms.
 
 diff --git a/content/browser/renderer_host/render_widget_host_view_aura.cc b/content/browser/renderer_host/render_widget_host_view_aura.cc
-index 6e03d616d77d1c9da483b8777142925f78d1427c..6d0bf614341bb142e9aac161b961561ff444d18e 100644
+index 97fb3f45b42c8aa6d31f7c5ae4e2138b593d564b..4a76d78a625a7ae1f8c75df2888abcf662018d3b 100644
 --- a/content/browser/renderer_host/render_widget_host_view_aura.cc
 +++ b/content/browser/renderer_host/render_widget_host_view_aura.cc
-@@ -393,6 +393,20 @@ RenderWidgetHostViewAura::RenderWidgetHostViewAura(
+@@ -394,6 +394,20 @@ RenderWidgetHostViewAura::RenderWidgetHostViewAura(
        case blink::mojom::WindowTransformType::kWindowTransformTypeRotate270:
          window_transform_ = gfx::OVERLAY_TRANSFORM_ROTATE_CLOCKWISE_270;
          break;
@@ -32,7 +32,7 @@ index 6e03d616d77d1c9da483b8777142925f78d1427c..6d0bf614341bb142e9aac161b961561f
        default:
          window_transform_ = gfx::OVERLAY_TRANSFORM_NONE;
          break;
-@@ -3600,6 +3614,14 @@ gfx::Rect RenderWidgetHostViewAura::GetTransformedPopupBounds(const gfx::Rect& n
+@@ -3669,6 +3683,14 @@ gfx::Rect RenderWidgetHostViewAura::GetTransformedPopupBounds(const gfx::Rect& n
      transformed_bounds.Offset(parent_bounds.OffsetFromOrigin());
  
    switch (window_transform_) {
@@ -47,7 +47,7 @@ index 6e03d616d77d1c9da483b8777142925f78d1427c..6d0bf614341bb142e9aac161b961561f
      case gfx::OVERLAY_TRANSFORM_ROTATE_CLOCKWISE_90:
        transformed_bounds.set_size(gfx::Size(original_popup_bounds_.height(), original_popup_bounds_.width()));
        transformed_bounds.Offset(-original_popup_bounds_.height(), 0);
-@@ -3614,6 +3636,16 @@ gfx::Rect RenderWidgetHostViewAura::GetTransformedPopupBounds(const gfx::Rect& n
+@@ -3683,6 +3705,16 @@ gfx::Rect RenderWidgetHostViewAura::GetTransformedPopupBounds(const gfx::Rect& n
        transformed_bounds.Offset(0, -original_popup_bounds_.width());
        break;
  

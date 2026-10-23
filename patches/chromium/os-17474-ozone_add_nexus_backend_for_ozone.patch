@@ -122,10 +122,10 @@ index 3b5762f66dfda8e2962cb8e6ece740c30cb44862..5cc561b46633b00beb49003e7fec408c
    for (const auto& entry : xkb_keymaps_) {
      if (entry.layout_name == layout_name) {
 diff --git a/ui/ozone/BUILD.gn b/ui/ozone/BUILD.gn
-index 7bf64c40e9f14c86fdca8d1c438061432a0e9dd6..ea4dcd7629f1a08aa99f5a0478b1fdcfade445f4 100644
+index 0bd2b4e80e3bbe421dafe6c538e113fa665d4365..9cada147352cbd438823c058758f61a29e51bd10 100644
 --- a/ui/ozone/BUILD.gn
 +++ b/ui/ozone/BUILD.gn
-@@ -71,6 +71,11 @@ if (ozone_platform_flatland) {
+@@ -72,6 +72,11 @@ if (ozone_platform_flatland) {
    ozone_platform_test_deps += [ "platform/flatland:flatland_unittests" ]
  }
  
@@ -1914,7 +1914,7 @@ index 78a75703d7fdf12d99a245f732e36bd136451f98..3622e4dd885656f62bcad721b5c49caa
  
    params.init_properties_container.SetProperty(aura::client::kOwnedWindowAnchor,
 diff --git a/ui/views/widget/desktop_aura/desktop_window_tree_host_platform.cc b/ui/views/widget/desktop_aura/desktop_window_tree_host_platform.cc
-index 47018fb1e86c5f290cd12a3b78f73a6f353d5ec1..0f68670f76da2bb47b9ca1aecf6f0624c4dc56b6 100644
+index 524759d8388b3d6a386e1649a103bc1c29673bd8..70f3b5f52a823e4a4e7b9783235626174cc7e5ed 100644
 --- a/ui/views/widget/desktop_aura/desktop_window_tree_host_platform.cc
 +++ b/ui/views/widget/desktop_aura/desktop_window_tree_host_platform.cc
 @@ -23,6 +23,7 @@

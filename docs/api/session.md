@@ -154,6 +154,14 @@ initialized to support the start of the extension's background page.
 
 #### Event: 'file-system-access-restricted'
 
+<!--
+```YAML history
+changes:
+  - pr-url: https://github.com/electron/electron/pull/53666
+    description: "Added `details.frame` and `details.webContents`; emitted once per requesting document instead of once per path."
+```
+-->
+
 Returns:
 
 * `event` Event
@@ -161,6 +169,8 @@ Returns:
   * `origin` string - The origin that initiated access to the blocked path.
   * `isDirectory` boolean - Whether or not the path is a directory.
   * `path` string - The blocked path attempting to be accessed.
+  * `frame` [WebFrameMain](web-frame-main.md) | null - The frame that initiated access. May be `null` if the frame has since been destroyed.
+  * `webContents` [WebContents](web-contents.md) | null - The WebContents that contains `frame`.
 * `callback` Function
   * `action` string - The action to take as a result of the restricted path access attempt.
     * `allow` - This will allow `path` to be accessed despite restricted status.
@@ -170,7 +180,7 @@ Returns:
 ```js
 const { app, dialog, BrowserWindow, session } = require('electron')
 
-async function createWindow () {
+async function createWindow() {
   const mainWindow = new BrowserWindow()
 
   await mainWindow.loadURL('https://buzzfeed.com')
@@ -193,14 +203,16 @@ async function createWindow () {
     }
   })
 
-  mainWindow.webContents.executeJavaScript(`
+  mainWindow.webContents.executeJavaScript(
+    `
     window.showDirectoryPicker({
       id: 'electron-demo',
       mode: 'readwrite',
       startIn: 'downloads',
     }).catch(e => {
       console.log(e)
-    })`, true
+    })`,
+    true
   )
 }
 
@@ -317,9 +329,12 @@ app.whenReady().then(() => {
 
       // Search through the list of devices that have previously been granted permission
       return grantedDevices.some((grantedDevice) => {
-        return grantedDevice.vendorId === details.device.vendorId &&
-              grantedDevice.productId === details.device.productId &&
-              grantedDevice.serialNumber && grantedDevice.serialNumber === details.device.serialNumber
+        return (
+          grantedDevice.vendorId === details.device.vendorId &&
+          grantedDevice.productId === details.device.productId &&
+          grantedDevice.serialNumber &&
+          grantedDevice.serialNumber === details.device.serialNumber
+        )
       })
     }
     return false
@@ -428,9 +443,12 @@ app.whenReady().then(() => {
 
       // Search through the list of devices that have previously been granted permission
       return grantedDevices.some((grantedDevice) => {
-        return grantedDevice.vendorId === details.device.vendorId &&
-              grantedDevice.productId === details.device.productId &&
-              grantedDevice.serialNumber && grantedDevice.serialNumber === details.device.serialNumber
+        return (
+          grantedDevice.vendorId === details.device.vendorId &&
+          grantedDevice.productId === details.device.productId &&
+          grantedDevice.serialNumber &&
+          grantedDevice.serialNumber === details.device.serialNumber
+        )
       })
     }
     return false
@@ -570,9 +588,12 @@ app.whenReady().then(() => {
 
       // Search through the list of devices that have previously been granted permission
       return grantedDevices.some((grantedDevice) => {
-        return grantedDevice.vendorId === details.device.vendorId &&
-              grantedDevice.productId === details.device.productId &&
-              grantedDevice.serialNumber && grantedDevice.serialNumber === details.device.serialNumber
+        return (
+          grantedDevice.vendorId === details.device.vendorId &&
+          grantedDevice.productId === details.device.productId &&
+          grantedDevice.serialNumber &&
+          grantedDevice.serialNumber === details.device.serialNumber
+        )
       })
     }
     return false
@@ -832,7 +853,7 @@ Node.js's HTTP stack.
 Example:
 
 ```js
-async function example () {
+async function example() {
   const response = await net.fetch('https://my.app')
   if (response.ok) {
     const body = await response.json()
@@ -936,15 +957,15 @@ win.webContents.session.setCertificateVerifyProc((request, callback) => {
     * `midi` - Request MIDI access in the [Web MIDI API](https://developer.mozilla.org/en-US/docs/Web/API/Web_MIDI_API).
     * `midiSysex` - Request the use of system exclusive messages in the [Web MIDI API](https://developer.mozilla.org/en-US/docs/Web/API/Web_MIDI_API).
     * `notifications` - Request notification creation and the ability to display them in the user's system tray using the [Notifications API](https://developer.mozilla.org/en-US/docs/Web/API/notification)
-    * `pointerLock` - Request to directly interpret mouse movements as an input method via the [Pointer Lock API](https://developer.mozilla.org/en-US/docs/Web/API/Pointer_Lock_API). These requests always appear to originate from the main frame.
-    * `keyboardLock` - Request capture of keypresses for any or all of the keys on the physical keyboard via the [Keyboard Lock API](https://developer.mozilla.org/en-US/docs/Web/API/Keyboard/lock). These requests always appear to originate from the main frame.
+    * `pointerLock` - Request to directly interpret mouse movements as an input method via the [Pointer Lock API](https://developer.mozilla.org/en-US/docs/Web/API/Pointer_Lock_API).
+    * `keyboardLock` - Request capture of keypresses for any or all of the keys on the physical keyboard via the [Keyboard Lock API](https://developer.mozilla.org/en-US/docs/Web/API/Keyboard/lock).
     * `openExternal` - Request to open links in external applications.
     * `speaker-selection` - Request to enumerate and select audio output devices via the [speaker-selection permissions policy](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Permissions-Policy/speaker-selection).
     * `storage-access` - Allows content loaded in a third-party context to request access to third-party cookies using the [Storage Access API](https://developer.mozilla.org/en-US/docs/Web/API/Storage_Access_API).
     * `top-level-storage-access` -  Allow top-level sites to request third-party cookie access on behalf of embedded content originating from another site in the same related website set using the [Storage Access API](https://developer.mozilla.org/en-US/docs/Web/API/Storage_Access_API).
     * `window-management` - Request access to enumerate screens using the [`getScreenDetails`](https://developer.chrome.com/en/articles/multi-screen-window-placement/) API.
     * `unknown` - An unrecognized permission request.
-    * `fileSystem` - Request access to read, write, and file management capabilities using the [File System API](https://developer.mozilla.org/en-US/docs/Web/API/File_System_API).
+    * `fileSystem` - Request access to read, write, and file management capabilities using the [File System API](https://developer.mozilla.org/en-US/docs/Web/API/File_System_API). As in Chrome, a cross-origin iframe cannot ask for more access than it already has, and grants for an origin are reset shortly after its last top-level document is closed or navigated away.
   * `callback` Function
     * `permissionGranted` boolean - Allow or deny the permission.
   * `details` [PermissionRequest](structures/permission-request.md)  | [FilesystemPermissionRequest](structures/filesystem-permission-request.md) | [MediaAccessPermissionRequest](structures/media-access-permission-request.md) | [OpenExternalPermissionRequest](structures/open-external-permission-request.md) - Additional information about the permission being requested.
@@ -970,7 +991,7 @@ session.fromPartition('some-partition').setPermissionRequestHandler((webContents
 #### `ses.setPermissionCheckHandler(handler)`
 
 * `handler` Function\<boolean> | null
-  * `webContents` ([WebContents](web-contents.md) | null) - WebContents checking the permission.  Please note that if the request comes from a subframe you should use `requestingUrl` to check the request origin.  All cross origin sub frames making permission checks will pass a `null` webContents to this handler, while certain other permission checks such as `notifications` checks will always pass `null`.  You should use `embeddingOrigin` and `requestingOrigin` to determine what origin the owning frame and the requesting frame are on respectively.
+  * `webContents` ([WebContents](web-contents.md) | null) - WebContents that contains the frame checking the permission. This is `null` when the check is not made on behalf of a document, for example for a service worker or for a `notifications` check. If the check comes from a subframe, `webContents` is the top-level WebContents; use `requestingOrigin`, `requestingUrl` and `isMainFrame` to identify the frame that is asking.
   * `permission` string - Type of permission check.
     * `clipboard-read` - Request access to read from the clipboard.
     * `clipboard-sanitized-write` - Request access to write to the clipboard.
@@ -984,7 +1005,7 @@ session.fromPartition('some-partition').setPermissionRequestHandler((webContents
     * `midiSysex` - Use system exclusive messages in the [Web MIDI API](https://developer.mozilla.org/en-US/docs/Web/API/Web_MIDI_API).
     * `notifications` - Configure and display desktop notifications to the user with the [Notifications API](https://developer.mozilla.org/en-US/docs/Web/API/notification).
     * `openExternal` - Open links in external applications.
-    * `pointerLock` - Directly interpret mouse movements as an input method via the [Pointer Lock API](https://developer.mozilla.org/en-US/docs/Web/API/Pointer_Lock_API). These requests always appear to originate from the main frame.
+    * `pointerLock` - Directly interpret mouse movements as an input method via the [Pointer Lock API](https://developer.mozilla.org/en-US/docs/Web/API/Pointer_Lock_API).
     * `serial` - Read from and write to serial devices with the [Web Serial API](https://developer.mozilla.org/en-US/docs/Web/API/Web_Serial_API).
     * `storage-access` - Allows content loaded in a third-party context to request access to third-party cookies using the [Storage Access API](https://developer.mozilla.org/en-US/docs/Web/API/Storage_Access_API).
     * `top-level-storage-access` -  Allow top-level sites to request third-party cookie access on behalf of embedded content originating from another site in the same related website set using the [Storage Access API](https://developer.mozilla.org/en-US/docs/Web/API/Storage_Access_API).
@@ -994,10 +1015,10 @@ session.fromPartition('some-partition').setPermissionRequestHandler((webContents
   * `requestingOrigin` string - The origin URL of the permission check
   * `details` Object - Some properties are only available on certain permission types.
     * `embeddingOrigin` string (optional) - The origin of the frame embedding the frame that made the permission check.  Only set for cross-origin sub frames making permission checks.
-    * `securityOrigin` string (optional) - The security origin of the `media` check.
+    * `securityOrigin` string (optional) - The origin of the requesting frame, for `media`, `hid`, `usb` and `serial` checks.
     * `mediaType` string (optional) - The type of media access being requested, can be `video`,
       `audio` or `unknown`.
-    * `requestingUrl` string (optional) - The last URL the requesting frame loaded.  This is not provided for cross-origin sub frames making permission checks.
+    * `requestingUrl` string (optional) - The last URL the requesting frame loaded. Not provided when the check is not made on behalf of a document (for example for a service worker).
     * `isMainFrame` boolean - Whether the frame making the request is the main frame.
     * `filePath` string (optional) - The path of a `fileSystem` request.
     * `isDirectory` boolean (optional) - Whether a `fileSystem` request is a directory.
@@ -1049,7 +1070,7 @@ session.fromPartition('some-partition').setPermissionCheckHandler((webContents, 
         a string is specified, can be `loopback` or `loopbackWithMute`.
         Specifying a loopback device will capture system audio, and is
         currently only supported on Windows. If a WebFrameMain is specified,
-        will capture audio from that frame.
+        will capture audio from the `webContents` that contains that frame.
       * `enableLocalEcho` Boolean (optional) - If `audio` is a [WebFrameMain](web-frame-main.md)
          and this is set to `true`, then local playback of audio will not be muted (e.g. using `MediaRecorder`
          to record `WebFrameMain` with this flag set to `true` will allow audio to pass through to the speakers
@@ -1069,27 +1090,38 @@ is set to `true`, the handler will not be invoked.
 ```js
 const { session, desktopCapturer } = require('electron')
 
-session.defaultSession.setDisplayMediaRequestHandler((request, callback) => {
-  desktopCapturer.getSources({ types: ['screen'] }).then((sources) => {
-    // Grant access to the first screen found.
-    callback({ video: sources[0] })
-  })
-  // Use the system picker if available.
-  // Note: this is currently experimental. If the system picker
-  // is available, it will be used and the media request handler
-  // will not be invoked.
-}, { useSystemPicker: true })
+session.defaultSession.setDisplayMediaRequestHandler(
+  (request, callback) => {
+    desktopCapturer.getSources({ types: ['screen'] }).then((sources) => {
+      // Grant access to the first screen found.
+      callback({ video: sources[0] })
+    })
+    // Use the system picker if available.
+    // Note: this is currently experimental. If the system picker
+    // is available, it will be used and the media request handler
+    // will not be invoked.
+  },
+  { useSystemPicker: true }
+)
 ```
 
 Passing a [WebFrameMain](web-frame-main.md) object as a video or audio stream
-will capture the video or audio stream from that frame.
+captures the whole `webContents` that contains that frame (the tab), not just
+the frame: `request.frame` from an `<iframe>` therefore grants that iframe a
+capture of the page that embeds it. Check `request.frame` before using it this
+way, and note that the callback throws if the frame has been destroyed by the
+time it is called.
 
 ```js
 const { session } = require('electron')
 
 session.defaultSession.setDisplayMediaRequestHandler((request, callback) => {
-  // Allow the tab to capture itself.
-  callback({ video: request.frame })
+  // Allow a top-level page to capture its own tab.
+  if (request.frame && request.frame === request.frame.top) {
+    callback({ video: request.frame })
+  } else {
+    callback(null)
+  }
 })
 ```
 
@@ -1145,9 +1177,12 @@ app.whenReady().then(() => {
 
       // Search through the list of devices that have previously been granted permission
       return grantedDevices.some((grantedDevice) => {
-        return grantedDevice.vendorId === details.device.vendorId &&
-              grantedDevice.productId === details.device.productId &&
-              grantedDevice.serialNumber && grantedDevice.serialNumber === details.device.serialNumber
+        return (
+          grantedDevice.vendorId === details.device.vendorId &&
+          grantedDevice.productId === details.device.productId &&
+          grantedDevice.serialNumber &&
+          grantedDevice.serialNumber === details.device.serialNumber
+        )
       })
     } else if (details.deviceType === 'serial') {
       if (details.device.vendorId === 123 && details.device.productId === 345) {
@@ -1256,7 +1291,7 @@ const { app, BrowserWindow, session } = require('electron')
 
 const path = require('node:path')
 
-function createWindow () {
+function createWindow() {
   let bluetoothPinCallback = null
 
   const mainWindow = new BrowserWindow({
@@ -1730,10 +1765,12 @@ const path = require('node:path')
 
 app.whenReady().then(() => {
   const protocol = session.fromPartition('some-partition').protocol
-  if (!protocol.registerFileProtocol('atom', (request, callback) => {
-    const url = request.url.substr(7)
-    callback({ path: path.normalize(path.join(__dirname, url)) })
-  })) {
+  if (
+    !protocol.registerFileProtocol('atom', (request, callback) => {
+      const url = request.url.substr(7)
+      callback({ path: path.normalize(path.join(__dirname, url)) })
+    })
+  ) {
     console.error('Failed to register protocol')
   }
 })

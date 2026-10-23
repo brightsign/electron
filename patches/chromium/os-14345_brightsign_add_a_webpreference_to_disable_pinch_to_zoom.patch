@@ -12,10 +12,10 @@ The webpreference will only be used if disable-pinch has not been set on the
 command line.
 
 diff --git a/content/browser/renderer_host/render_widget_host_view_aura.cc b/content/browser/renderer_host/render_widget_host_view_aura.cc
-index 30218b43ce1d57e45e9c265de4edcdce496cda79..ab18b92618d5a05055ff8c6428b5c79982875b43 100644
+index de67e89b4f7c9cf2caee3a52a0c354b4636a0570..b80df1c4368555fd1f3b8a08d68617e9a199abaa 100644
 --- a/content/browser/renderer_host/render_widget_host_view_aura.cc
 +++ b/content/browser/renderer_host/render_widget_host_view_aura.cc
-@@ -378,6 +378,8 @@ RenderWidgetHostViewAura::RenderWidgetHostViewAura(
+@@ -379,6 +379,8 @@ RenderWidgetHostViewAura::RenderWidgetHostViewAura(
      double_tap_to_zoom_enabled_ =
          owner_delegate->GetWebkitPreferencesForWidget()
              .double_tap_to_zoom_enabled;
