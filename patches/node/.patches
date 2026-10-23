@@ -56,3 +56,4 @@ test_fix_edge_snapshot_stack_traces.patch
 chore_remove_use_of_deprecated_kmaxlength.patch
 fix_avx_detection.patch
 build_enable_perfetto.patch
+tls_reject_chains_containing_blocked_public_keys.patch
