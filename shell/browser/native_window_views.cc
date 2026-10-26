@@ -461,6 +461,10 @@ NativeWindowViews::NativeWindowViews(const int32_t base_window_id,
   aura::Window* window = GetNativeWindow();
   if (window)
     window->AddPreTargetHandler(this);
+
+  ui::InputMethod* input_method = widget()->GetInputMethod();
+  if (input_method)
+    input_method->AddObserver(this);
 }
 
 NativeWindowViews::~NativeWindowViews() {

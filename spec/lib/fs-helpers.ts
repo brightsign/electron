@@ -31,7 +31,10 @@ export async function copyApp(targetDir: string): Promise<string> {
   await Promise.all(
     filesToCopy.map(async (rel) => {
       await fs.promises.mkdir(path.dirname(path.resolve(targetDir, rel)), { recursive: true });
-      fs.copyFileSync(path.resolve(baseDir, rel), path.resolve(targetDir, rel));
+      let source = path.resolve(baseDir, rel);
+      // The build directory has chrome_sandbox; only dist.zip renames it (build/zip.py).
+      if (rel === 'chrome-sandbox' && !fs.existsSync(source)) source = path.resolve(baseDir, 'chrome_sandbox');
+      fs.copyFileSync(source, path.resolve(targetDir, rel));
     })
   );
 

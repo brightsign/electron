@@ -267,22 +267,22 @@ describe('webRequest module', () => {
 
       let fileUrl = 'file:///fileTofile';
       let result = await ajax(fileUrl);
-      expect(result.status).to.equal(200);
-      expect(onBeforeRequestCount).to.equal(1);
-      expect(onBeforeRedirectCount).to.equal(0);
+      expect(result.status).toBe(200);
+      expect(onBeforeRequestCount).toBe(1);
+      expect(onBeforeRedirectCount).toBe(0);
       onBeforeRequestCount = onBeforeRedirectCount = 0;
 
       fileUrl = 'file:///fileTohttp';
       result = await ajax(fileUrl);
-      expect(result.data).to.equal('/redirect');
-      expect(onBeforeRequestCount).to.equal(2);
-      expect(onBeforeRedirectCount).to.equal(1);
+      expect(result.data).toBe('/redirect');
+      expect(onBeforeRequestCount).toBe(2);
+      expect(onBeforeRedirectCount).toBe(1);
       onBeforeRequestCount = onBeforeRedirectCount = 0;
 
       result = await ajax(defaultURL);
-      expect(result.data).to.equal('/redirect');
-      expect(onBeforeRequestCount).to.equal(2);
-      expect(onBeforeRedirectCount).to.equal(1);
+      expect(result.data).toBe('/redirect');
+      expect(onBeforeRequestCount).toBe(2);
+      expect(onBeforeRedirectCount).toBe(1);
     });
 
     it('does not crash for redirects', async () => {

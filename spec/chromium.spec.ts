@@ -943,35 +943,42 @@ describe('command line switches', () => {
   });
 
   describe('--remote-debugging-address and remote-debugging-port switches', () => {
-    it('should display the discovery page', (done) => {
-      const electronPath = process.execPath;
-      let output = '';
-      appProcess = ChildProcess.spawn(electronPath, ['--remote-debugging-address=0.0.0.0', '--remote-debugging-port=']);
-      appProcess.stdout.on('data', (data) => {
-        console.log(data);
-      });
+    it('should display the discovery page', () =>
+      new Promise<void>((resolve, reject) => {
+        const done = (error?: unknown) => (error ? reject(error) : resolve());
+        const electronPath = process.execPath;
+        let output = '';
+        appProcess = ChildProcess.spawn(electronPath, [
+          '--remote-debugging-address=0.0.0.0',
+          '--remote-debugging-port='
+        ]);
+        appProcess.stdout.on('data', (data) => {
+          console.log(data);
+        });
 
-      appProcess.stderr.on('data', (data) => {
-        console.log(data);
-        output += data;
-        const m = /DevTools listening on ws:\/\/0.0.0.0:(\d+)\//.exec(output);
-        if (m) {
-          appProcess!.stderr.removeAllListeners('data');
-          const port = m[1];
-          http.get(`http://127.0.0.1:${port}`, (res) => {
-            try {
-              expect(res.statusCode).to.eql(200);
-              expect(parseInt(res.headers['content-length']!)).to.be.greaterThan(0);
-              done();
-            } catch (e) {
-              done(e);
-            } finally {
-              res.destroy();
-            }
-          });
-        }
-      });
-    });
+        appProcess.stderr.on('data', (data) => {
+          console.log(data);
+          output += data;
+          const m = /DevTools listening on ws:\/\/0.0.0.0:(\d+)\//.exec(output);
+          if (m) {
+            appProcess!.stderr.removeAllListeners('data');
+            const port = m[1];
+            http
+              .get(`http://127.0.0.1:${port}`, (res) => {
+                try {
+                  expect(res.statusCode).toEqual(200);
+                  expect(parseInt(res.headers['content-length']!)).toBeGreaterThan(0);
+                  done();
+                } catch (e) {
+                  done(e);
+                } finally {
+                  res.destroy();
+                }
+              })
+              .on('error', done);
+          }
+        });
+      }));
   });
 });
 

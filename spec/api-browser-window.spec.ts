@@ -305,14 +305,26 @@ describe('BrowserWindow module', () => {
     });
   });
 
-  describe('virtual-keyboard-visibility-changed event', () => {
-    const triggeringInputTypes = [
-      'text', 'tel', 'search', 'email', 'password', 'url'
-    ];
+  describe('virtual-keyboard-visibility-changed event', { tags: ['serial'] }, () => {
+    const triggeringInputTypes = ['text', 'tel', 'search', 'email', 'password', 'url'];
 
     const nonTriggeringInputTypes = [
-      'button', 'checkbox', 'color', 'date', 'datetime-local', 'file', 'hidden',
-      'image', 'month', 'number', 'radio', 'range', 'reset', 'submit', 'time', 'week'
+      'button',
+      'checkbox',
+      'color',
+      'date',
+      'datetime-local',
+      'file',
+      'hidden',
+      'image',
+      'month',
+      'number',
+      'radio',
+      'range',
+      'reset',
+      'submit',
+      'time',
+      'week'
     ];
 
     let w: BrowserWindow;
@@ -330,15 +342,15 @@ describe('BrowserWindow module', () => {
       it(`should emit virtual-keyboard-visibility-changed for <input type="${type}"> when focused/blurred`, async () => {
         const load = once(w, 'virtual-keyboard-visibility-changed');
         await w.loadURL(`data:text/html,<input id="test" type="${type}"></input>`);
-        expect((await load)[1]).to.be.false();
+        expect((await load)[1]).toBe(false);
 
         let shown = once(w, 'virtual-keyboard-visibility-changed');
         await w.webContents.executeJavaScript('document.getElementById("test").focus()', true);
-        expect((await shown)[1]).to.be.true();
+        expect((await shown)[1]).toBe(true);
 
         shown = once(w, 'virtual-keyboard-visibility-changed');
         await w.webContents.executeJavaScript('document.getElementById("test").blur()', true);
-        expect((await shown)[1]).to.be.false();
+        expect((await shown)[1]).toBe(false);
       });
     }
 
@@ -353,7 +365,7 @@ describe('BrowserWindow module', () => {
           eventSpy.then((args) => !args[1]), // show flag should be false, if triggered.
           new Promise<boolean>((resolve) => global.setTimeout(() => resolve(true), 500)) // Timeout after 500ms (expected)
         ]);
-        expect(didTimeout).to.be.true();
+        expect(didTimeout).toBe(true);
       });
     }
   });
@@ -3048,8 +3060,11 @@ describe('BrowserWindow module', () => {
       const alwaysOnTopChanged = once(w, 'always-on-top-changed') as Promise<[any, boolean]>;
       w.setAlwaysOnTop(alwaysOnTop);
       const [, emittedAlwaysOnTop] = await alwaysOnTopChanged;
-      expect(emittedAlwaysOnTop, `${label}: unexpected event payload`).toBe(alwaysOnTop);
-      await waitForAlwaysOnTop(alwaysOnTop, label);
+      // BRIGHTSIGN: Brightsign doesn't let window to get on top
+      // of everything else. It breaks presentations. Layering is
+      // done with wayland extensions.
+      expect(emittedAlwaysOnTop, `${label}: unexpected event payload`).toBe(false);
+      await waitForAlwaysOnTop(false, label);
     };
 
     afterEach(closeAllWindows);
@@ -3059,13 +3074,16 @@ describe('BrowserWindow module', () => {
     });
 
     it('sets the window as always on top', () => {
+      // BRIGHTSIGN: Brightsign doesn't let window to get on top
+      // of everything else. It breaks presentations. Layering is
+      // done with wayland extensions.
       expect(w.isAlwaysOnTop(), 'is alwaysOnTop').toBe(false);
       w.setAlwaysOnTop(true, 'screen-saver');
-      expect(w.isAlwaysOnTop(), 'is not alwaysOnTop').toBe(true);
+      expect(w.isAlwaysOnTop(), 'is alwaysOnTop').toBe(false);
       w.setAlwaysOnTop(false);
       expect(w.isAlwaysOnTop(), 'is alwaysOnTop').toBe(false);
       w.setAlwaysOnTop(true);
-      expect(w.isAlwaysOnTop(), 'is not alwaysOnTop').toBe(true);
+      expect(w.isAlwaysOnTop(), 'is alwaysOnTop').toBe(false);
     });
 
     ifit(process.platform === 'darwin')('resets the windows level on minimize', async () => {
@@ -3112,7 +3130,10 @@ describe('BrowserWindow module', () => {
       w.setAlwaysOnTop(true, 'screen-saver');
       w.show();
       await setTimeout(1000);
-      expect(w.isAlwaysOnTop(), 'is not alwaysOnTop').toBe(true);
+      // BRIGHTSIGN: Brightsign doesn't let window to get on top
+      // of everything else. It breaks presentations. Layering is
+      // done with wayland extensions.
+      expect(w.isAlwaysOnTop(), 'is not alwaysOnTop').toBe(false);
     });
 
     it('works when called prior to showInactive', async () => {
@@ -3120,7 +3141,10 @@ describe('BrowserWindow module', () => {
       w.setAlwaysOnTop(true, 'screen-saver');
       w.showInactive();
       await setTimeout(1000);
-      expect(w.isAlwaysOnTop(), 'is not alwaysOnTop').toBe(true);
+      // BRIGHTSIGN: Brightsign doesn't let window to get on top
+      // of everything else. It breaks presentations. Layering is
+      // done with wayland extensions.
+      expect(w.isAlwaysOnTop(), 'is not alwaysOnTop').toBe(false);
     });
   });
 
@@ -3555,16 +3579,16 @@ describe('BrowserWindow module', () => {
       });
     });
 
-    ifdescribe(process.platform === 'linux')(('Linux'), () => {
-    // BRIGHTSIGN: Brightsign uses wayland extensions
-    // to set the opacity of the window. This feature
-    // works.
+    ifdescribe(process.platform === 'linux')('Linux', () => {
+      // BRIGHTSIGN: Brightsign uses wayland extensions
+      // to set the opacity of the window. This feature
+      // works.
       it('sets 1 regardless of parameter', () => {
         const w = new BrowserWindow({ show: false });
         w.setOpacity(0);
-        expect(w.getOpacity()).toBe(1.0);
+        expect(w.getOpacity()).toBe(0.0);
         w.setOpacity(0.5);
-        expect(w.getOpacity()).toBe(1.0);
+        expect(w.getOpacity()).toBe(0.5);
       });
     });
   });
@@ -4831,7 +4855,10 @@ describe('BrowserWindow module', () => {
         const serverUrl = (await listen(server)).url;
 
         const preloadPath = path.join(mainFixtures, 'api', 'new-window-preload.js');
-        w.webContents.setWindowOpenHandler(() => ({ action: 'allow', overrideBrowserWindowOptions: { webPreferences: { preload: preloadPath } } }));
+        w.webContents.setWindowOpenHandler(() => ({
+          action: 'allow',
+          overrideBrowserWindowOptions: { webPreferences: { preload: preloadPath } }
+        }));
         await w.loadFile(path.join(fixtures, 'api', 'new-window.html'), {
           query: { url: serverUrl }
         });
@@ -4854,7 +4881,10 @@ describe('BrowserWindow module', () => {
         const serverUrl = (await listen(server)).url;
 
         const preloadPath = path.join(mainFixtures, 'api', 'new-window-preload.js');
-        w.webContents.setWindowOpenHandler(() => ({ action: 'allow', overrideBrowserWindowOptions: { webPreferences: { preload: preloadPath, contextIsolation: false } } }));
+        w.webContents.setWindowOpenHandler(() => ({
+          action: 'allow',
+          overrideBrowserWindowOptions: { webPreferences: { preload: preloadPath, contextIsolation: false } }
+        }));
         await w.loadFile(path.join(fixtures, 'api', 'new-window.html'), {
           query: { url: serverUrl }
         });
@@ -4896,7 +4926,7 @@ describe('BrowserWindow module', () => {
         w.loadFile(path.join(fixtures, 'api', 'new-window.html'), {
           query: { url: serverUrl }
         });
-        const [childWindow] = await once(w.webContents, 'did-create-window') as [BrowserWindow, any];
+        const [childWindow] = (await once(w.webContents, 'did-create-window')) as [BrowserWindow, any];
         await once(childWindow.webContents, 'did-finish-load');
         expect(Math.abs(childWindow.webContents.getZoomFactor() - 2.0)).toBeLessThanOrEqual(0.1);
       });
@@ -8147,47 +8177,57 @@ describe('BrowserWindow module', () => {
   });
 
   describe('hideScrollBars webpreference', () => {
-    const fixturesPath = path.resolve(__dirname, '..', 'spec', 'fixtures');
     let w: BrowserWindow;
 
     afterEach(closeAllWindows);
 
     it('shows scrollbar by default', async () => {
       w = new BrowserWindow({ width: 400, height: 400 });
-      const url = `file://${fixturesPath}/pages/scrollbars.html`;
+      const url = `file://${fixtures}/pages/scrollbars.html`;
       await w.loadURL(url);
-      const { scrollWidth } = await w.webContents.executeJavaScript('({scrollWidth: window.innerWidth - document.documentElement.clientWidth})');
-      expect(scrollWidth).to.be.greaterThan(0);
-      const { scrollHeight } = await w.webContents.executeJavaScript('({scrollHeight: window.innerHeight - document.documentElement.clientHeight})');
-      expect(scrollHeight).to.be.greaterThan(0);
+      const { scrollWidth } = await w.webContents.executeJavaScript(
+        '({scrollWidth: window.innerWidth - document.documentElement.clientWidth})'
+      );
+      expect(scrollWidth).toBeGreaterThan(0);
+      const { scrollHeight } = await w.webContents.executeJavaScript(
+        '({scrollHeight: window.innerHeight - document.documentElement.clientHeight})'
+      );
+      expect(scrollHeight).toBeGreaterThan(0);
     });
 
     it('shows scrollbar when set to false', async () => {
       w = new BrowserWindow({ width: 400, height: 400, webPreferences: { hideScrollBars: false } });
-      const url = `file://${fixturesPath}/pages/scrollbars.html`;
+      const url = `file://${fixtures}/pages/scrollbars.html`;
       await w.loadURL(url);
-      const { scrollWidth } = await w.webContents.executeJavaScript('({scrollWidth: window.innerWidth - document.documentElement.clientWidth})');
-      expect(scrollWidth).to.be.greaterThan(0);
-      const { scrollHeight } = await w.webContents.executeJavaScript('({scrollHeight: window.innerHeight - document.documentElement.clientHeight})');
-      expect(scrollHeight).to.be.greaterThan(0);
+      const { scrollWidth } = await w.webContents.executeJavaScript(
+        '({scrollWidth: window.innerWidth - document.documentElement.clientWidth})'
+      );
+      expect(scrollWidth).toBeGreaterThan(0);
+      const { scrollHeight } = await w.webContents.executeJavaScript(
+        '({scrollHeight: window.innerHeight - document.documentElement.clientHeight})'
+      );
+      expect(scrollHeight).toBeGreaterThan(0);
     });
 
     it('hides scrollbar when set to true', async () => {
       w = new BrowserWindow({ width: 400, height: 400, webPreferences: { hideScrollBars: true } });
-      const url = `file://${fixturesPath}/pages/scrollbars.html`;
+      const url = `file://${fixtures}/pages/scrollbars.html`;
       await w.loadURL(url);
-      const { scrollWidth } = await w.webContents.executeJavaScript('({scrollWidth: window.innerWidth - document.documentElement.clientWidth})');
-      expect(scrollWidth).to.be.equal(0);
-      const { scrollHeight } = await w.webContents.executeJavaScript('({scrollHeight: window.innerHeight - document.documentElement.clientHeight})');
-      expect(scrollHeight).to.be.equal(0);
+      const { scrollWidth } = await w.webContents.executeJavaScript(
+        '({scrollWidth: window.innerWidth - document.documentElement.clientWidth})'
+      );
+      expect(scrollWidth).toBe(0);
+      const { scrollHeight } = await w.webContents.executeJavaScript(
+        '({scrollHeight: window.innerHeight - document.documentElement.clientHeight})'
+      );
+      expect(scrollHeight).toBe(0);
     });
   });
 
-  ifdescribe(process.platform === 'linux')('window rotation', () => {
+  ifdescribe(process.platform === 'linux')('window rotation', { tags: ['serial'] }, () => {
     const screenSize = screen.getPrimaryDisplay().size;
     const display = screen.getPrimaryDisplay();
-    const fixturesPath = path.resolve(__dirname, '..', 'spec', 'fixtures');
-    const url = `file://${fixturesPath}/pages/rotation-test.html`;
+    const url = `file://${fixtures}/pages/rotation-test.html`;
     const landscapeBounds = { x: 0, y: 0, width: 600, height: 400 };
     const portraitBounds = { x: 0, y: 0, width: 500, height: 900 };
     const squareBounds = { x: 0, y: 0, width: 350, height: 350 };
@@ -8292,8 +8332,8 @@ describe('BrowserWindow module', () => {
       const { windowWidth, windowHeight } = await w.webContents.executeJavaScript(
         '({windowWidth: window.innerWidth, windowHeight: window.innerHeight})'
       );
-      expect(windowWidth).to.be.equal(transform.swapsDimensions ? bounds.height : bounds.width);
-      expect(windowHeight).to.be.equal(transform.swapsDimensions ? bounds.width : bounds.height);
+      expect(windowWidth).toBe(transform.swapsDimensions ? bounds.height : bounds.width);
+      expect(windowHeight).toBe(transform.swapsDimensions ? bounds.width : bounds.height);
       expectBoundsEqual(w.getBounds(), bounds);
 
       // Enable to help debug problems (note run test harness with C=1 prefix).
@@ -8301,7 +8341,7 @@ describe('BrowserWindow module', () => {
 
       const selectPosition = transform.transformPosition(bounds, SELECT_WIDTH_OFFSET, SELECT_HEIGHT_OFFSET);
       const screenCapture = new ScreenCapture(display);
-      await screenCapture.expectColorAtPointOnDisplayMatches(HexColors.RED, () => ({
+      await screenCapture.expectColorAtPointMatches(HexColors.RED, () => ({
         x: bounds.x + selectPosition.x,
         y: bounds.y + selectPosition.y
       }));
@@ -8315,7 +8355,7 @@ describe('BrowserWindow module', () => {
         SELECT_OPTION_WIDTH_OFFSET,
         SELECT_OPTION_HEIGHT_OFFSET
       );
-      await screenCapture.expectColorAtPointOnDisplayMatches(HexColors.GREEN, () => ({
+      await screenCapture.expectColorAtPointMatches(HexColors.GREEN, () => ({
         x: bounds.x + optionPosition.x,
         y: bounds.y + optionPosition.y
       }));
@@ -8328,7 +8368,7 @@ describe('BrowserWindow module', () => {
 
     describe('webpreference', () => {
       afterEach(closeAllWindows);
-      after(() => {
+      afterAll(() => {
         w = null as unknown as BrowserWindow;
       });
 
@@ -8344,11 +8384,11 @@ describe('BrowserWindow module', () => {
     });
 
     describe('SetWindowTransform', () => {
-      before(async () => {
+      beforeAll(async () => {
         w = new BrowserWindow({ ...landscapeBounds, frame: false, webPreferences: { windowTransform: 'none' } });
         await w.loadURL(url);
       });
-      after(async () => {
+      afterAll(async () => {
         await closeWindow(w);
         w = null as unknown as BrowserWindow;
       });
@@ -8381,30 +8421,26 @@ describe('BrowserWindow module', () => {
       it('Check fullscreen bottom right option in correct location', async () => {
         w.setBounds(fullScreenBounds);
         await setTimeout(500);
-        const { windowWidth, windowHeight } = await w.webContents.executeJavaScript('({windowWidth: window.innerWidth, windowHeight: window.innerHeight})');
-        expect(windowWidth).to.be.equal(fullScreenBounds.width);
-        expect(windowHeight).to.be.equal(fullScreenBounds.height);
+        const { windowWidth, windowHeight } = await w.webContents.executeJavaScript(
+          '({windowWidth: window.innerWidth, windowHeight: window.innerHeight})'
+        );
+        expect(windowWidth).toBe(fullScreenBounds.width);
+        expect(windowHeight).toBe(fullScreenBounds.height);
         expectBoundsEqual(w.getBounds(), fullScreenBounds);
 
         const screenCapture = new ScreenCapture(display);
-        await screenCapture.expectColorAtPointOnDisplayMatches(
-          HexColors.RED,
-          () => ({
-            x: fullScreenBounds.width - SELECT_WIDTH_OFFSET,
-            y: fullScreenBounds.height - SELECT_HEIGHT_OFFSET
-          })
-        );
+        await screenCapture.expectColorAtPointMatches(HexColors.RED, () => ({
+          x: fullScreenBounds.width - SELECT_WIDTH_OFFSET,
+          y: fullScreenBounds.height - SELECT_HEIGHT_OFFSET
+        }));
 
         clickMouse(w, { x: fullScreenBounds.width - MOUSE_X_OFFSET, y: fullScreenBounds.height - MOUSE_Y_OFFSET });
         await setTimeout(500);
         // Check when fullscreen the option for the bottom right select element is rendered above the element and inside the window
-        await screenCapture.expectColorAtPointOnDisplayMatches(
-          HexColors.GREEN,
-          () => ({
-            x: fullScreenBounds.width - SELECT_OPTION_WIDTH_OFFSET,
-            y: fullScreenBounds.height - SELECT_HEIGHT - SELECT_OPTION_HEIGHT / 2
-          })
-        );
+        await screenCapture.expectColorAtPointMatches(HexColors.GREEN, () => ({
+          x: fullScreenBounds.width - SELECT_OPTION_WIDTH_OFFSET,
+          y: fullScreenBounds.height - SELECT_HEIGHT - SELECT_OPTION_HEIGHT / 2
+        }));
       });
     });
   });

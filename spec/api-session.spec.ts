@@ -19,6 +19,7 @@ import * as fs from 'node:fs';
 import * as http from 'node:http';
 import * as https from 'node:https';
 import { createRequire } from 'node:module';
+import * as os from 'node:os';
 import * as path from 'node:path';
 import { setTimeout } from 'node:timers/promises';
 
@@ -55,12 +56,16 @@ describe('session module', () => {
     const pathloc = 'testsession';
     const tmppath = require('electron').app.getPath('temp') + path.sep + pathloc;
 
-    after(() => {
-      if (fs.existsSync(tmppath)) { fs.rmSync(tmppath, { recursive: true, force: true }); }
+    afterAll(() => {
+      if (fs.existsSync(tmppath)) {
+        fs.rmSync(tmppath, { recursive: true, force: true });
+      }
     });
     it('Assert that a set quota value is returned when a quota value is specified for a session', async () => {
       const quotasize = 256000;
-      if (fs.existsSync(tmppath)) { fs.rmSync(tmppath, { recursive: true, force: true }); }
+      if (fs.existsSync(tmppath)) {
+        fs.rmSync(tmppath, { recursive: true, force: true });
+      }
       fs.mkdirSync(tmppath);
       const localsession = session.fromPath(tmppath, { quota: quotasize, cache: true });
       const w = new BrowserWindow({
@@ -78,7 +83,7 @@ describe('session module', () => {
 
       await w.loadFile(path.join(fixtures, 'api', 'localstorage.html'));
       const size = await readQuotaSize();
-      expect(size).to.equal(quotasize);
+      expect(size).toBe(quotasize);
     });
   });
 
@@ -87,11 +92,15 @@ describe('session module', () => {
     const pathloc = 'sessionnoquota';
     const tmppath = require('electron').app.getPath('temp') + path.sep + pathloc;
 
-    after(() => {
-      if (fs.existsSync(tmppath)) { fs.rmSync(tmppath, { recursive: true, force: true }); }
+    afterAll(() => {
+      if (fs.existsSync(tmppath)) {
+        fs.rmSync(tmppath, { recursive: true, force: true });
+      }
     });
     it('Assert that free space value is returned when a quota value is not specified for a session', async () => {
-      if (fs.existsSync(tmppath)) { fs.rmSync(tmppath, { recursive: true, force: true }); }
+      if (fs.existsSync(tmppath)) {
+        fs.rmSync(tmppath, { recursive: true, force: true });
+      }
       fs.mkdirSync(tmppath);
       const localsession = session.fromPath(tmppath);
       const w = new BrowserWindow({
@@ -109,12 +118,12 @@ describe('session module', () => {
 
       await w.loadFile(path.join(fixtures, 'api', 'localstorage.html'));
       const size = await readQuotaSize();
-      expect(size).to.be.greaterThan(0);
+      expect(size).toBeGreaterThan(0);
 
       if (os.platform() === 'linux') {
         const output = ChildProcess.execSync(`df ${tmppath} --output=avail | tail -n1`);
         const availablespace = parseInt(output.toString(), 10) * 1024;
-        expect(availablespace).to.be.greaterThan(0);
+        expect(availablespace).toBeGreaterThan(0);
       }
     });
   });
@@ -168,6 +177,8 @@ describe('session module', () => {
       const cookie = list.find((cookie) => cookie.name === name);
       expect(cookie).toEqual(expect.anything());
       expect(cookie).toHaveProperty('value', value);
+      const authDetails = await w.webContents.getMediaResource(`${url}:${port}`, `${url}:${port}`, `${url}:${port}`);
+      expect(authDetails).toEqual({ username: '', password: '', cookie: `${cookie?.name}=${cookie?.value}` });
     });
 
     it('sets cookies', async () => {
@@ -1310,7 +1321,9 @@ describe('session module', () => {
 
       const w = new BrowserWindow({ show: false, webPreferences: { session: ses } });
       await expect(w.loadURL(serverUrl), 'first load').rejects.toThrow(/ERR_FAILED/);
-      await once(w.webContents, 'did-stop-loading');
+      if (w.webContents.isLoading()) {
+        await once(w.webContents, 'did-stop-loading');
+      }
       await expect(w.loadURL(serverUrl + '/test'), 'second load').rejects.toThrow(/ERR_FAILED/);
       expect(numVerificationRequests).toBe(1);
     });

@@ -1,44 +1,40 @@
-import { BrowserWindow } from 'electron/main';
+import { BrowserWindow, memoryPressureMonitor } from 'electron/main';
 
-import { expect } from 'chai';
+import { afterEach, describe, expect, it } from 'vitest';
 
-import { closeAllWindows } from './lib/window-helpers';
+import { setTimeout } from 'node:timers/promises';
+
+import { closeAllWindows } from './lib/window-helpers.ts';
 
 describe('memoryPressureMonitor', () => {
-  let memoryPressureMonitor: any;
-
-  before(() => {
-    memoryPressureMonitor = require('electron').memoryPressureMonitor;
-  });
-
   describe('module availability', () => {
     it('is available from the main process', () => {
-      expect(memoryPressureMonitor).to.not.be.undefined();
+      expect(memoryPressureMonitor).not.toBeUndefined();
     });
 
     it('is an EventEmitter', () => {
-      expect(memoryPressureMonitor.on).to.be.a('function');
-      expect(memoryPressureMonitor.removeListener).to.be.a('function');
-      expect(memoryPressureMonitor.emit).to.be.a('function');
+      expect(memoryPressureMonitor.on).toBeTypeOf('function');
+      expect(memoryPressureMonitor.removeListener).toBeTypeOf('function');
+      expect(memoryPressureMonitor.emit).toBeTypeOf('function');
     });
   });
 
   describe('memoryPressureMonitor.getCurrentPressureLevel', () => {
     it('returns a valid pressure level string', () => {
       const level = memoryPressureMonitor.getCurrentPressureLevel();
-      expect(level).to.be.a('string');
-      expect(['none', 'moderate', 'critical']).to.include(level);
+      expect(level).toBeTypeOf('string');
+      expect(['none', 'moderate', 'critical']).toContain(level);
     });
 
     it('reflects the level set via notifyMemoryPressure', () => {
       memoryPressureMonitor.notifyMemoryPressure('critical');
-      expect(memoryPressureMonitor.getCurrentPressureLevel()).to.equal('critical');
+      expect(memoryPressureMonitor.getCurrentPressureLevel()).toBe('critical');
 
       memoryPressureMonitor.notifyMemoryPressure('moderate');
-      expect(memoryPressureMonitor.getCurrentPressureLevel()).to.equal('moderate');
+      expect(memoryPressureMonitor.getCurrentPressureLevel()).toBe('moderate');
 
       memoryPressureMonitor.notifyMemoryPressure('none');
-      expect(memoryPressureMonitor.getCurrentPressureLevel()).to.equal('none');
+      expect(memoryPressureMonitor.getCurrentPressureLevel()).toBe('none');
     });
   });
 
@@ -46,98 +42,79 @@ describe('memoryPressureMonitor', () => {
     it('accepts "moderate" level', () => {
       expect(() => {
         memoryPressureMonitor.notifyMemoryPressure('moderate');
-      }).to.not.throw();
+      }).not.toThrow();
     });
 
     it('accepts "critical" level', () => {
       expect(() => {
         memoryPressureMonitor.notifyMemoryPressure('critical');
-      }).to.not.throw();
+      }).not.toThrow();
     });
 
     it('accepts "none" level without throwing', () => {
       expect(() => {
         memoryPressureMonitor.notifyMemoryPressure('none');
-      }).to.not.throw();
+      }).not.toThrow();
     });
 
     it('stores "none" level for getCurrentPressureLevel', () => {
       memoryPressureMonitor.notifyMemoryPressure('moderate');
       memoryPressureMonitor.notifyMemoryPressure('none');
-      expect(memoryPressureMonitor.getCurrentPressureLevel()).to.equal('none');
+      expect(memoryPressureMonitor.getCurrentPressureLevel()).toBe('none');
     });
 
-    it('does not fire event for "none" level', (done) => {
+    it('does not fire event for "none" level', async () => {
       let eventFired = false;
-      const listener = () => { eventFired = true; };
+      const listener = () => {
+        eventFired = true;
+      };
       memoryPressureMonitor.on('memory-pressure', listener);
       memoryPressureMonitor.notifyMemoryPressure('none');
 
       // Give the async observer a chance to fire, then verify it didn't
-      setTimeout(() => {
-        memoryPressureMonitor.removeListener('memory-pressure', listener);
-        try {
-          expect(eventFired).to.be.false();
-          done();
-        } catch (e) {
-          done(e);
-        }
-      }, 100);
+      await setTimeout(100);
+      memoryPressureMonitor.removeListener('memory-pressure', listener);
+      expect(eventFired).toBe(false);
     });
 
     it('rejects invalid level strings', () => {
       expect(() => {
         memoryPressureMonitor.notifyMemoryPressure('invalid');
-      }).to.throw(/Invalid memory pressure level/);
+      }).toThrow(/Invalid memory pressure level/);
 
       expect(() => {
         memoryPressureMonitor.notifyMemoryPressure('');
-      }).to.throw(/Invalid memory pressure level/);
+      }).toThrow(/Invalid memory pressure level/);
     });
 
     it('rejects non-string arguments', () => {
       expect(() => {
-        memoryPressureMonitor.notifyMemoryPressure(42);
-      }).to.throw();
+        memoryPressureMonitor.notifyMemoryPressure(42 as any);
+      }).toThrow();
     });
   });
 
   describe('memory-pressure event', () => {
-    it('fires when notifyMemoryPressure is called with "critical"', (done) => {
-      memoryPressureMonitor.once('memory-pressure', (level: string) => {
-        try {
-          expect(level).to.equal('critical');
-          done();
-        } catch (e) {
-          done(e);
-        }
-      });
+    it('fires when notifyMemoryPressure is called with "critical"', async () => {
+      const received = new Promise<string>((resolve) => memoryPressureMonitor.once('memory-pressure', resolve));
       memoryPressureMonitor.notifyMemoryPressure('critical');
+      const level = await received;
+      expect(level).toBe('critical');
     });
 
-    it('fires when notifyMemoryPressure is called with "moderate"', (done) => {
-      memoryPressureMonitor.once('memory-pressure', (level: string) => {
-        try {
-          expect(level).to.equal('moderate');
-          done();
-        } catch (e) {
-          done(e);
-        }
-      });
+    it('fires when notifyMemoryPressure is called with "moderate"', async () => {
+      const received = new Promise<string>((resolve) => memoryPressureMonitor.once('memory-pressure', resolve));
       memoryPressureMonitor.notifyMemoryPressure('moderate');
+      const level = await received;
+      expect(level).toBe('moderate');
     });
 
-    it('includes level as first argument to listener', (done) => {
-      memoryPressureMonitor.once('memory-pressure', (level: string) => {
-        try {
-          expect(level).to.be.a('string');
-          expect(['moderate', 'critical']).to.include(level);
-          done();
-        } catch (e) {
-          done(e);
-        }
-      });
+    it('includes level as first argument to listener', async () => {
+      const received = new Promise<string>((resolve) => memoryPressureMonitor.once('memory-pressure', resolve));
       memoryPressureMonitor.notifyMemoryPressure('critical');
+      const level = await received;
+      expect(level).toBeTypeOf('string');
+      expect(['moderate', 'critical']).toContain(level);
     });
   });
 
@@ -153,9 +130,7 @@ describe('memoryPressureMonitor', () => {
           globalThis._garbage.push({ data: new Array(100).fill('x'.repeat(4)) });
         }
       `);
-      const heapBefore: number = await wc.executeJavaScript(
-        'process.memoryUsage().heapUsed'
-      );
+      const heapBefore: number = await wc.executeJavaScript('process.memoryUsage().heapUsed');
       // Release references — collectible but not yet collected
       await wc.executeJavaScript('globalThis._garbage = null');
       return heapBefore;
@@ -171,16 +146,14 @@ describe('memoryPressureMonitor', () => {
       const heapBefore = await allocateAndReleaseGarbage(w.webContents);
 
       // Do NOT send memory pressure — just wait the same amount of time
-      await new Promise(resolve => setTimeout(resolve, 500));
+      await setTimeout(500);
 
-      const heapAfter: number = await w.webContents.executeJavaScript(
-        'process.memoryUsage().heapUsed'
-      );
+      const heapAfter: number = await w.webContents.executeJavaScript('process.memoryUsage().heapUsed');
 
       // Heap should NOT have shrunk substantially — V8's background GC may
       // reclaim a small amount, but without an explicit pressure signal the
       // bulk of the ~80 MB allocation should still be resident.
-      expect(heapAfter).to.be.greaterThan(heapBefore * 0.5);
+      expect(heapAfter).toBeGreaterThan(heapBefore * 0.5);
     });
 
     it('triggers V8 GC in renderer on critical pressure', async () => {
@@ -195,15 +168,13 @@ describe('memoryPressureMonitor', () => {
       memoryPressureMonitor.notifyMemoryPressure('critical');
 
       // Wait for Mojo IPC + V8 GC to complete
-      await new Promise(resolve => setTimeout(resolve, 500));
+      await setTimeout(500);
 
-      const heapAfter: number = await w.webContents.executeJavaScript(
-        'process.memoryUsage().heapUsed'
-      );
+      const heapAfter: number = await w.webContents.executeJavaScript('process.memoryUsage().heapUsed');
 
       // Heap should have shrunk substantially — the ~80 MB of garbage should
       // have been collected by the V8 GC triggered via memory pressure.
-      expect(heapAfter).to.be.lessThan(heapBefore * 0.5);
+      expect(heapAfter).toBeLessThan(heapBefore * 0.5);
     });
 
     it('triggers V8 GC in renderer on moderate pressure', async () => {
@@ -217,13 +188,11 @@ describe('memoryPressureMonitor', () => {
 
       memoryPressureMonitor.notifyMemoryPressure('moderate');
 
-      await new Promise(resolve => setTimeout(resolve, 500));
+      await setTimeout(500);
 
-      const heapAfter: number = await w.webContents.executeJavaScript(
-        'process.memoryUsage().heapUsed'
-      );
+      const heapAfter: number = await w.webContents.executeJavaScript('process.memoryUsage().heapUsed');
 
-      expect(heapAfter).to.be.lessThan(heapBefore * 0.75);
+      expect(heapAfter).toBeLessThan(heapBefore * 0.75);
     });
 
     it('triggers V8 GC across multiple renderer processes', async () => {
@@ -235,10 +204,7 @@ describe('memoryPressureMonitor', () => {
         show: false,
         webPreferences: { nodeIntegration: true, contextIsolation: false }
       });
-      await Promise.all([
-        w1.loadURL('data:text/html,<h1>window1</h1>'),
-        w2.loadURL('data:text/html,<h1>window2</h1>')
-      ]);
+      await Promise.all([w1.loadURL('data:text/html,<h1>window1</h1>'), w2.loadURL('data:text/html,<h1>window2</h1>')]);
 
       const [heapBefore1, heapBefore2] = await Promise.all([
         allocateAndReleaseGarbage(w1.webContents),
@@ -247,7 +213,7 @@ describe('memoryPressureMonitor', () => {
 
       memoryPressureMonitor.notifyMemoryPressure('critical');
 
-      await new Promise(resolve => setTimeout(resolve, 500));
+      await setTimeout(500);
 
       const [heapAfter1, heapAfter2]: [number, number] = await Promise.all([
         w1.webContents.executeJavaScript('process.memoryUsage().heapUsed'),
@@ -255,8 +221,8 @@ describe('memoryPressureMonitor', () => {
       ]);
 
       // Both renderers should have collected their garbage
-      expect(heapAfter1).to.be.lessThan(heapBefore1 * 0.5);
-      expect(heapAfter2).to.be.lessThan(heapBefore2 * 0.5);
+      expect(heapAfter1).toBeLessThan(heapBefore1 * 0.5);
+      expect(heapAfter2).toBeLessThan(heapBefore2 * 0.5);
     });
 
     it('renderer survives repeated pressure notifications', async () => {
@@ -274,19 +240,15 @@ describe('memoryPressureMonitor', () => {
       memoryPressureMonitor.notifyMemoryPressure('moderate');
       memoryPressureMonitor.notifyMemoryPressure('critical');
 
-      await new Promise(resolve => setTimeout(resolve, 500));
+      await setTimeout(500);
 
-      const heapAfter: number = await w.webContents.executeJavaScript(
-        'process.memoryUsage().heapUsed'
-      );
+      const heapAfter: number = await w.webContents.executeJavaScript('process.memoryUsage().heapUsed');
 
       // Renderer should still be alive and GC should have run
-      expect(heapAfter).to.be.lessThan(heapBefore * 0.5);
+      expect(heapAfter).toBeLessThan(heapBefore * 0.5);
 
-      const text = await w.webContents.executeJavaScript(
-        'document.querySelector("h1").textContent'
-      );
-      expect(text).to.equal('stress');
+      const text = await w.webContents.executeJavaScript('document.querySelector("h1").textContent');
+      expect(text).toBe('stress');
     });
   });
 });

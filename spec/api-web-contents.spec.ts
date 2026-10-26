@@ -2155,11 +2155,12 @@ describe('webContents module', () => {
         })
       `);
 
-      expect(languageData.language).to.equal('fr-FR');
-      expect(languageData.language).to.not.include(';');
-      expect(languageData.languages).to.deep.equal(['fr-FR', 'fr', 'en']);
-      expect(languageData.languages).to.satisfy((languages: string[]) =>
-        languages.every(language => !language.includes(';')));
+      expect(languageData.language).toBe('fr-FR');
+      expect(languageData.language).not.toContain(';');
+      expect(languageData.languages).toEqual(['fr-FR', 'fr', 'en']);
+      expect(languageData.languages).toSatisfy((languages: string[]) =>
+        languages.every((language) => !language.includes(';'))
+      );
     });
 
     it('ignores empty entries and trims surrounding whitespace', async () => {
@@ -2174,10 +2175,11 @@ describe('webContents module', () => {
         })
       `);
 
-      expect(languageData.language).to.equal('en-US');
-      expect(languageData.languages).to.deep.equal(['en-US', 'fr']);
-      expect(languageData.languages).to.satisfy((languages: string[]) =>
-        languages.every(language => language === language.trim()));
+      expect(languageData.language).toBe('en-US');
+      expect(languageData.languages).toEqual(['en-US', 'fr']);
+      expect(languageData.languages).toSatisfy((languages: string[]) =>
+        languages.every((language) => language === language.trim())
+      );
     });
   });
 
@@ -3723,6 +3725,8 @@ describe('webContents module', () => {
       expect(eventAuthInfo.host).toBe('127.0.0.1');
       expect(eventAuthInfo.port).toBe(serverPort);
       expect(eventAuthInfo.realm).toBe('Foo');
+      const authDetails = await w.webContents.getMediaResource(`${serverUrl}`, '', `${serverUrl}`);
+      expect(authDetails).toEqual({ username: user, password: pass, cookie: '' });
     });
 
     it('is emitted when a proxy requests authorization', async () => {
@@ -4042,78 +4046,100 @@ describe('webContents module', () => {
     it('check text/html utf8 bom', async () => {
       const w = new BrowserWindow({ show: false, webPreferences: { webSecurity: false } });
       await w.loadURL(`file://${fixturesPath}/pages/blank.html`);
-      const mimeType = await w.webContents.executeJavaScript(`fetch("file://${fixturesPath}/assets/mime-sniffing/html-utf8-bom").then(r => r.blob().then(b => b.type))`);
-      expect(mimeType).to.equal('text/html');
+      const mimeType = await w.webContents.executeJavaScript(
+        `fetch("file://${fixturesPath}/assets/mime-sniffing/html-utf8-bom").then(r => r.blob().then(b => b.type))`
+      );
+      expect(mimeType).toBe('text/html');
     });
 
     it('check text/html with comments at the start of the file', async () => {
       const w = new BrowserWindow({ show: false, webPreferences: { webSecurity: false } });
       await w.loadURL(`file://${fixturesPath}/pages/blank.html`);
-      const mimeType = await w.webContents.executeJavaScript(`fetch("file://${fixturesPath}/assets/mime-sniffing/html-with-comments").then(r => r.blob().then(b => b.type))`);
-      expect(mimeType).to.equal('text/html');
+      const mimeType = await w.webContents.executeJavaScript(
+        `fetch("file://${fixturesPath}/assets/mime-sniffing/html-with-comments").then(r => r.blob().then(b => b.type))`
+      );
+      expect(mimeType).toBe('text/html');
     });
 
     it('check text/html utf8 bom with comments at the start of the file', async () => {
       const w = new BrowserWindow({ show: false, webPreferences: { webSecurity: false } });
       await w.loadURL(`file://${fixturesPath}/pages/blank.html`);
-      const mimeType = await w.webContents.executeJavaScript(`fetch("file://${fixturesPath}/assets/mime-sniffing/html-utf8-bom-with-comments").then(r => r.blob().then(b => b.type))`);
-      expect(mimeType).to.equal('text/html');
+      const mimeType = await w.webContents.executeJavaScript(
+        `fetch("file://${fixturesPath}/assets/mime-sniffing/html-utf8-bom-with-comments").then(r => r.blob().then(b => b.type))`
+      );
+      expect(mimeType).toBe('text/html');
     });
 
     it('check image/svg+xml', async () => {
       const w = new BrowserWindow({ show: false, webPreferences: { webSecurity: false } });
       await w.loadURL(`file://${fixturesPath}/pages/blank.html`);
-      const mimeType = await w.webContents.executeJavaScript(`fetch("file://${fixturesPath}/assets/mime-sniffing/svg").then(r => r.blob().then(b => b.type))`);
-      expect(mimeType).to.equal('image/svg+xml');
+      const mimeType = await w.webContents.executeJavaScript(
+        `fetch("file://${fixturesPath}/assets/mime-sniffing/svg").then(r => r.blob().then(b => b.type))`
+      );
+      expect(mimeType).toBe('image/svg+xml');
     });
 
     it('check image/svg+xml utf8 bom', async () => {
       const w = new BrowserWindow({ show: false, webPreferences: { webSecurity: false } });
       await w.loadURL(`file://${fixturesPath}/pages/blank.html`);
-      const mimeType = await w.webContents.executeJavaScript(`fetch("file://${fixturesPath}/assets/mime-sniffing/svg-utf8-bom").then(r => r.blob().then(b => b.type))`);
-      expect(mimeType).to.equal('image/svg+xml');
+      const mimeType = await w.webContents.executeJavaScript(
+        `fetch("file://${fixturesPath}/assets/mime-sniffing/svg-utf8-bom").then(r => r.blob().then(b => b.type))`
+      );
+      expect(mimeType).toBe('image/svg+xml');
     });
 
     it('check image/svg+xml with comments', async () => {
       const w = new BrowserWindow({ show: false, webPreferences: { webSecurity: false } });
       await w.loadURL(`file://${fixturesPath}/pages/blank.html`);
-      const mimeType = await w.webContents.executeJavaScript(`fetch("file://${fixturesPath}/assets/mime-sniffing/svg-with-comments").then(r => r.blob().then(b => b.type))`);
-      expect(mimeType).to.equal('image/svg+xml');
+      const mimeType = await w.webContents.executeJavaScript(
+        `fetch("file://${fixturesPath}/assets/mime-sniffing/svg-with-comments").then(r => r.blob().then(b => b.type))`
+      );
+      expect(mimeType).toBe('image/svg+xml');
     });
 
     it('check image/svg+xml utf8 bom with comments', async () => {
       const w = new BrowserWindow({ show: false, webPreferences: { webSecurity: false } });
       await w.loadURL(`file://${fixturesPath}/pages/blank.html`);
-      const mimeType = await w.webContents.executeJavaScript(`fetch("file://${fixturesPath}/assets/mime-sniffing/svg-utf8-bom-with-comments").then(r => r.blob().then(b => b.type))`);
-      expect(mimeType).to.equal('image/svg+xml');
+      const mimeType = await w.webContents.executeJavaScript(
+        `fetch("file://${fixturesPath}/assets/mime-sniffing/svg-utf8-bom-with-comments").then(r => r.blob().then(b => b.type))`
+      );
+      expect(mimeType).toBe('image/svg+xml');
     });
 
     it('check text/xml', async () => {
       const w = new BrowserWindow({ show: false, webPreferences: { webSecurity: false } });
       await w.loadURL(`file://${fixturesPath}/pages/blank.html`);
-      const mimeType = await w.webContents.executeJavaScript(`fetch("file://${fixturesPath}/assets/mime-sniffing/xml").then(r => r.blob().then(b => b.type))`);
-      expect(mimeType).to.equal('text/xml');
+      const mimeType = await w.webContents.executeJavaScript(
+        `fetch("file://${fixturesPath}/assets/mime-sniffing/xml").then(r => r.blob().then(b => b.type))`
+      );
+      expect(mimeType).toBe('text/xml');
     });
 
     it('check text/xml utf8 bom', async () => {
       const w = new BrowserWindow({ show: false, webPreferences: { webSecurity: false } });
       await w.loadURL(`file://${fixturesPath}/pages/blank.html`);
-      const mimeType = await w.webContents.executeJavaScript(`fetch("file://${fixturesPath}/assets/mime-sniffing/xml-utf8-bom").then(r => r.blob().then(b => b.type))`);
-      expect(mimeType).to.equal('text/xml');
+      const mimeType = await w.webContents.executeJavaScript(
+        `fetch("file://${fixturesPath}/assets/mime-sniffing/xml-utf8-bom").then(r => r.blob().then(b => b.type))`
+      );
+      expect(mimeType).toBe('text/xml');
     });
 
     it('check text/xml with comments', async () => {
       const w = new BrowserWindow({ show: false, webPreferences: { webSecurity: false } });
       await w.loadURL(`file://${fixturesPath}/pages/blank.html`);
-      const mimeType = await w.webContents.executeJavaScript(`fetch("file://${fixturesPath}/assets/mime-sniffing/xml-with-comments").then(r => r.blob().then(b => b.type))`);
-      expect(mimeType).to.equal('text/xml');
+      const mimeType = await w.webContents.executeJavaScript(
+        `fetch("file://${fixturesPath}/assets/mime-sniffing/xml-with-comments").then(r => r.blob().then(b => b.type))`
+      );
+      expect(mimeType).toBe('text/xml');
     });
 
     it('check text/xml utf8 bom with comments', async () => {
       const w = new BrowserWindow({ show: false, webPreferences: { webSecurity: false } });
       await w.loadURL(`file://${fixturesPath}/pages/blank.html`);
-      const mimeType = await w.webContents.executeJavaScript(`fetch("file://${fixturesPath}/assets/mime-sniffing/xml-utf8-bom-with-comments").then(r => r.blob().then(b => b.type))`);
-      expect(mimeType).to.equal('text/xml');
+      const mimeType = await w.webContents.executeJavaScript(
+        `fetch("file://${fixturesPath}/assets/mime-sniffing/xml-utf8-bom-with-comments").then(r => r.blob().then(b => b.type))`
+      );
+      expect(mimeType).toBe('text/xml');
     });
   });
 
@@ -4133,163 +4159,158 @@ describe('webContents module', () => {
     `;
     const buffer = Buffer.from(code);
     const data = buffer.toString('base64');
-    const url = (`data:text/html;base64,${data}`);
+    const url = `data:text/html;base64,${data}`;
     let w: BrowserWindow;
     let downloadUrl = '';
 
-    before(async () => {
+    beforeAll(async () => {
       w = new BrowserWindow({ show: false, webPreferences: { contextIsolation: false } });
       await w.loadURL(url);
       downloadUrl = await w.webContents.executeJavaScript('downloadUrl');
     });
-    after(closeAllWindows);
+    afterAll(closeAllWindows);
 
     it('fetch all data', async () => {
       const result = await w.webContents.getBlobData(downloadUrl, 0, 10);
-      expect(result.toString()).to.equal('BrightSign');
-      expect(result.length).to.equal(10);
+      expect(result.toString()).toBe('BrightSign');
+      expect(result.length).toBe(10);
     });
 
     it('supports repeated reads from the same blob URL', async () => {
       const cachedUrl = await w.webContents.executeJavaScript('makeBlobUrl("CachedBrightSign")');
 
       const firstResult = await w.webContents.getBlobData(cachedUrl, 0, 16);
-      expect(firstResult.toString()).to.equal('CachedBrightSign');
-      expect(firstResult.length).to.equal(16);
+      expect(firstResult.toString()).toBe('CachedBrightSign');
+      expect(firstResult.length).toBe(16);
 
       const cachedResult = await w.webContents.getBlobData(cachedUrl, 6, 10);
-      expect(cachedResult.toString()).to.equal('BrightSign');
-      expect(cachedResult.length).to.equal(10);
+      expect(cachedResult.toString()).toBe('BrightSign');
+      expect(cachedResult.length).toBe(10);
     });
 
     it('uses the cached blob UUID for URL fragment variants', async () => {
       const cachedUrl = await w.webContents.executeJavaScript('makeBlobUrl("FragmentBrightSign")');
 
       const firstResult = await w.webContents.getBlobData(`${cachedUrl}#first`, 0, 18);
-      expect(firstResult.toString()).to.equal('FragmentBrightSign');
-      expect(firstResult.length).to.equal(18);
+      expect(firstResult.toString()).toBe('FragmentBrightSign');
+      expect(firstResult.length).toBe(18);
 
       const cachedResult = await w.webContents.getBlobData(`${cachedUrl}#second`, 8, 10);
-      expect(cachedResult.toString()).to.equal('BrightSign');
-      expect(cachedResult.length).to.equal(10);
+      expect(cachedResult.toString()).toBe('BrightSign');
+      expect(cachedResult.length).toBe(10);
     });
 
     it('clears cached blob UUIDs after the URL is revoked', async () => {
       const cachedUrl = await w.webContents.executeJavaScript('makeBlobUrl("RevokedBrightSign")');
 
       const firstResult = await w.webContents.getBlobData(cachedUrl, 0, 17);
-      expect(firstResult.toString()).to.equal('RevokedBrightSign');
-      expect(firstResult.length).to.equal(17);
+      expect(firstResult.toString()).toBe('RevokedBrightSign');
+      expect(firstResult.length).toBe(17);
 
       await w.webContents.executeJavaScript(`URL.revokeObjectURL(${JSON.stringify(cachedUrl)})`);
 
       const revokedResult = await w.webContents.getBlobData(cachedUrl, 0, 17);
-      expect(revokedResult).to.equal(null);
+      expect(revokedResult).toBe(null);
     });
 
-    it('fetch in parallel', (done) => {
-      let numResults = 0;
-      w.webContents.getBlobData(downloadUrl, 0, 10).then((result) => {
-        expect(result.toString()).to.equal('BrightSign');
-        expect(result.length).to.equal(10);
-        numResults++;
-        if (numResults === 2) {
-          done();
-        }
-      });
-      w.webContents.getBlobData(downloadUrl, 5, 5).then((result) => {
-        expect(result.toString()).to.equal('tSign');
-        expect(result.length).to.equal(5);
-        numResults++;
-        if (numResults === 2) {
-          done();
-        }
-      });
+    it('fetch in parallel', async () => {
+      const [full, partial] = await Promise.all([
+        w.webContents.getBlobData(downloadUrl, 0, 10),
+        w.webContents.getBlobData(downloadUrl, 5, 5)
+      ]);
+      expect(full.toString()).toBe('BrightSign');
+      expect(full.length).toBe(10);
+      expect(partial.toString()).toBe('tSign');
+      expect(partial.length).toBe(5);
     });
 
     it('fetch partial data', async () => {
       let result = await w.webContents.getBlobData(downloadUrl, 5, 5);
-      expect(result.toString()).to.equal('tSign');
-      expect(result.length).to.equal(5);
+      expect(result.toString()).toBe('tSign');
+      expect(result.length).toBe(5);
 
       result = await w.webContents.getBlobData(downloadUrl, 2, 3);
-      expect(result.toString()).to.equal('igh');
-      expect(result.length).to.equal(3);
+      expect(result.toString()).toBe('igh');
+      expect(result.length).toBe(3);
     });
 
     it('fetch out of range params', async () => {
       let result = await w.webContents.getBlobData(downloadUrl, 0, 50);
-      expect(result.toString()).to.equal('BrightSign');
-      expect(result.length).to.equal(10);
+      expect(result.toString()).toBe('BrightSign');
+      expect(result.length).toBe(10);
 
       result = await w.webContents.getBlobData(downloadUrl, 10, 10);
-      expect(result.length).to.equal(0);
+      expect(result.length).toBe(0);
     });
 
     it('fetch non existant url', async () => {
       const result = await w.webContents.getBlobData('blob:null/none', 0, 10);
-      expect(result).to.equal(null);
+      expect(result).toBe(null);
     });
   });
 
   describe('will-open-dialog event', () => {
     afterEach(closeAllWindows);
+
+    // Resolves with the event's details; the listener answers the dialog with `accept`.
+    const nextDialog = (bw: BrowserWindow, accept: boolean, preventDefault = true) =>
+      new Promise<{ dialogType: string; message: string; defaultPrompt: string; originUrl: string }>((resolve) => {
+        bw.webContents.once('will-open-dialog', (e, dialogType, message, defaultPrompt, originUrl, callback) => {
+          if (preventDefault) e.preventDefault();
+          callback(accept, '');
+          resolve({ dialogType, message, defaultPrompt, originUrl });
+        });
+      });
+
     it('is triggered by javascript confirm', async () => {
       const bw = new BrowserWindow({ show: false });
       await bw.loadURL(`file://${fixturesPath}/pages/blank.html`);
+      const expected = {
+        dialogType: 'confirm',
+        message: 'message',
+        defaultPrompt: '',
+        originUrl: `file://${fixturesPath}/pages/blank.html`
+      };
 
       // confirm dialog accept
-      bw.webContents.once('will-open-dialog', (e, dialogType, message, defaultPrompt, originUrl, callback) => {
-        expect(dialogType).to.equal('confirm');
-        expect(message).to.equal('message');
-        expect(defaultPrompt).to.equal('');
-        expect(originUrl).to.equal(`file://${fixturesPath}/pages/blank.html`);
-        e.preventDefault();
-        callback(true, '');
-      });
+      let dialog = nextDialog(bw, true);
       let result = await bw.webContents.executeJavaScript('confirm("message");');
-      expect(result).to.equal(true);
+      expect(await dialog).toEqual(expected);
+      expect(result).toBe(true);
 
       // confirm dialog reject
-      bw.webContents.once('will-open-dialog', (e, dialogType, message, defaultPrompt, originUrl, callback) => {
-        expect(dialogType).to.equal('confirm');
-        expect(message).to.equal('message');
-        expect(defaultPrompt).to.equal('');
-        expect(originUrl).to.equal(`file://${fixturesPath}/pages/blank.html`);
-        e.preventDefault();
-        callback(false, '');
-      });
+      dialog = nextDialog(bw, false);
       result = await bw.webContents.executeJavaScript('confirm("message");');
-      expect(result).to.equal(false);
+      expect(await dialog).toEqual(expected);
+      expect(result).toBe(false);
     });
 
     it('is triggered by javascript alert', async () => {
       const bw = new BrowserWindow({ show: false });
       await bw.loadURL(`file://${fixturesPath}/pages/blank.html`);
 
-      bw.webContents.once('will-open-dialog', (e, dialogType, message, defaultPrompt, originUrl, callback) => {
-        expect(dialogType).to.equal('alert');
-        expect(message).to.equal('message');
-        expect(defaultPrompt).to.equal('');
-        expect(originUrl).to.equal(`file://${fixturesPath}/pages/blank.html`);
-        e.preventDefault();
-        callback(true, '');
-      });
+      const dialog = nextDialog(bw, true);
       await bw.webContents.executeJavaScript('alert("message");');
+      expect(await dialog).toEqual({
+        dialogType: 'alert',
+        message: 'message',
+        defaultPrompt: '',
+        originUrl: `file://${fixturesPath}/pages/blank.html`
+      });
     });
 
     it('will not crash or assert if callback called without preventDefault being called', async () => {
       const bw = new BrowserWindow({ show: false });
       await bw.loadURL(`file://${fixturesPath}/pages/blank.html`);
 
-      bw.webContents.once('will-open-dialog', (e, dialogType, message, defaultPrompt, originUrl, callback) => {
-        expect(dialogType).to.equal('alert');
-        expect(message).to.equal('message');
-        expect(defaultPrompt).to.equal('');
-        expect(originUrl).to.equal(`file://${fixturesPath}/pages/blank.html`);
-        callback(true, '');
-      });
+      const dialog = nextDialog(bw, true, false);
       await bw.webContents.executeJavaScript('alert("message");');
+      expect(await dialog).toEqual({
+        dialogType: 'alert',
+        message: 'message',
+        defaultPrompt: '',
+        originUrl: `file://${fixturesPath}/pages/blank.html`
+      });
     });
   });
 });
