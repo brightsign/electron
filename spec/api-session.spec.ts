@@ -1310,8 +1310,9 @@ describe('session module', () => {
       });
 
       const w = new BrowserWindow({ show: false, webPreferences: { session: ses } });
+      const stopped = once(w.webContents, 'did-stop-loading');
       await expect(w.loadURL(serverUrl), 'first load').rejects.toThrow(/ERR_FAILED/);
-      await once(w.webContents, 'did-stop-loading');
+      await stopped;
       await expect(w.loadURL(serverUrl + '/test'), 'second load').rejects.toThrow(/ERR_FAILED/);
       expect(numVerificationRequests).toBe(1);
     });

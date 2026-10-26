@@ -31,7 +31,10 @@ export async function copyApp(targetDir: string): Promise<string> {
   await Promise.all(
     filesToCopy.map(async (rel) => {
       await fs.promises.mkdir(path.dirname(path.resolve(targetDir, rel)), { recursive: true });
-      fs.copyFileSync(path.resolve(baseDir, rel), path.resolve(targetDir, rel));
+      const source = path.resolve(baseDir, rel);
+      // chrome-sandbox is not produced by every build configuration
+      if (rel === 'chrome-sandbox' && !fs.existsSync(source)) return;
+      fs.copyFileSync(source, path.resolve(targetDir, rel));
     })
   );
 
