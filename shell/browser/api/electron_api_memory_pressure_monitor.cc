@@ -13,6 +13,7 @@
 #include "shell/browser/javascript_environment.h"
 #include "shell/common/gin_helper/dictionary.h"
 #include "shell/common/gin_helper/object_template_builder.h"
+#include "shell/common/gin_helper/wrappable_pointer_tags.h"
 #include "shell/common/node_includes.h"
 #include "v8/include/cppgc/allocation.h"
 
@@ -56,9 +57,8 @@ struct Converter<base::MemoryPressureLevel> {
 
 namespace electron::api {
 
-gin::WrapperInfo MemoryPressureMonitor::kWrapperInfo = {
-    {gin::kEmbedderNativeGin},
-    gin::kElectronMemoryPressureMonitor};
+gin::WrapperInfo MemoryPressureMonitor::kWrapperInfo =
+    electron::MakeWrapperInfo(electron::kElectronMemoryPressureMonitor);
 
 MemoryPressureMonitor::MemoryPressureMonitor(v8::Isolate* isolate)
     : listener_registration_(

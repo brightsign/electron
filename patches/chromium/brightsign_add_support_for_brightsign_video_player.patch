@@ -855,7 +855,7 @@ index ec136f49f1ed2dadef3159bd423cc65da7796d05..3d45c534d367e9f3b9d29a076a933cc3
  MEDIA_EXPORT extern const char kAutoGrantCapturedSurfaceControlPrompt[];
  MEDIA_EXPORT extern const char kAutoplayPolicy[];
 diff --git a/media/base/video_frame.cc b/media/base/video_frame.cc
-index 3cf6dda508c75080a36452805e8d0fd0102b6670..85cbb11ff6e5ebc738f6b1b8624742273a669b6e 100644
+index acac185cfef3caba3b3f163a95a87400c1ba446c..8926b7ee0c9e31211c6170fec1951e35057f649f 100644
 --- a/media/base/video_frame.cc
 +++ b/media/base/video_frame.cc
 @@ -308,6 +308,21 @@ scoped_refptr<VideoFrame> VideoFrame::WrapTrackingToken(

@@ -14,6 +14,22 @@ This document uses the following convention to categorize breaking changes:
 
 ## Planned Breaking API Changes (42.0)
 
+### Behavior Changed: workers created by subframes need `nodeIntegrationInSubFrames` for Node.js integration
+
+With `nodeIntegrationInWorker: true`, a `Worker` created from an `<iframe>` in
+the same process as the main frame used to get Node.js integration even though
+the iframe itself had none. Workers now only get Node.js integration when the
+frame that creates them has it: the main frame, or any frame when
+`nodeIntegrationInSubFrames` is enabled.
+
+### Behavior Changed: preload scripts only run in DevTools extension frames hosted by DevTools
+
+A `chrome-extension://` document used to receive the window's preload script
+(and session preload scripts) wherever it was embedded. It now only does so
+when it is a top-level frame or is hosted inside the DevTools front-end (a
+`devtools_page` or panel); an extension frame embedded in an ordinary page is
+treated like any other subframe and follows `nodeIntegrationInSubFrames`.
+
 ### Behavior Changed: macOS notifications now use `UNNotification` API
 
 Electron has migrated from the deprecated `NSUserNotification` API to the
@@ -98,7 +114,7 @@ When the value of the cookie being set remains unchanged but some of its attribu
 ### Deprecated: `showHiddenFiles` in Dialogs on Linux
 
 This property will still be honored on macOS and Windows, but support on Linux
-will be removed in Electron 42. GTK intends for this to be a user choice rather
+will be removed in a future version of Electron. GTK intends for this to be a user choice rather
 than an app choice and has removed the API to do this programmatically.
 
 ## Planned Breaking API Changes (40.0)
@@ -149,10 +165,7 @@ To restore previous behavior:
 
 ```js
 // main.js (right beneath your require/import statments)
-app.commandLine.appendSwitch(
-  'disable-features',
-  'MacCatapLoopbackAudioForScreenShare'
-)
+app.commandLine.appendSwitch('disable-features', 'MacCatapLoopbackAudioForScreenShare')
 ```
 
 ### Behavior Changed: shared texture OSR `paint` event data structure
@@ -471,7 +484,9 @@ protocol.registerFileProtocol('other', () => {
 })
 
 const mainWindow = new BrowserWindow()
-mainWindow.loadURL('data:text/html,<script src="loaded-from-dataurl.js"></script>', { baseURLForDataURL: 'other://C:\\myapp' })
+mainWindow.loadURL('data:text/html,<script src="loaded-from-dataurl.js"></script>', {
+  baseURLForDataURL: 'other://C:\\myapp'
+})
 mainWindow.loadURL('other://C:\\myapp\\index.html')
 
 // Replace with
@@ -549,7 +564,7 @@ electron.showFilePath(file)
 const { contextBridge, webUtils } = require('electron')
 
 contextBridge.exposeInMainWorld('electron', {
-  showFilePath (file) {
+  showFilePath(file) {
     // It's best not to expose the full file path to the web content if
     // possible.
     const path = webUtils.getPathForFile(file)
@@ -688,10 +703,14 @@ Use the new `render-process-gone` event instead.
 
 ```js
 // Removed
-app.on('renderer-process-crashed', (event, webContents, killed) => { /* ... */ })
+app.on('renderer-process-crashed', (event, webContents, killed) => {
+  /* ... */
+})
 
 // Replace with
-app.on('render-process-gone', (event, webContents, details) => { /* ... */ })
+app.on('render-process-gone', (event, webContents, details) => {
+  /* ... */
+})
 ```
 
 ### Removed: `crashed` event on `WebContents` and `<webview>`
@@ -701,12 +720,20 @@ Use the new `render-process-gone` event instead.
 
 ```js
 // Removed
-win.webContents.on('crashed', (event, killed) => { /* ... */ })
-webview.addEventListener('crashed', (event) => { /* ... */ })
+win.webContents.on('crashed', (event, killed) => {
+  /* ... */
+})
+webview.addEventListener('crashed', (event) => {
+  /* ... */
+})
 
 // Replace with
-win.webContents.on('render-process-gone', (event, details) => { /* ... */ })
-webview.addEventListener('render-process-gone', (event) => { /* ... */ })
+win.webContents.on('render-process-gone', (event, details) => {
+  /* ... */
+})
+webview.addEventListener('render-process-gone', (event) => {
+  /* ... */
+})
 ```
 
 ### Removed: `gpu-process-crashed` event on `app`
@@ -716,10 +743,14 @@ Use the new `child-process-gone` event instead.
 
 ```js
 // Removed
-app.on('gpu-process-crashed', (event, killed) => { /* ... */ })
+app.on('gpu-process-crashed', (event, killed) => {
+  /* ... */
+})
 
 // Replace with
-app.on('child-process-gone', (event, details) => { /* ... */ })
+app.on('child-process-gone', (event, details) => {
+  /* ... */
+})
 ```
 
 ## Planned Breaking API Changes (28.0)
@@ -792,10 +823,14 @@ Use the new `render-process-gone` event instead.
 
 ```js
 // Deprecated
-app.on('renderer-process-crashed', (event, webContents, killed) => { /* ... */ })
+app.on('renderer-process-crashed', (event, webContents, killed) => {
+  /* ... */
+})
 
 // Replace with
-app.on('render-process-gone', (event, webContents, details) => { /* ... */ })
+app.on('render-process-gone', (event, webContents, details) => {
+  /* ... */
+})
 ```
 
 ### Deprecated: `params.inputFormType` property on `context-menu` on `WebContents`
@@ -811,12 +846,20 @@ Use the new `render-process-gone` event instead.
 
 ```js
 // Deprecated
-win.webContents.on('crashed', (event, killed) => { /* ... */ })
-webview.addEventListener('crashed', (event) => { /* ... */ })
+win.webContents.on('crashed', (event, killed) => {
+  /* ... */
+})
+webview.addEventListener('crashed', (event) => {
+  /* ... */
+})
 
 // Replace with
-win.webContents.on('render-process-gone', (event, details) => { /* ... */ })
-webview.addEventListener('render-process-gone', (event) => { /* ... */ })
+win.webContents.on('render-process-gone', (event, details) => {
+  /* ... */
+})
+webview.addEventListener('render-process-gone', (event) => {
+  /* ... */
+})
 ```
 
 ### Deprecated: `gpu-process-crashed` event on `app`
@@ -826,10 +869,14 @@ Use the new `child-process-gone` event instead.
 
 ```js
 // Deprecated
-app.on('gpu-process-crashed', (event, killed) => { /* ... */ })
+app.on('gpu-process-crashed', (event, killed) => {
+  /* ... */
+})
 
 // Replace with
-app.on('child-process-gone', (event, details) => { /* ... */ })
+app.on('child-process-gone', (event, details) => {
+  /* ... */
+})
 ```
 
 ## Planned Breaking API Changes (27.0)
@@ -858,11 +905,17 @@ Use the new `updated` event on the `nativeTheme` module instead.
 
 ```js
 // Removed
-systemPreferences.on('inverted-color-scheme-changed', () => { /* ... */ })
-systemPreferences.on('high-contrast-color-scheme-changed', () => { /* ... */ })
+systemPreferences.on('inverted-color-scheme-changed', () => {
+  /* ... */
+})
+systemPreferences.on('high-contrast-color-scheme-changed', () => {
+  /* ... */
+})
 
 // Replace with
-nativeTheme.on('updated', () => { /* ... */ })
+nativeTheme.on('updated', () => {
+  /* ... */
+})
 ```
 
 ### Removed: Some `window.setVibrancy` options on macOS
@@ -1083,13 +1136,13 @@ const imagePath = path.join('path', 'to', 'capybara.png')
 
 // Scaling up a smaller image.
 const upSize = { width: 256, height: 256 }
-nativeImage.createThumbnailFromPath(imagePath, upSize).then(result => {
+nativeImage.createThumbnailFromPath(imagePath, upSize).then((result) => {
   console.log(result.getSize()) // { width: 256, height: 256 }
 })
 
 // Scaling down a larger image.
 const downSize = { width: 64, height: 64 }
-nativeImage.createThumbnailFromPath(imagePath, downSize).then(result => {
+nativeImage.createThumbnailFromPath(imagePath, downSize).then((result) => {
   console.log(result.getSize()) // { width: 64, height: 64 }
 })
 ```
@@ -1100,7 +1153,7 @@ Previous Behavior (on Windows):
 // a 128x128 image
 const imagePath = path.join('path', 'to', 'capybara.png')
 const size = { width: 256, height: 256 }
-nativeImage.createThumbnailFromPath(imagePath, size).then(result => {
+nativeImage.createThumbnailFromPath(imagePath, size).then((result) => {
   console.log(result.getSize()) // { width: 128, height: 128 }
 })
 ```
@@ -1155,13 +1208,13 @@ const w = new BrowserWindow({ show: false })
 
 // Removed in Electron 23
 w.webContents.incrementCapturerCount()
-w.capturePage().then(image => {
+w.capturePage().then((image) => {
   console.log(image.toDataURL())
   w.webContents.decrementCapturerCount()
 })
 
 // Replace with
-w.capturePage().then(image => {
+w.capturePage().then((image) => {
   console.log(image.toDataURL())
 })
 ```
@@ -1176,13 +1229,13 @@ const w = new BrowserWindow({ show: false })
 
 // Removed in Electron 23
 w.webContents.incrementCapturerCount()
-w.capturePage().then(image => {
+w.capturePage().then((image) => {
   console.log(image.toDataURL())
   w.webContents.decrementCapturerCount()
 })
 
 // Replace with
-w.capturePage().then(image => {
+w.capturePage().then((image) => {
   console.log(image.toDataURL())
 })
 ```
@@ -1199,13 +1252,13 @@ const w = new BrowserWindow({ show: false })
 
 // Removed in Electron 23
 w.webContents.incrementCapturerCount()
-w.capturePage().then(image => {
+w.capturePage().then((image) => {
   console.log(image.toDataURL())
   w.webContents.decrementCapturerCount()
 })
 
 // Replace with
-w.capturePage().then(image => {
+w.capturePage().then((image) => {
   console.log(image.toDataURL())
 })
 ```
@@ -1220,13 +1273,13 @@ const w = new BrowserWindow({ show: false })
 
 // Removed in Electron 23
 w.webContents.incrementCapturerCount()
-w.capturePage().then(image => {
+w.capturePage().then((image) => {
   console.log(image.toDataURL())
   w.webContents.decrementCapturerCount()
 })
 
 // Replace with
-w.capturePage().then(image => {
+w.capturePage().then((image) => {
   console.log(image.toDataURL())
 })
 ```
@@ -1342,30 +1395,33 @@ address changes upstream that made our previous implementation untenable and rif
 // Main process
 const { webContents } = require('electron')
 
-webContents.printToPDF({
-  landscape: true,
-  displayHeaderFooter: true,
-  printBackground: true,
-  scale: 2,
-  pageSize: 'Ledger',
-  margins: {
-    top: 2,
-    bottom: 2,
-    left: 2,
-    right: 2
-  },
-  pageRanges: '1-5, 8, 11-13',
-  headerTemplate: '<h1>Title</h1>',
-  footerTemplate: '<div><span class="pageNumber"></span></div>',
-  preferCSSPageSize: true
-}).then(data => {
-  fs.writeFile(pdfPath, data, (error) => {
-    if (error) throw error
-    console.log(`Wrote PDF successfully to ${pdfPath}`)
+webContents
+  .printToPDF({
+    landscape: true,
+    displayHeaderFooter: true,
+    printBackground: true,
+    scale: 2,
+    pageSize: 'Ledger',
+    margins: {
+      top: 2,
+      bottom: 2,
+      left: 2,
+      right: 2
+    },
+    pageRanges: '1-5, 8, 11-13',
+    headerTemplate: '<h1>Title</h1>',
+    footerTemplate: '<div><span class="pageNumber"></span></div>',
+    preferCSSPageSize: true
   })
-}).catch(error => {
-  console.log(`Failed to write PDF to ${pdfPath}: `, error)
-})
+  .then((data) => {
+    fs.writeFile(pdfPath, data, (error) => {
+      if (error) throw error
+      console.log(`Wrote PDF successfully to ${pdfPath}`)
+    })
+  })
+  .catch((error) => {
+    console.log(`Failed to write PDF to ${pdfPath}: `, error)
+  })
 ```
 
 ## Planned Breaking API Changes (20.0)
@@ -1437,10 +1493,7 @@ If you need this functionality, it can be replaced as follows:
 // Main process
 const { ipcMain, desktopCapturer } = require('electron')
 
-ipcMain.handle(
-  'DESKTOP_CAPTURER_GET_SOURCES',
-  (event, opts) => desktopCapturer.getSources(opts)
-)
+ipcMain.handle('DESKTOP_CAPTURER_GET_SOURCES', (event, opts) => desktopCapturer.getSources(opts))
 ```
 
 ```js
@@ -1922,7 +1975,9 @@ The APIs are now synchronous and the optional callback is no longer needed.
 
 ```js
 // Deprecated
-protocol.unregisterProtocol(scheme, () => { /* ... */ })
+protocol.unregisterProtocol(scheme, () => {
+  /* ... */
+})
 // Replace with
 protocol.unregisterProtocol(scheme)
 ```
@@ -1951,7 +2006,9 @@ The APIs are now synchronous and the optional callback is no longer needed.
 
 ```js
 // Deprecated
-protocol.registerFileProtocol(scheme, handler, () => { /* ... */ })
+protocol.registerFileProtocol(scheme, handler, () => {
+  /* ... */
+})
 // Replace with
 protocol.registerFileProtocol(scheme, handler)
 ```
@@ -1966,7 +2023,9 @@ and `protocol.isProtocolIntercepted` instead.
 
 ```js
 // Deprecated
-protocol.isProtocolHandled(scheme).then(() => { /* ... */ })
+protocol.isProtocolHandled(scheme).then(() => {
+  /* ... */
+})
 // Replace with
 const isRegistered = protocol.isProtocolRegistered(scheme)
 const isIntercepted = protocol.isProtocolIntercepted(scheme)
@@ -2183,11 +2242,17 @@ Use the new `updated` event on the `nativeTheme` module instead.
 
 ```js
 // Deprecated
-systemPreferences.on('inverted-color-scheme-changed', () => { /* ... */ })
-systemPreferences.on('high-contrast-color-scheme-changed', () => { /* ... */ })
+systemPreferences.on('inverted-color-scheme-changed', () => {
+  /* ... */
+})
+systemPreferences.on('high-contrast-color-scheme-changed', () => {
+  /* ... */
+})
 
 // Replace with
-nativeTheme.on('updated', () => { /* ... */ })
+nativeTheme.on('updated', () => {
+  /* ... */
+})
 ```
 
 ### Deprecated: methods in `systemPreferences`
@@ -2270,13 +2335,11 @@ webFrame.setIsolatedWorldContentSecurityPolicy(worldId, csp)
 webFrame.setIsolatedWorldHumanReadableName(worldId, name)
 webFrame.setIsolatedWorldSecurityOrigin(worldId, securityOrigin)
 // Replace with
-webFrame.setIsolatedWorldInfo(
-  worldId,
-  {
-    securityOrigin: 'some_origin',
-    name: 'human_readable_name',
-    csp: 'content_security_policy'
-  })
+webFrame.setIsolatedWorldInfo(worldId, {
+  securityOrigin: 'some_origin',
+  name: 'human_readable_name',
+  csp: 'content_security_policy'
+})
 ```
 
 ### Removed: `marked` property on `getBlinkMemoryInfo`
@@ -2490,13 +2553,11 @@ webFrame.setIsolatedWorldContentSecurityPolicy(worldId, csp)
 webFrame.setIsolatedWorldHumanReadableName(worldId, name)
 webFrame.setIsolatedWorldSecurityOrigin(worldId, securityOrigin)
 // Replace with
-webFrame.setIsolatedWorldInfo(
-  worldId,
-  {
-    securityOrigin: 'some_origin',
-    name: 'human_readable_name',
-    csp: 'content_security_policy'
-  })
+webFrame.setIsolatedWorldInfo(worldId, {
+  securityOrigin: 'some_origin',
+  name: 'human_readable_name',
+  csp: 'content_security_policy'
+})
 ```
 
 ### API Changed: `webFrame.setSpellCheckProvider` now takes an asynchronous callback
@@ -2513,7 +2574,7 @@ webFrame.setSpellCheckProvider('en-US', true, {
 // Replace with
 webFrame.setSpellCheckProvider('en-US', {
   spellCheck: (words, callback) => {
-    callback(words.filter(text => spellchecker.isMisspelled(text)))
+    callback(words.filter((text) => spellchecker.isMisspelled(text)))
   }
 })
 ```
@@ -2765,8 +2826,12 @@ webview.setAttribute('guestinstance', instanceId)
 // There is no replacement for this API
 
 // Keyboard listeners no longer work on webview tag
-webview.onkeydown = () => { /* handler */ }
-webview.onkeyup = () => { /* handler */ }
+webview.onkeydown = () => {
+  /* handler */
+}
+webview.onkeyup = () => {
+  /* handler */
+}
 ```
 
 ### Node Headers URL

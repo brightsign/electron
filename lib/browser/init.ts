@@ -30,7 +30,7 @@ process.on('uncaughtException', function (error) {
   // We can't import { dialog } at the top of this file as this file is
   // responsible for setting up the require hook for the "electron" module
   // so we import it inside the handler down here
-  import('electron').then(({ dialog }) => {
+  import('electron/main').then(({ dialog }) => {
     const stack = error.stack ? error.stack : `${error.name}: ${error.message}`;
     const message = 'Uncaught Exception:\n' + stack;
     dialog.showErrorBox('A JavaScript error occurred in the main process', message);
@@ -137,9 +137,6 @@ if (packageJson.v8Flags != null) {
 }
 
 app.setAppPath(packagePath);
-
-// Load the chrome devtools support.
-require('@electron/internal/browser/devtools');
 
 // Load protocol module to ensure it is populated on app ready
 require('@electron/internal/browser/api/protocol');

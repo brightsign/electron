@@ -8,7 +8,7 @@ what is done in QtWebEngine. This is necessary to match Android defaults and ens
 that the viewport behaves as expected.
 
 diff --git a/content/browser/web_contents/web_contents_impl.cc b/content/browser/web_contents/web_contents_impl.cc
-index 23c6bc61c0f286666b7c4cbdc104090801e6aca8..dd0a29a3d83c0b89284fa27407c15d9b3c5855b2 100644
+index 0cd1a754a73adf901c179825ee8c44307e407f2a..bb3bd6e5c4cbc87153cbe5845f6dfd06f2776853 100644
 --- a/content/browser/web_contents/web_contents_impl.cc
 +++ b/content/browser/web_contents/web_contents_impl.cc
 @@ -3882,6 +3882,13 @@ const blink::web_pref::WebPreferences WebContentsImpl::ComputeWebPreferences(

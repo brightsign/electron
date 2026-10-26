@@ -49,18 +49,21 @@ WebWorkerObserver* WebWorkerObserver::GetCurrent() {
 }
 
 // static
-WebWorkerObserver* WebWorkerObserver::Create() {
-  auto obs = std::make_unique<WebWorkerObserver>();
+WebWorkerObserver* WebWorkerObserver::Create(v8::Isolate* isolate) {
+  auto obs = std::make_unique<WebWorkerObserver>(isolate);
   auto* obs_raw = obs.get();
   lazy_tls->Set(std::move(obs));
   return obs_raw;
 }
 
-WebWorkerObserver::WebWorkerObserver()
+WebWorkerObserver::WebWorkerObserver(v8::Isolate* isolate)
     : node_bindings_(
-          NodeBindings::Create(NodeBindings::BrowserEnvironment::kWorker)),
+          NodeBindings::Create(NodeBindings::BrowserEnvironment::kWorker,
+                               nullptr)),
       electron_bindings_(
-          std::make_unique<ElectronBindings>(node_bindings_->uv_loop())) {}
+          std::make_unique<ElectronBindings>(node_bindings_->uv_loop())) {
+  node_bindings_->SetUpIsolate(isolate);
+}
 
 WebWorkerObserver::~WebWorkerObserver() = default;
 
@@ -89,11 +92,10 @@ void WebWorkerObserver::InitializeNewEnvironment(
   // Start the embed thread.
   node_bindings_->PrepareEmbedThread();
 
-  // Setup node tracing controller.
-  if (!node::tracing::TraceEventHelper::GetAgent()) {
-    auto* tracing_agent = new node::tracing::Agent();
-    node::tracing::TraceEventHelper::SetAgent(tracing_agent);
-  }
+  // The renderer main thread normally installed the process-wide builtin code
+  // cache already (NodeBindings::Initialize); make sure before this thread's
+  // per-context BuiltinLoader is constructed by InitializeContext. Idempotent.
+  electron::util::InstallProcessCodeCache();
 
   // Setup node environment for each window.
   v8::Maybe<bool> initialized = node::InitializeContext(worker_context);
@@ -165,15 +167,23 @@ void WebWorkerObserver::ShareEnvironmentWithContext(
   v8::Local<v8::Object> original_global = original_context->Global();
   v8::Local<v8::Object> new_global = worker_context->Global();
 
+  // Script in the original context can redefine these globals with accessors
+  // that throw, so read them defensively and fall back to the environment's
+  // own process object / undefined rather than crashing the worker.
+  v8::TryCatch try_catch(isolate);
   v8::Local<v8::Value> process_value;
-  CHECK(original_global
-            ->Get(original_context, gin::StringToV8(isolate, "process"))
-            .ToLocal(&process_value));
+  if (!original_global
+           ->Get(original_context, gin::StringToV8(isolate, "process"))
+           .ToLocal(&process_value)) {
+    process_value = env->process_object();
+  }
 
   v8::Local<v8::Value> require_value;
-  CHECK(original_global
-            ->Get(original_context, gin::StringToV8(isolate, "require"))
-            .ToLocal(&require_value));
+  if (!original_global
+           ->Get(original_context, gin::StringToV8(isolate, "require"))
+           .ToLocal(&require_value)) {
+    require_value = v8::Undefined(isolate);
+  }
 
   // Set up 'global' as an alias for globalThis. Node.js bootstrapping normally
   // does this during LoadEnvironment, but we skip full bootstrap for shared

@@ -156,8 +156,14 @@ const LINTERS = [
   {
     key: 'javascript',
     roots: ['build', 'default_app', 'lib', 'npm', 'script', 'spec'],
-    ignoreRoots: ['.github/workflows/node_modules', 'spec/node_modules', 'spec/fixtures/native-addon'],
-    test: (filename) => filename.endsWith('.js') || filename.endsWith('.ts') || filename.endsWith('.mjs'),
+    ignoreRoots: [
+      '.github/workflows/node_modules',
+      'script/pgo/node_modules',
+      'spec/node_modules',
+      'spec/fixtures/native-addon'
+    ],
+    test: (filename) =>
+      filename.endsWith('.js') || filename.endsWith('.ts') || filename.endsWith('.mjs') || filename.endsWith('.mts'),
     run: async (opts, filenames) => {
       const clean = runOxlint(filenames, { fix: opts.fix });
       if (!clean) {
@@ -305,6 +311,7 @@ const LINTERS = [
       '.git',
       '.github/workflows/node_modules',
       'node_modules',
+      'script/pgo/node_modules',
       'spec/node_modules',
       'spec/fixtures/native-addon'
     ],
@@ -570,7 +577,7 @@ async function findFiles(args, linter) {
 
   for (const ignoreRoot of linter.ignoreRoots || []) {
     const ignorePath = path.join(ELECTRON_ROOT, ignoreRoot);
-    if (!fs.existsSync(ignorePath)) continue;
+    if (!fs.existsSync(ignorePath) || !fs.statSync(ignorePath).isDirectory()) continue;
 
     const ignoreFiles = new Set(await findMatchingFiles(ignorePath, linter.test));
     filenames = filenames.filter((fileName) => !ignoreFiles.has(fileName));

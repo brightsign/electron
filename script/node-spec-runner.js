@@ -15,6 +15,7 @@ const args = minimist(process.argv.slice(2), {
 const BASE = path.resolve(__dirname, '../..');
 
 const ROOT_PACKAGE_JSON = path.resolve(BASE, 'package.json');
+const OUT_PACKAGE_JSON = path.resolve(path.dirname(utils.getAbsoluteElectronExec()), 'package.json');
 const NODE_DIR = path.resolve(BASE, 'third_party', 'electron_node');
 const JUNIT_DIR = args.jUnitDir ? path.resolve(args.jUnitDir) : null;
 const TAP_FILE_NAME = 'test.tap';
@@ -39,18 +40,41 @@ const defaultOptions = [
   '-J'
 ];
 
-// The root package.json is ESM, which breaks the test runner.
-// Temporarily change it to CommonJS while running the tests, then
-// change it back when done.
-const resetPackageJson = ({ useESM }) => {
-  // This won't always exist in CI.
-  if (!fs.existsSync(ROOT_PACKAGE_JSON)) {
-    return;
-  }
+// The upstream Node.js test suite assumes there is no package.json above its
+// test files or virtual files rooted at process.execPath. Electron has
+// "type": "module" package files at both Chromium's src/ root and in the
+// selected output directory. They change how Node resolves the module type of
+// test files and fixtures: they disable module-syntax detection (breaking e.g.
+// test-compile-cache-typescript-esm) and emit MODULE_TYPELESS_PACKAGE_JSON
+// warnings that break tests asserting clean stderr (e.g. test-esm-detect-
+// ambiguous, test-esm-import-meta-main-eval, test-output-coverage-with-mock),
+// and make virtual CommonJS files under process.execPath load as ESM.
+//
+// While the suite runs we move both package files aside so the environment
+// matches upstream exactly, then restore them when done. Original contents are
+// kept in sibling backup files so an interrupted run self-heals next time.
+const PACKAGE_JSON_PATHS = [ROOT_PACKAGE_JSON, OUT_PACKAGE_JSON];
 
-  const packageJson = JSON.parse(fs.readFileSync(ROOT_PACKAGE_JSON, 'utf-8'));
-  packageJson.type = useESM ? 'module' : 'commonjs';
-  fs.writeFileSync(ROOT_PACKAGE_JSON, JSON.stringify(packageJson, null, 2) + '\n');
+const stashPackageJson = () => {
+  for (const packageJson of PACKAGE_JSON_PATHS) {
+    // These won't always exist in CI.
+    if (!fs.existsSync(packageJson)) {
+      continue;
+    }
+    fs.copyFileSync(packageJson, `${packageJson}.spec-runner-backup`);
+    fs.rmSync(packageJson);
+  }
+};
+
+const restorePackageJson = () => {
+  for (const packageJson of PACKAGE_JSON_PATHS) {
+    const backup = `${packageJson}.spec-runner-backup`;
+    if (!fs.existsSync(backup)) {
+      continue;
+    }
+    fs.copyFileSync(backup, packageJson);
+    fs.rmSync(backup);
+  }
 };
 
 const getCustomOptions = () => {
@@ -91,7 +115,15 @@ async function main() {
 
   const options = args.default ? defaultOptions : getCustomOptions();
 
-  resetPackageJson({ useESM: false });
+  // Recover src/package.json if a previous run was interrupted, then move it
+  // aside for the duration of this run.
+  restorePackageJson();
+  stashPackageJson();
+
+  // Make sure src/package.json is put back even if we exit abnormally.
+  process.on('exit', restorePackageJson);
+  process.on('SIGINT', () => process.exit(130));
+  process.on('SIGTERM', () => process.exit(143));
 
   const testChild = cp.spawn('python3', options, {
     env: {
@@ -104,7 +136,7 @@ async function main() {
   });
 
   testChild.on('exit', (testCode) => {
-    resetPackageJson({ useESM: true });
+    restorePackageJson();
 
     if (JUNIT_DIR) {
       fs.mkdirSync(JUNIT_DIR);

@@ -1,19 +1,29 @@
-const { app, protocol } = require('electron');
+import { app, protocol } from 'electron';
 
-const fs = require('node:fs');
-const path = require('node:path');
-const v8 = require('node:v8');
+import * as v8 from 'node:v8';
 
-const FAILURE_STATUS_KEY = 'Electron_Spec_Runner_Failures';
+// This app is started by the vitest Electron pool (spec/vitest/electron-pool.ts),
+// several instances at a time, each running one spec file after another in
+// the main process. Everything up to app 'ready' configures the process the
+// specs expect; spec/vitest/worker.ts then takes over.
+const isVitestWorker = process.argv.includes('--vitest-worker');
+if (isVitestWorker) {
+  // Workers run concurrently; give each its own profile directory so they do
+  // not fight over cookie/localStorage/cache databases. Keep the app name in
+  // the path, some specs check for it.
+  app.setPath('userData', `${app.getPath('userData')}-worker-${process.env.ELECTRON_SPEC_WORKER_ID || process.pid}`);
+}
 
-// We want to terminate on errors, not throw up a dialog
+// Uncaught exceptions before the worker runtime is up are fatal; afterwards
+// vitest reports them against the running test (and its listener keeps
+// Electron's error dialog away).
+let workerStarted = false;
 process.on('uncaughtException', (err) => {
-  console.error('Unhandled exception in main spec runner:', err);
+  if (workerStarted) return;
+  console.error('Unhandled exception in the spec worker:', err);
   process.exit(1);
 });
 
-// Tell ts-node which tsconfig to use
-process.env.TS_NODE_PROJECT = path.resolve(__dirname, '../tsconfig.spec.json');
 process.env.ELECTRON_DISABLE_SECURITY_WARNINGS = 'true';
 
 // Some Linux machines have broken hardware acceleration support.
@@ -34,7 +44,12 @@ app.commandLine.appendSwitch(
     'MAP localhost2 127.0.0.1',
     'MAP ipv4.localhost2 10.0.0.1',
     'MAP ipv6.localhost2 [::1]',
-    'MAP notfound.localhost2 ~NOTFOUND'
+    'MAP notfound.localhost2 ^NOTFOUND',
+    // For specs that load a URL which must fail name resolution.
+    // Chromium fails this lookup with ERR_NAME_NOT_RESOLVED without a DNS query,
+    // and proxies bypass *.localhost by default (unlike localhost2),
+    // so the result does not depend on the network's DNS server or proxy.
+    'MAP notfound.localhost ^NOTFOUND'
   ].join(', ')
 );
 
@@ -42,9 +57,9 @@ app.commandLine.appendSwitch(
 app.commandLine.appendSwitch(
   'enable-features',
   [
-    // spec/api-web-frame-main-spec.ts
+    // spec/api-web-frame-main.spec.ts
     'DocumentPolicyIncludeJSCallStacksInCrashReports',
-    // spec/spellchecker-spec.ts - allows spellcheck without user gesture
+    // spec/spellchecker.spec.ts - allows spellcheck without user gesture
     // https://chromium-review.googlesource.com/c/chromium/src/+/7452579
     'UnrestrictSpellingAndGrammarForTesting'
   ].join(',')
@@ -61,6 +76,8 @@ protocol.registerSchemesAsPrivileged([
   { scheme: 'cors-blob', privileges: { corsEnabled: true, supportFetchAPI: true } },
   { scheme: 'cors', privileges: { corsEnabled: true, supportFetchAPI: true } },
   { scheme: 'no-cors', privileges: { supportFetchAPI: true } },
+  { scheme: 'no-cors-file', privileges: { supportFetchAPI: true } },
+  { scheme: 'no-cors-http', privileges: { supportFetchAPI: true } },
   { scheme: 'no-cors-standard', privileges: { standard: true, supportFetchAPI: true } },
   { scheme: 'no-fetch', privileges: { corsEnabled: true } },
   { scheme: 'stream', privileges: { standard: true, stream: true } },
@@ -71,141 +88,23 @@ protocol.registerSchemesAsPrivileged([
 app
   .whenReady()
   .then(async () => {
-    require('ts-node/register');
-
-    const argv = require('yargs')
-      .boolean('ci')
-      .array('files')
-      .string('g')
-      .alias('g', 'grep')
-      .boolean('i')
-      .alias('i', 'invert').argv;
-
-    const Mocha = require('mocha');
-    const mochaOptions = {
-      forbidOnly: process.env.CI
-    };
-    if (process.env.CI) {
-      mochaOptions.retries = 3;
+    if (!isVitestWorker) {
+      console.error(
+        'This is the Electron spec app; it is started by the test runner. Run `npm test` ' +
+          '(node script/spec-runner.js) from the repository root instead, optionally with ' +
+          '--files spec/some.spec.ts or -g <pattern>.'
+      );
+      return process.exit(1);
     }
-    if (process.env.MOCHA_REPORTER) {
-      mochaOptions.reporter = process.env.MOCHA_REPORTER;
+    const { isTestingBindingAvailable } = await import('./lib/spec-helpers.ts');
+    if (process.env.ELECTRON_REQUIRE_TESTING_BINDINGS === '1' && !isTestingBindingAvailable()) {
+      throw new Error('Testing build expected, but testing bindings are unavailable');
     }
-    if (process.env.MOCHA_MULTI_REPORTERS) {
-      mochaOptions.reporterOptions = {
-        reporterEnabled: process.env.MOCHA_MULTI_REPORTERS
-      };
-    }
-    // The MOCHA_GREP and MOCHA_INVERT are used in some vendor builds for sharding
-    // tests.
-    if (process.env.MOCHA_GREP) {
-      mochaOptions.grep = process.env.MOCHA_GREP;
-    }
-    if (process.env.MOCHA_INVERT) {
-      mochaOptions.invert = process.env.MOCHA_INVERT === 'true';
-    }
-    const mocha = new Mocha(mochaOptions);
-
-    // Add a root hook on mocha to skip any tests that are disabled
-    const disabledTests = new Set(JSON.parse(fs.readFileSync(path.join(__dirname, 'disabled-tests.json'), 'utf8')));
-    mocha.suite.beforeEach(function () {
-      // TODO(clavin): add support for disabling *suites* by title, not just tests
-      if (disabledTests.has(this.currentTest?.fullTitle())) {
-        this.skip();
-      }
-    });
-
-    // The cleanup method is registered this way rather than through an
-    // `afterEach` at the top level so that it can run before other `afterEach`
-    // methods.
-    //
-    // The order of events is:
-    // 1. test completes,
-    // 2. `defer()`-ed methods run, in reverse order,
-    // 3. regular `afterEach` hooks run.
-    const { runCleanupFunctions } = require('./lib/spec-helpers');
-    mocha.suite.on('suite', function attach(suite) {
-      suite.afterEach('cleanup', runCleanupFunctions);
-      suite.on('suite', attach);
-    });
-
-    if (!process.env.MOCHA_REPORTER) {
-      mocha.ui('bdd').reporter('tap');
-    }
-    const mochaTimeout = process.env.MOCHA_TIMEOUT || 30000;
-    mocha.timeout(mochaTimeout);
-
-    if (argv.grep) mocha.grep(argv.grep);
-    if (argv.invert) mocha.invert();
-
-    const baseElectronDir = path.resolve(__dirname, '..');
-    const validTestPaths =
-      argv.files &&
-      argv.files.map((file) => (path.isAbsolute(file) ? path.relative(baseElectronDir, file) : path.normalize(file)));
-    const filter = (file) => {
-      if (!/-spec\.[tj]s$/.test(file)) {
-        return false;
-      }
-
-      // This allows you to run specific modules only:
-      // npm run test -match=menu
-      const moduleMatch = process.env.npm_config_match ? new RegExp(process.env.npm_config_match, 'g') : null;
-      if (moduleMatch && !moduleMatch.test(file)) {
-        return false;
-      }
-
-      if (validTestPaths && !validTestPaths.includes(path.relative(baseElectronDir, file))) {
-        return false;
-      }
-
-      return true;
-    };
-
-    const { getFiles } = require('./get-files');
-    const testFiles = await getFiles(__dirname, filter);
-    for (const file of testFiles.sort()) {
-      mocha.addFile(file);
-    }
-
-    if (validTestPaths && validTestPaths.length > 0 && testFiles.length === 0) {
-      console.error('Test files were provided, but they did not match any searched files');
-      console.error('provided file paths (relative to electron/):', validTestPaths);
-      process.exit(1);
-    }
-
-    const cb = () => {
-      // Ensure the callback is called after runner is defined
-      process.nextTick(() => {
-        if (process.env.ELECTRON_FORCE_TEST_SUITE_EXIT === 'true') {
-          console.log(`${FAILURE_STATUS_KEY}: ${runner.failures}`);
-          process.kill(process.pid);
-        } else {
-          process.exit(runner.failures);
-        }
-      });
-    };
-
-    // Set up chai in the correct order
-    const chai = require('chai');
-    chai.use(require('chai-as-promised'));
-    chai.use(require('dirty-chai'));
-
-    // Show full object diff
-    // https://github.com/chaijs/chai/issues/469
-    chai.config.truncateThreshold = 0;
-
-    const runner = mocha.run(cb);
-
-    const RETRY_EVENT = Mocha?.Runner?.constants?.EVENT_TEST_RETRY || 'retry';
-
-    runner.on(RETRY_EVENT, (test, err) => {
-      console.log(`Failure in test: "${test.fullTitle()}"`);
-      if (err?.stack) console.log(err.stack.split('\n').slice(0, 3).join('\n'));
-      console.log(`Retrying test (${test.currentRetry() + 1}/${test.retries()})...`);
-    });
+    workerStarted = true;
+    await import('./vitest/worker.ts');
   })
   .catch((err) => {
-    console.error('An error occurred while running the spec runner');
+    console.error('An error occurred while starting the spec worker');
     console.error(err);
     process.exit(1);
   });
