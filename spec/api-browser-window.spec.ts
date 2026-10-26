@@ -8301,7 +8301,7 @@ describe('BrowserWindow module', () => {
 
       const selectPosition = transform.transformPosition(bounds, SELECT_WIDTH_OFFSET, SELECT_HEIGHT_OFFSET);
       const screenCapture = new ScreenCapture(display);
-      await screenCapture.expectColorAtPointOnDisplayMatches(HexColors.RED, () => ({
+      await screenCapture.expectColorAtPointMatches(HexColors.RED, () => ({
         x: bounds.x + selectPosition.x,
         y: bounds.y + selectPosition.y
       }));
@@ -8315,7 +8315,7 @@ describe('BrowserWindow module', () => {
         SELECT_OPTION_WIDTH_OFFSET,
         SELECT_OPTION_HEIGHT_OFFSET
       );
-      await screenCapture.expectColorAtPointOnDisplayMatches(HexColors.GREEN, () => ({
+      await screenCapture.expectColorAtPointMatches(HexColors.GREEN, () => ({
         x: bounds.x + optionPosition.x,
         y: bounds.y + optionPosition.y
       }));
@@ -8387,7 +8387,7 @@ describe('BrowserWindow module', () => {
         expectBoundsEqual(w.getBounds(), fullScreenBounds);
 
         const screenCapture = new ScreenCapture(display);
-        await screenCapture.expectColorAtPointOnDisplayMatches(
+        await screenCapture.expectColorAtPointMatches(
           HexColors.RED,
           () => ({
             x: fullScreenBounds.width - SELECT_WIDTH_OFFSET,
@@ -8398,7 +8398,7 @@ describe('BrowserWindow module', () => {
         clickMouse(w, { x: fullScreenBounds.width - MOUSE_X_OFFSET, y: fullScreenBounds.height - MOUSE_Y_OFFSET });
         await setTimeout(500);
         // Check when fullscreen the option for the bottom right select element is rendered above the element and inside the window
-        await screenCapture.expectColorAtPointOnDisplayMatches(
+        await screenCapture.expectColorAtPointMatches(
           HexColors.GREEN,
           () => ({
             x: fullScreenBounds.width - SELECT_OPTION_WIDTH_OFFSET,
