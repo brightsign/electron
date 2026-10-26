@@ -4137,12 +4137,12 @@ describe('webContents module', () => {
     let w: BrowserWindow;
     let downloadUrl = '';
 
-    before(async () => {
+    beforeAll(async () => {
       w = new BrowserWindow({ show: false, webPreferences: { contextIsolation: false } });
       await w.loadURL(url);
       downloadUrl = await w.webContents.executeJavaScript('downloadUrl');
     });
-    after(closeAllWindows);
+    afterAll(closeAllWindows);
 
     it('fetch all data', async () => {
       const result = await w.webContents.getBlobData(downloadUrl, 0, 10);

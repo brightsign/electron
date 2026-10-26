@@ -8147,7 +8147,7 @@ describe('BrowserWindow module', () => {
   });
 
   describe('hideScrollBars webpreference', () => {
-    const fixturesPath = path.resolve(__dirname, '..', 'spec', 'fixtures');
+    const fixturesPath = path.resolve(import.meta.dirname, 'fixtures');
     let w: BrowserWindow;
 
     afterEach(closeAllWindows);
@@ -8186,7 +8186,7 @@ describe('BrowserWindow module', () => {
   ifdescribe(process.platform === 'linux')('window rotation', () => {
     const screenSize = screen.getPrimaryDisplay().size;
     const display = screen.getPrimaryDisplay();
-    const fixturesPath = path.resolve(__dirname, '..', 'spec', 'fixtures');
+    const fixturesPath = path.resolve(import.meta.dirname, 'fixtures');
     const url = `file://${fixturesPath}/pages/rotation-test.html`;
     const landscapeBounds = { x: 0, y: 0, width: 600, height: 400 };
     const portraitBounds = { x: 0, y: 0, width: 500, height: 900 };
@@ -8328,7 +8328,7 @@ describe('BrowserWindow module', () => {
 
     describe('webpreference', () => {
       afterEach(closeAllWindows);
-      after(() => {
+      afterAll(() => {
         w = null as unknown as BrowserWindow;
       });
 
@@ -8344,11 +8344,11 @@ describe('BrowserWindow module', () => {
     });
 
     describe('SetWindowTransform', () => {
-      before(async () => {
+      beforeAll(async () => {
         w = new BrowserWindow({ ...landscapeBounds, frame: false, webPreferences: { windowTransform: 'none' } });
         await w.loadURL(url);
       });
-      after(async () => {
+      afterAll(async () => {
         await closeWindow(w);
         w = null as unknown as BrowserWindow;
       });

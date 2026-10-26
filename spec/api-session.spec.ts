@@ -55,7 +55,7 @@ describe('session module', () => {
     const pathloc = 'testsession';
     const tmppath = require('electron').app.getPath('temp') + path.sep + pathloc;
 
-    after(() => {
+    afterAll(() => {
       if (fs.existsSync(tmppath)) { fs.rmSync(tmppath, { recursive: true, force: true }); }
     });
     it('Assert that a set quota value is returned when a quota value is specified for a session', async () => {
@@ -87,7 +87,7 @@ describe('session module', () => {
     const pathloc = 'sessionnoquota';
     const tmppath = require('electron').app.getPath('temp') + path.sep + pathloc;
 
-    after(() => {
+    afterAll(() => {
       if (fs.existsSync(tmppath)) { fs.rmSync(tmppath, { recursive: true, force: true }); }
     });
     it('Assert that free space value is returned when a quota value is not specified for a session', async () => {
