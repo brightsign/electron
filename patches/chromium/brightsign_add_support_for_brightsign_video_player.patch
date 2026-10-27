@@ -814,10 +814,10 @@ index 856a575f45946c0b05d79234a559f8b298776865..32ec0bf4a9e04cb85c2b198548827ddc
  viz_add_configs = [ "//build/config:precompiled_headers" ]
  
 diff --git a/content/browser/renderer_host/render_process_host_impl.cc b/content/browser/renderer_host/render_process_host_impl.cc
-index 10539db278ebe12c9f52cd7d26b2887dde76bdf1..e86c2099a94477fda0998e48cd5ffcaa833c1ed2 100644
+index bd1b593694c14dc4e8bdb82ac28834fb01d3a76b..0f284abb73692849a0f9c6fe5488aad845e78f3d 100644
 --- a/content/browser/renderer_host/render_process_host_impl.cc
 +++ b/content/browser/renderer_host/render_process_host_impl.cc
-@@ -3803,6 +3803,7 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
+@@ -3799,6 +3799,7 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
        switches::kTargetDeviceScaleForTesting,
        switches::kTestType,
        switches::kTouchEventFeatureDetection,

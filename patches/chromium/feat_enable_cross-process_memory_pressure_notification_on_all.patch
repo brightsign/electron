@@ -21,10 +21,10 @@ The infrastructure is identical to what ships on Android — we are simply
 enabling it on Linux, macOS, and Windows.
 
 diff --git a/content/browser/renderer_host/render_process_host_impl.cc b/content/browser/renderer_host/render_process_host_impl.cc
-index fc75de7c10425a34c551d15b40433001b28a2c1f..10539db278ebe12c9f52cd7d26b2887dde76bdf1 100644
+index 44decfa9d29d1363b5453f4c11d4a7a61adddfb9..bd1b593694c14dc4e8bdb82ac28834fb01d3a76b 100644
 --- a/content/browser/renderer_host/render_process_host_impl.cc
 +++ b/content/browser/renderer_host/render_process_host_impl.cc
-@@ -6275,6 +6275,11 @@ void RenderProcessHostImpl::ProvideSwapFileForRenderer() {
+@@ -6271,6 +6271,11 @@ void RenderProcessHostImpl::ProvideSwapFileForRenderer() {
            std::move(allocator)));
  }
  
