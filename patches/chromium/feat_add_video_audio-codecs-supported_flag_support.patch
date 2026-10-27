@@ -7,10 +7,10 @@ Chromium should advertise Brightsign video player capabilities
 correctly. Codec support will be passed as command line parameter.
 
 diff --git a/content/browser/renderer_host/render_process_host_impl.cc b/content/browser/renderer_host/render_process_host_impl.cc
-index e86c2099a94477fda0998e48cd5ffcaa833c1ed2..1450f4bda247addc27e66ce111952b6d5c1ee0bd 100644
+index 0f284abb73692849a0f9c6fe5488aad845e78f3d..2d8546224f0ac21b044fbbcb95c129a2d136ef81 100644
 --- a/content/browser/renderer_host/render_process_host_impl.cc
 +++ b/content/browser/renderer_host/render_process_host_impl.cc
-@@ -3895,6 +3895,8 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
+@@ -3891,6 +3891,8 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
  #if BUILDFLAG(IS_CHROMEOS)
        switches::kSchedulerBoostUrgent,
  #endif
