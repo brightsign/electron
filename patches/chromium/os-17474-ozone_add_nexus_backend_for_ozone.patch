@@ -540,10 +540,10 @@ index 0000000000000000000000000000000000000000..9b00520881ac5259bbba53591418ce80
 +#endif  //  UI_OZONE_PLATFORM_NEXUS_NEXUS_CURSOR_H
 diff --git a/ui/ozone/platform/nexus/nexus_screen.cc b/ui/ozone/platform/nexus/nexus_screen.cc
 new file mode 100644
-index 0000000000000000000000000000000000000000..3da767d7c3ca27f675bf043be80dce0cb573b827
+index 0000000000000000000000000000000000000000..77529dc37f2f1ca467d149f26211504c6991fc7e
 --- /dev/null
 +++ b/ui/ozone/platform/nexus/nexus_screen.cc
-@@ -0,0 +1,80 @@
+@@ -0,0 +1,82 @@
 +// Copyright 2019 The Chromium Authors. All rights reserved.
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
@@ -556,7 +556,9 @@ index 0000000000000000000000000000000000000000..3da767d7c3ca27f675bf043be80dce0c
 +namespace ui {
 +
 +NexusScreen::NexusScreen() {
-+  NxClient_Join(nullptr);
++  if (NEXUS_Error rc = NxClient_Join(nullptr); rc != NEXUS_SUCCESS) {
++    LOG(ERROR) << "NxClient_Join failed: " << rc;
++  }
 +  static constexpr int64_t kNexusDisplayId = 1;
 +  NxClient_DisplaySettings settings;
 +  NxClient_GetDisplaySettings(&settings);
