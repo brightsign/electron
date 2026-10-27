@@ -234,6 +234,18 @@ jobs:
         cd src/electron
         xvfb-run node script/node-spec-runner.js --default
 
+    # Needs root to drop renderers to an unprivileged user, so run only this spec as root.
+    - name: Run renderer privilege drop tests
+      if: inputs.build_type == 'test'
+      run: |
+        sudo useradd --system --no-create-home --shell /usr/sbin/nologin nodejs
+        sudo install -d -m 0700 -o root -g root /var/lib/fake-nssdb
+        cd src/electron
+        sudo -E env "PATH=$PATH" \
+          ELECTRON_TEST_NSS_DB=/var/lib/fake-nssdb \
+          xvfb-run node script/spec-runner --runners=main --no-sandbox --disable-gpu \
+          --files spec/api-renderer-privileges-spec.ts
+
     - name: Prepare release dist and upload
       if: inputs.build_type == 'release'
       run: |
