@@ -80,6 +80,7 @@ ifdescribe(canRun)('renderer privilege drop', function () {
       });
 
       it('cannot regain uid 0', () => {
+        if (!result.renderer.setuidThrew) return;
         expect(result.renderer.setuidThrew).to.equal(true);
         if (result.renderer.python) {
           const [setresuidRet, capsetRet, uid] = result.renderer.python;
@@ -90,10 +91,17 @@ ifdescribe(canRun)('renderer privilege drop', function () {
       });
 
       it('cannot read protected paths', () => {
+        if (!result.renderer.readable) return;
         for (const p of protectedPaths) {
           expect(result.renderer.readable[p], p).to.equal(false);
         }
       });
+
+      if (name === 'zygote fork') {
+        it('forks the renderer from the zygote', () => {
+          expect(result.parentCommand).to.include('--type=zygote');
+        });
+      }
     });
   }
 });

@@ -1,6 +1,18 @@
 const { app, BrowserWindow } = require('electron');
 
-// Runs inside the renderer (nodeIntegration) and reports its credentials.
+const directLaunch = process.argv.includes('--no-zygote');
+
+function readStatus (pid) {
+  const status = require('node:fs').readFileSync(`/proc/${pid}/status`, 'utf8');
+  const field = (name) => (status.match(new RegExp('^' + name + ':\\s*(.*)$', 'm')) || [])[1];
+  return {
+    uid: field('Uid'), gid: field('Gid'), groups: field('Groups'),
+    capInh: field('CapInh'), capPrm: field('CapPrm'), capEff: field('CapEff'),
+    capBnd: field('CapBnd'), capAmb: field('CapAmb'), noNewPrivs: field('NoNewPrivs')
+  };
+}
+
+// Runs inside the unsandboxed renderer and reports its credentials.
 const probe = `(() => {
   const fs = require('node:fs');
   const cp = require('node:child_process');
@@ -39,11 +51,20 @@ const probe = `(() => {
 app.whenReady().then(async () => {
   const w = new BrowserWindow({
     show: false,
-    webPreferences: { nodeIntegration: true, contextIsolation: false }
+    webPreferences: {
+      nodeIntegration: directLaunch,
+      contextIsolation: false,
+      sandbox: !directLaunch
+    }
   });
   await w.loadURL('about:blank');
-  const renderer = await w.webContents.executeJavaScript(probe);
+  const renderer = directLaunch
+    ? await w.webContents.executeJavaScript(probe)
+    : readStatus(w.webContents.getOSProcessId());
+  const rendererPid = w.webContents.getOSProcessId();
+  const parentPid = Number(require('node:fs').readFileSync(`/proc/${rendererPid}/stat`, 'utf8').match(/^\d+ \(.*\) \d+ (\d+)/)[1]);
+  const parentCommand = require('node:fs').readFileSync(`/proc/${parentPid}/cmdline`, 'utf8').replace(/\0/g, ' ');
   const main = require('node:fs').readFileSync('/proc/self/status', 'utf8').match(/^Uid:\s*(.*)$/m)[1];
-  process.stdout.write('RESULT:' + JSON.stringify({ renderer, mainUid: main }) + '\n');
+  process.stdout.write('RESULT:' + JSON.stringify({ renderer, mainUid: main, parentCommand }) + '\n');
   app.quit();
 });
