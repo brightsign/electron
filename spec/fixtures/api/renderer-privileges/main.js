@@ -62,7 +62,7 @@ app.whenReady().then(async () => {
     ? await w.webContents.executeJavaScript(probe)
     : readStatus(w.webContents.getOSProcessId());
   const rendererPid = w.webContents.getOSProcessId();
-  const parentPid = Number(require('node:fs').readFileSync(`/proc/${rendererPid}/stat`, 'utf8').match(/^\d+ \(.*\) \d+ (\d+)/)[1]);
+  const parentPid = Number(require('node:fs').readFileSync(`/proc/${rendererPid}/stat`, 'utf8').match(/^\d+ \(.*\) \S (\d+)/)[1]);
   const parentCommand = require('node:fs').readFileSync(`/proc/${parentPid}/cmdline`, 'utf8').replace(/\0/g, ' ');
   const main = require('node:fs').readFileSync('/proc/self/status', 'utf8').match(/^Uid:\s*(.*)$/m)[1];
   process.stdout.write('RESULT:' + JSON.stringify({ renderer, mainUid: main, parentCommand }) + '\n');

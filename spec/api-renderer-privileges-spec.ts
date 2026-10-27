@@ -24,6 +24,17 @@ const rendererUser = process.env.ELECTRON_TEST_RENDERER_UID
 // Needs root so the browser can drop renderers to the unprivileged user.
 const canRun = process.platform === 'linux' && process.getuid?.() === 0 && !!rendererUser;
 
+// With --no-zygote the renderer is exec'd after the uid drop, so it must be able to traverse to the binary.
+function execPathTraversable () {
+  let dir = path.dirname(fs.realpathSync(process.execPath));
+  while (true) {
+    if (!(fs.statSync(dir).mode & 0o001)) return false;
+    const parent = path.dirname(dir);
+    if (parent === dir) return true;
+    dir = parent;
+  }
+}
+
 ifdescribe(canRun)('renderer privilege drop', function () {
   this.timeout(60000);
 
@@ -39,7 +50,8 @@ ifdescribe(canRun)('renderer privilege drop', function () {
     describe(name, () => {
       let result: any;
 
-      before(() => {
+      before(function () {
+        if (extraArgs.includes('--no-zygote') && !execPathTraversable()) this.skip();
         const gids = process.env.ELECTRON_TEST_RENDERER_GIDS || String(rendererUser!.gid);
         const out = cp.spawnSync(process.execPath, [
           fixture, '--no-sandbox', '--disable-gpu',
