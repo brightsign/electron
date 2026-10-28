@@ -394,6 +394,48 @@ describe('app module', () => {
       expect(code).toBe(0);
     });
 
+    ifit(['darwin', 'linux'].includes(process.platform))('uses --singleton-dir for singleton files and locking', { timeout: 120000 }, async () => {
+      const appPath = path.join(fixturesPath, 'api', 'singleton');
+      const singletonDir = fs.mkdtempSync(path.join(os.tmpdir(), 'electron-singleton-dir-'));
+      const unusableDir = path.join(singletonDir, 'not-a-directory');
+      const userDataDir = path.join(singletonDir, 'user-data');
+      fs.writeFileSync(unusableDir, '');
+      defer(() => fs.rmSync(singletonDir, { recursive: true, force: true }));
+
+      const first = cp.spawn(process.execPath, [
+        appPath,
+        `--singleton-dir=${singletonDir}`,
+        `--user-data-dir=${userDataDir}`
+      ]);
+      await once(first.stdout, 'data');
+
+      for (const filename of ['SingletonSocket', 'SingletonLock', 'SingletonCookie']) {
+        expect(fs.lstatSync(path.join(singletonDir, filename)).isSymbolicLink()).toBe(true);
+        expect(fs.existsSync(path.join(userDataDir, filename))).toBe(false);
+      }
+
+      const second = cp.spawn(process.execPath, [
+        appPath,
+        `--singleton-dir=${singletonDir}`,
+        `--user-data-dir=${userDataDir}`
+      ]);
+      const [secondCode] = await once(second, 'exit');
+      expect(secondCode).toBe(1);
+      const [firstCode] = await once(first, 'exit');
+      expect(firstCode).toBe(0);
+
+      const unusable = cp.spawn(process.execPath, [
+        appPath,
+        `--singleton-dir=${unusableDir}`,
+        `--user-data-dir=${userDataDir}`
+      ]);
+      const [unusableCode] = await once(unusable, 'exit');
+      expect(unusableCode).toBe(1);
+      for (const filename of ['SingletonSocket', 'SingletonLock', 'SingletonCookie']) {
+        expect(fs.existsSync(path.join(userDataDir, filename))).toBe(false);
+      }
+    });
+
     async function testArgumentPassing(testArgs: SingleInstanceLockTestArgs) {
       const appPath = path.join(fixturesPath, 'api', 'singleton-data');
       const first = cp.spawn(process.execPath, [appPath, ...testArgs.args]);
