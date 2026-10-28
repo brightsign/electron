@@ -7,10 +7,10 @@ Allows the singleton socket/lock/cookie symlinks to be placed in a
 directory other than user-data-dir, for filesystems without symlink support.
 
 diff --git a/chrome/browser/process_singleton_posix.cc b/chrome/browser/process_singleton_posix.cc
-index 1204affca14f73d84b57c1b3092079464a4d5430..a1d06c8fcf16d7a14522a8a03ec18eba813a9ba4 100644
+index 664f3168546880d9ebce7cace7b78a176567b8db..f94c90bde30788658c31452a7db1e71cc7913ca9 100644
 --- a/chrome/browser/process_singleton_posix.cc
 +++ b/chrome/browser/process_singleton_posix.cc
-@@ -823,9 +823,35 @@ ProcessSingleton::ProcessSingleton(
+@@ -874,9 +874,35 @@ ProcessSingleton::ProcessSingleton(
      : notification_callback_(notification_callback),
        additional_data_(additional_data),
        current_pid_(base::GetCurrentProcId()) {
