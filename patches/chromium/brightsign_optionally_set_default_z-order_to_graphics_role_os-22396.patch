@@ -1,0 +1,55 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Tariq Bashir <tbashir@brightsign.biz>
+Date: Tue, 27 Oct 2026 16:16:38 +0000
+Subject: Brightsign: optionally set default z-order to graphics role OS-22396
+
+Change for roElectron to allow z-order to be fixed and set to graphics so that
+customers don't have to modify their Electron app code to set this explicitly.
+
+diff --git a/ui/views/views_switches.h b/ui/views/views_switches.h
+index 8df25058266cadc6b46203b3555dcbaddc59b56c..6409f5777d1fbbe728ceed8583d5ce902d6ce5a6 100644
+--- a/ui/views/views_switches.h
++++ b/ui/views/views_switches.h
+@@ -20,6 +20,10 @@ inline constexpr char kDisableInputEventActivationProtectionForTesting[] =
+ // GetLocalBounds().
+ inline constexpr char kDrawViewBoundsRects[] = "draw-view-bounds-rects";
+ 
++// BrightSign: places widgets with no explicit z-order (normally kNormal) in
++// the graphics role (ui::ZOrderLevel::kRoleGraphics).
++inline constexpr char kUseFixedZOrdering[] = "use-fixed-z-ordering";
++
+ // Captures stack traces on View construction to provide better debug info.
+ inline constexpr char kViewStackTraces[] = "view-stack-traces";
+ 
+diff --git a/ui/views/widget/widget.cc b/ui/views/widget/widget.cc
+index 55166230dbffccb7f82bcfab342cb755ee6ae2de..1dea859b0ab37782c1bb9baf8c043e3f93776ce9 100644
+--- a/ui/views/widget/widget.cc
++++ b/ui/views/widget/widget.cc
+@@ -11,6 +11,7 @@
+ 
+ #include "base/auto_reset.h"
+ #include "base/check_op.h"
++#include "base/command_line.h"
+ #include "base/containers/adapters.h"
+ #include "base/functional/bind.h"
+ #include "base/i18n/rtl.h"
+@@ -54,6 +55,7 @@
+ #include "ui/views/focus/native_view_focus_manager.h"
+ #include "ui/views/input_protection/occluded_widget_input_protector.h"
+ #include "ui/views/views_delegate.h"
++#include "ui/views/views_switches.h"
+ #include "ui/views/widget/any_widget_observer_singleton.h"
+ #include "ui/views/widget/native_widget_private.h"
+ #include "ui/views/widget/root_view.h"
+@@ -234,7 +236,10 @@ ui::ZOrderLevel Widget::InitParams::EffectiveZOrderLevel() const {
+     case TYPE_DRAG:
+       return ui::ZOrderLevel::kFloatingUIElement;
+     default:
+-      return ui::ZOrderLevel::kNormal;
++      return base::CommandLine::ForCurrentProcess()->HasSwitch(
++                 switches::kUseFixedZOrdering)
++                 ? ui::ZOrderLevel::kRoleGraphics
++                 : ui::ZOrderLevel::kNormal;
+   }
+ }
+ 
