@@ -99,6 +99,32 @@ index f08d8343a6bb665be57c9e6766476c71efa47143..1efd23730c9bc56db3641ba06627daff
      "SUPPORTS_OZONE_WAYLAND=$ozone_platform_wayland",
      "SUPPORTS_OZONE_X11=$ozone_platform_x11",
    ]
+diff --git a/ui/events/ozone/device/device_manager_manual.cc b/ui/events/ozone/device/device_manager_manual.cc
+index 0df9c9089b2a0ca5c5d23426d73f9c25560e6cc8..b2b3fe0305fee7e15d12eb836d233c82e1ddef03 100644
+--- a/ui/events/ozone/device/device_manager_manual.cc
++++ b/ui/events/ozone/device/device_manager_manual.cc
+@@ -4,6 +4,8 @@
+ 
+ #include "ui/events/ozone/device/device_manager_manual.h"
+ 
++#include <unistd.h>
++
+ #include "base/files/file_enumerator.h"
+ #include "base/functional/bind.h"
+ #include "base/functional/callback.h"
+@@ -27,6 +29,12 @@ void ScanDevicesOnWorkerThread(std::vector<base::FilePath>* result) {
+                                  FILE_PATH_LITERAL("event*[0-9]"));
+   for (base::FilePath path = file_enum.Next(); !path.empty();
+        path = file_enum.Next()) {
++    // Without udev, hotplug may change a node's group after it appears.
++    // Leaving it out until it can be opened lets the attribute change that
++    // grants access report it.
++    if (access(path.value().c_str(), R_OK | W_OK) != 0) {
++      continue;
++    }
+     result->push_back(path);
+   }
+ }
 diff --git a/ui/events/ozone/layout/xkb/xkb_keyboard_layout_engine.cc b/ui/events/ozone/layout/xkb/xkb_keyboard_layout_engine.cc
 index 3b5762f66dfda8e2962cb8e6ece740c30cb44862..5cc561b46633b00beb49003e7fec408c815b137d 100644
 --- a/ui/events/ozone/layout/xkb/xkb_keyboard_layout_engine.cc
