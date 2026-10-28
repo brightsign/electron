@@ -20,6 +20,7 @@
 #include "shell/common/gin_converters/optional_converter.h"
 #include "shell/common/gin_helper/dictionary.h"
 #include "shell/common/gin_helper/object_template_builder.h"
+#include "shell/common/gin_helper/wrappable_pointer_tags.h"
 #include "shell/common/node_includes.h"
 #include "ui/base/models/image_model.h"
 #include "v8/include/cppgc/persistent.h"
@@ -51,8 +52,8 @@ struct Converter<SharingItem> {
 
 namespace electron::api {
 
-const gin::WrapperInfo Menu::kWrapperInfo = {{gin::kEmbedderNativeGin},
-                                             gin::kElectronMenu};
+const gin::WrapperInfo Menu::kWrapperInfo =
+    electron::MakeWrapperInfo(electron::kElectronMenu);
 
 Menu::Menu(gin::Arguments* args)
     : model_(std::make_unique<ElectronMenuModel>(this)) {
@@ -269,9 +270,11 @@ std::u16string Menu::GetAcceleratorTextAtForTesting(int index) const {
 
 void Menu::OnMenuWillClose() {
   Emit("menu-will-close");
+  keep_alive_.Clear();
 }
 
 void Menu::OnMenuWillShow() {
+  keep_alive_ = this;
   Emit("menu-will-show");
 }
 

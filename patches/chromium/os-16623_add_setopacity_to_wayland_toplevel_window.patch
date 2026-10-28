@@ -7,7 +7,7 @@ This patch adds a setopacity method to the wayland_toplevel_window class to
 allow the opacity of the window to be set.
 
 diff --git a/ui/ozone/platform/wayland/host/wayland_toplevel_window.cc b/ui/ozone/platform/wayland/host/wayland_toplevel_window.cc
-index 33b7d01af0da3564fa6ddc4f5467d9727d4adf17..5f5390ee8a0ca29cabddafaec7a6e2bbfb501e00 100644
+index 83ace17209448ec075fc33e6ce8fc3a83b812e9a..6d62321a0fb73222a3e6ecb3c79fa39998540e70 100644
 --- a/ui/ozone/platform/wayland/host/wayland_toplevel_window.cc
 +++ b/ui/ozone/platform/wayland/host/wayland_toplevel_window.cc
 @@ -356,6 +356,11 @@ void WaylandToplevelWindow::SizeConstraintsChanged() {

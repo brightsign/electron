@@ -22,20 +22,17 @@
 #include "chrome/browser/ui/exclusive_access/exclusive_access_context.h"  // nogncheck
 #include "chrome/browser/ui/exclusive_access/exclusive_access_manager.h"
 #include "content/common/frame.mojom-forward.h"
-#include "content/public/browser/browser_thread.h"
-#include "content/public/browser/devtools_agent_host.h"
 #include "content/public/browser/frame_tree_node_id.h"
 #include "content/public/browser/global_routing_id.h"
 #include "content/public/browser/javascript_dialog_manager.h"
+#include "content/public/browser/navigation_entry.h"
 #include "content/public/browser/render_widget_host.h"
 #include "content/public/browser/web_contents_delegate.h"
 #include "content/public/browser/web_contents_observer.h"
 #include "content/public/common/stop_find_action.h"
 #include "electron/buildflags/buildflags.h"
 #include "printing/buildflags/buildflags.h"
-#include "shell/browser/api/electron_api_debugger.h"
-#include "shell/browser/api/electron_api_session.h"
-#include "shell/browser/api/save_page_handler.h"
+#include "services/network/public/mojom/web_sandbox_flags.mojom-forward.h"
 #include "shell/browser/background_throttling_source.h"
 #include "shell/browser/event_emitter_mixin.h"
 #include "shell/browser/extended_web_contents_observer.h"
@@ -44,13 +41,10 @@
 #include "shell/browser/preload_script.h"
 #include "shell/browser/ui/inspectable_web_contents_delegate.h"
 #include "shell/browser/ui/inspectable_web_contents_view_delegate.h"
-#include "shell/common/api/api.mojom.h"
 #include "shell/common/gin_helper/cleaned_up_at_exit.h"
 #include "shell/common/gin_helper/constructible.h"
-#include "shell/common/gin_helper/handle.h"
 #include "shell/common/gin_helper/pinnable.h"
 #include "shell/common/gin_helper/wrappable.h"
-#include "shell/common/web_contents_utility.mojom.h"
 #include "ui/base/models/image_model.h"
 #include "v8/include/cppgc/persistent.h"
 
@@ -67,8 +61,14 @@ struct DeviceEmulationParams;
 // enum class PermissionType;
 }  // namespace blink
 
+namespace base {
+class FilePath;
+class Value;
+}  // namespace base
+
 namespace content {
 enum class KeyboardEventProcessingResult;
+class DevToolsAgentHost;
 class WebContents;
 }  // namespace content
 
@@ -79,6 +79,8 @@ class Arguments;
 namespace gin_helper {
 class Dictionary;
 class ErrorThrower;
+template <typename T>
+class Handle;
 template <typename T>
 class Promise;
 }  // namespace gin_helper
@@ -100,6 +102,7 @@ class SkRegion;
 
 namespace electron {
 
+class DevToolsContextMenu;
 class ElectronBrowserContext;
 class InspectableWebContents;
 class WebContentsZoomController;
@@ -112,7 +115,9 @@ class OffScreenWebContentsView;
 namespace api {
 
 class BaseWindow;
+class Debugger;
 class FrameSubscriber;
+class Session;
 
 // Wrapper around the content::WebContents.
 class WebContents final : public ExclusiveAccessContext,
@@ -351,14 +356,6 @@ class WebContents final : public ExclusiveAccessContext,
       const blink::mojom::FullscreenOptions& options,
       bool allowed);
 
-  // Create window with the given disposition.
-  void OnCreateWindow(const GURL& target_url,
-                      const content::Referrer& referrer,
-                      const std::string& frame_name,
-                      WindowOpenDisposition disposition,
-                      const std::string& features,
-                      const scoped_refptr<network::ResourceRequestBody>& body);
-
   // Returns the preload script of current WebContents.
   std::optional<PreloadScript> GetPreloadScript() const;
 
@@ -373,7 +370,7 @@ class WebContents final : public ExclusiveAccessContext,
 
   v8::Local<v8::Promise> TakeHeapSnapshot(v8::Isolate* isolate,
                                           const base::FilePath& file_path);
-  v8::Local<v8::Promise> GetProcessMemoryInfo(v8::Isolate* isolate);
+  v8::Local<v8::Promise> GetProcessMemoryInfo(gin::Arguments* args);
 
   // content::WebContentsDelegate:
   bool HandleContextMenu(content::RenderFrameHost& render_frame_host,
@@ -413,6 +410,9 @@ class WebContents final : public ExclusiveAccessContext,
 
   // Set the window as owner window.
   void SetOwnerWindow(NativeWindow* owner_window);
+  void SetConsoleMessageObserved(bool observed) {
+    console_message_observed_ = observed;
+  }
   void SetOwnerWindow(content::WebContents* web_contents,
                       NativeWindow* owner_window);
   void SetOwnerBaseWindow(std::optional<BaseWindow*> owner_window);
@@ -557,6 +557,20 @@ class WebContents final : public ExclusiveAccessContext,
       const content::OpenURLParams& params,
       base::OnceCallback<void(content::NavigationHandle&)>
           navigation_handle_callback) override;
+  // Opens |params| in a new WebContents created in |source|'s browser context,
+  // going through the same app hooks as a renderer-created popup.
+  void OpenURLInNewWebContents(content::WebContents* source,
+                               const content::OpenURLParams& params,
+                               network::mojom::WebSandboxFlags sandbox_flags);
+  // Records what a child WebContents was opened with and attaches the
+  // webPreferences the app's window-open handler left for it.
+  void AdoptChildWebContents(
+      content::WebContents* new_contents,
+      const GURL& url,
+      const std::string& frame_name,
+      const content::Referrer& referrer,
+      const std::string& raw_features,
+      const scoped_refptr<network::ResourceRequestBody>& body);
   void BeforeUnloadFired(content::WebContents* tab,
                          bool proceed,
                          bool* proceed_to_fire_unload) override;
@@ -583,6 +597,9 @@ class WebContents final : public ExclusiveAccessContext,
       content::WebContents* source,
       content::RenderWidgetHost* render_widget_host,
       base::RepeatingClosure hang_monitor_restarter) override;
+  bool SaveFrame(const GURL& url,
+                 const content::Referrer& referrer,
+                 content::RenderFrameHost* rfh) override;
   void RendererResponsive(
       content::WebContents* source,
       content::RenderWidgetHost* render_widget_host) override;
@@ -656,6 +673,11 @@ class WebContents final : public ExclusiveAccessContext,
       content::NavigationHandle* navigation_handle) override;
   void ReadyToCommitNavigation(
       content::NavigationHandle* navigation_handle) override;
+  // Pushes preload script contents + process info to a sandboxed renderer over
+  // the navigation's associated mojo channel, ahead of CommitNavigation.
+  // Replaces the BROWSER_SANDBOX_LOAD sync IPC for the common path.
+  void MaybeSendRendererStartupData(
+      content::NavigationHandle* navigation_handle);
   void DidFinishNavigation(
       content::NavigationHandle* navigation_handle) override;
   void WebContentsDestroyed() override;
@@ -665,6 +687,8 @@ class WebContents final : public ExclusiveAccessContext,
   void DidUpdateFaviconURL(
       content::RenderFrameHost* render_frame_host,
       const std::vector<blink::mojom::FaviconURLPtr>& urls) override;
+  void NotifyPageTitleUpdated(content::NavigationEntry* entry,
+                              bool from_same_document_history_navigation);
   void MediaStartedPlaying(const MediaPlayerInfo& video_type,
                            const content::MediaPlayerId& id) override;
   void MediaStoppedPlaying(
@@ -698,6 +722,9 @@ class WebContents final : public ExclusiveAccessContext,
   ElectronBrowserContext* GetBrowserContext() const;
 
   void OnElectronBrowserConnectionError();
+
+  // Posted from PrimaryMainFrameRenderProcessGone(); see the comment there.
+  void EmitRenderProcessGone(base::TerminationStatus status, int exit_code);
 
   OffScreenWebContentsView* GetOffScreenWebContentsView() const;
   OffScreenRenderWidgetHostView* GetOffScreenRenderWidgetHostView() const;
@@ -838,6 +865,9 @@ class WebContents final : public ExclusiveAccessContext,
   // Whether background throttling is disabled.
   bool background_throttling_ = true;
 
+  // Kept by JS while 'console-message' has listeners.
+  bool console_message_observed_ = false;
+
   // Whether to enable devtools.
   bool enable_devtools_ = true;
 
@@ -878,6 +908,10 @@ class WebContents final : public ExclusiveAccessContext,
   // dialog_manager_, so we can make sure inspectable_web_contents_ is
   // destroyed before dialog_manager_, otherwise a crash would happen.
   std::unique_ptr<InspectableWebContents> inspectable_web_contents_;
+
+  // Menu for context menu requests coming from a DevTools frontend hosted
+  // directly in this WebContents (e.g. via setDevToolsWebContents()).
+  std::unique_ptr<DevToolsContextMenu> devtools_context_menu_;
 
   std::optional<GURL> pending_unload_url_ = std::nullopt;
 

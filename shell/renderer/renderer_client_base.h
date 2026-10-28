@@ -6,6 +6,7 @@
 #define ELECTRON_SHELL_RENDERER_RENDERER_CLIENT_BASE_H_
 
 #include <memory>
+#include <optional>
 #include <string>
 
 #include "content/public/renderer/content_renderer_client.h"
@@ -74,6 +75,18 @@ class RendererClientBase : public content::ContentRendererClient
   v8::Local<v8::Context> GetContext(blink::WebLocalFrame* frame,
                                     v8::Isolate* isolate) const;
 
+  // The context of |render_frame|'s Node.js environment, or an empty handle if
+  // it has none. Once a frame has an environment, the Electron API stays in
+  // that context until it is released, even if the frame's WebPreferences
+  // change: a window.open() child starts with its opener's preferences and
+  // gets its own later.
+  virtual v8::Local<v8::Context> GetEnvironmentContext(
+      content::RenderFrame* render_frame) const;
+
+  // The world of GetEnvironmentContext(), if |render_frame| has an environment.
+  virtual std::optional<int> GetEnvironmentWorldId(
+      content::RenderFrame* render_frame) const;
+
   static void AllowGuestViewElementDefinition(
       v8::Isolate* isolate,
       v8::Local<v8::Object> context,
@@ -100,6 +113,7 @@ class RendererClientBase : public content::ContentRendererClient
   void RenderThreadStarted() override;
   void ExposeInterfacesToBrowser(mojo::BinderMap* binders) override;
   void RenderFrameCreated(content::RenderFrame*) override;
+  void SetPendingCreateNewWindowStartupData(mojo_base::BigBuffer data) override;
   bool OverrideCreatePlugin(content::RenderFrame* render_frame,
                             const blink::WebPluginParams& params,
                             blink::WebPlugin** plugin) override;
@@ -154,6 +168,9 @@ class RendererClientBase : public content::ContentRendererClient
   std::unique_ptr<extensions::ExtensionsClient> extensions_client_;
   std::unique_ptr<ElectronExtensionsRendererClient> extensions_renderer_client_;
 #endif
+
+  // Receives the per-process service-worker startup data push from the
+  // browser, replacing the BROWSER_SANDBOX_LOAD sync IPC for SW preload realms.
 
   std::string renderer_client_id_;
   // An increasing ID used for identifying an V8 context in this process.

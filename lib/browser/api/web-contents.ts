@@ -6,6 +6,7 @@ import {
 import { IpcMainImpl } from '@electron/internal/browser/ipc-main-impl';
 import * as ipcMainUtils from '@electron/internal/browser/ipc-main-internal-utils';
 import { parseFeatures } from '@electron/internal/browser/parse-features-string';
+import { printToPDF } from '@electron/internal/browser/print-to-pdf';
 import * as deprecate from '@electron/internal/common/deprecate';
 import { IPC_MESSAGES } from '@electron/internal/common/ipc-messages';
 
@@ -19,11 +20,6 @@ import * as url from 'url';
 // before the webContents module.
 // eslint-disable-next-line no-unused-expressions
 session;
-
-let nextId = 0;
-const getNextId = function () {
-  return ++nextId;
-};
 
 // Stock page sizes
 const PDFPageSizes: Record<string, ElectronInternal.MediaSize> = {
@@ -90,20 +86,6 @@ const PDFPageSizes: Record<string, ElectronInternal.MediaSize> = {
   }
 } as const;
 
-const paperFormats: Record<string, ElectronInternal.PageSize> = {
-  letter: { width: 8.5, height: 11 },
-  legal: { width: 8.5, height: 14 },
-  tabloid: { width: 11, height: 17 },
-  ledger: { width: 17, height: 11 },
-  a0: { width: 33.1, height: 46.8 },
-  a1: { width: 23.4, height: 33.1 },
-  a2: { width: 16.54, height: 23.4 },
-  a3: { width: 11.7, height: 16.54 },
-  a4: { width: 8.27, height: 11.7 },
-  a5: { width: 5.83, height: 8.27 },
-  a6: { width: 4.13, height: 5.83 }
-} as const;
-
 // The minimum micron size Chromium accepts is that where:
 // Per printing/units.h:
 //  * kMicronsPerInch - Length of an inch in 0.001mm unit.
@@ -135,13 +117,17 @@ WebContents.prototype._sendInternal = function (channel, ...args) {
 };
 
 function getWebFrame(contents: Electron.WebContents, frame: number | [number, number]) {
+  let webFrame: Electron.WebFrameMain | undefined;
   if (typeof frame === 'number') {
-    return webFrameMain.fromId(contents.mainFrame.processId, frame);
+    webFrame = webFrameMain.fromId(contents.mainFrame.processId, frame);
   } else if (Array.isArray(frame) && frame.length === 2 && frame.every((value) => typeof value === 'number')) {
-    return webFrameMain.fromId(frame[0], frame[1]);
+    webFrame = webFrameMain.fromId(frame[0], frame[1]);
   } else {
     throw new Error('Missing required frame argument (must be number or [processId, frameId])');
   }
+  // Frame ids are global; only address frames that belong to |contents|.
+  if (webFrame && webFrame.top !== contents.mainFrame) return undefined;
+  return webFrame;
 }
 
 WebContents.prototype.sendToFrame = function (frameId, channel, ...args) {
@@ -199,81 +185,8 @@ WebContents.prototype.executeJavaScriptInIsolatedWorld = async function (worldId
   );
 };
 
-function checkType<T>(value: T, type: 'number' | 'boolean' | 'string' | 'object', name: string): T {
-  // eslint-disable-next-line valid-typeof
-  if (typeof value !== type) {
-    throw new TypeError(`${name} must be a ${type}`);
-  }
-
-  return value;
-}
-
-function parsePageSize(pageSize: string | ElectronInternal.PageSize) {
-  if (typeof pageSize === 'string') {
-    const format = paperFormats[pageSize.toLowerCase()];
-    if (!format) {
-      throw new Error(`Invalid pageSize ${pageSize}`);
-    }
-
-    return { paperWidth: format.width, paperHeight: format.height };
-  } else if (typeof pageSize === 'object') {
-    if (typeof pageSize.width !== 'number' || typeof pageSize.height !== 'number') {
-      throw new TypeError('width and height properties are required for pageSize');
-    }
-
-    return { paperWidth: pageSize.width, paperHeight: pageSize.height };
-  } else {
-    throw new TypeError('pageSize must be a string or an object');
-  }
-}
-
-// Translate the options of printToPDF.
-
-const printToPDFQueues = new WeakMap<Electron.WebContents, Promise<unknown>>();
 WebContents.prototype.printToPDF = async function (options) {
-  const margins = checkType(options.margins ?? {}, 'object', 'margins');
-  const pageSize = parsePageSize(options.pageSize ?? 'letter');
-
-  const { top, bottom, left, right } = margins;
-  const validHeight = [top, bottom].every((u) => u === undefined || u <= pageSize.paperHeight);
-  const validWidth = [left, right].every((u) => u === undefined || u <= pageSize.paperWidth);
-
-  if (!validHeight || !validWidth) {
-    throw new Error('margins must be less than or equal to pageSize');
-  }
-
-  const printSettings = {
-    requestID: getNextId(),
-    landscape: checkType(options.landscape ?? false, 'boolean', 'landscape'),
-    displayHeaderFooter: checkType(options.displayHeaderFooter ?? false, 'boolean', 'displayHeaderFooter'),
-    headerTemplate: checkType(options.headerTemplate ?? '', 'string', 'headerTemplate'),
-    footerTemplate: checkType(options.footerTemplate ?? '', 'string', 'footerTemplate'),
-    printBackground: checkType(options.printBackground ?? false, 'boolean', 'printBackground'),
-    scale: checkType(options.scale ?? 1.0, 'number', 'scale'),
-    marginTop: checkType(margins.top ?? 0.4, 'number', 'margins.top'),
-    marginBottom: checkType(margins.bottom ?? 0.4, 'number', 'margins.bottom'),
-    marginLeft: checkType(margins.left ?? 0.4, 'number', 'margins.left'),
-    marginRight: checkType(margins.right ?? 0.4, 'number', 'margins.right'),
-    pageRanges: checkType(options.pageRanges ?? '', 'string', 'pageRanges'),
-    preferCSSPageSize: checkType(options.preferCSSPageSize ?? false, 'boolean', 'preferCSSPageSize'),
-    generateTaggedPDF: checkType(options.generateTaggedPDF ?? false, 'boolean', 'generateTaggedPDF'),
-    generateDocumentOutline: checkType(options.generateDocumentOutline ?? false, 'boolean', 'generateDocumentOutline'),
-    ...pageSize
-  };
-
-  if (!this._printToPDF) {
-    throw new Error('Printing feature is disabled');
-  }
-
-  const prev = printToPDFQueues.get(this) ?? Promise.resolve();
-  const next = prev.catch(() => {}).then(() => this._printToPDF(printSettings));
-  printToPDFQueues.set(this, next);
-  next
-    .finally(() => {
-      if (printToPDFQueues.get(this) === next) printToPDFQueues.delete(this);
-    })
-    .catch(() => {});
-  return next;
+  return printToPDF(this, options);
 };
 
 // TODO(codebytere): deduplicate argument sanitization by moving rest of
@@ -685,46 +598,6 @@ WebContents.prototype._init = function () {
   });
 
   if (this.getType() !== 'remote') {
-    // Make new windows requested by links behave like "window.open".
-    this.on('-new-window', (event, url, frameName, disposition, rawFeatures, referrer, postData) => {
-      const postBody = postData
-        ? {
-            data: postData,
-            ...parseContentTypeFormat(postData)
-          }
-        : undefined;
-      const details: Electron.HandlerDetails = {
-        url,
-        frameName,
-        features: rawFeatures,
-        referrer,
-        postBody,
-        disposition
-      };
-
-      let result: ReturnType<typeof this._callWindowOpenHandler>;
-      try {
-        result = this._callWindowOpenHandler(event, details);
-      } catch (err) {
-        event.preventDefault();
-        throw err;
-      }
-
-      const options = result.browserWindowConstructorOptions;
-      if (!event.defaultPrevented) {
-        openGuestWindow({
-          embedder: this,
-          disposition,
-          referrer,
-          postData,
-          overrideBrowserWindowOptions: options || {},
-          windowOpenArgs: details,
-          outlivesOpener: result.outlivesOpener,
-          createWindow: result.createWindow
-        });
-      }
-    });
-
     let windowOpenOverriddenOptions: BrowserWindowConstructorOptions | null = null;
     let windowOpenOutlivesOpenerOption: boolean = false;
     let createWindow: Electron.CreateWindowFunction | undefined;
@@ -781,7 +654,8 @@ WebContents.prototype._init = function () {
       }
     });
 
-    // Create a new browser window for "window.open"
+    // Create a new browser window for window.open() and for links opened into
+    // a new window; both arrive here with the new webContents already created.
     this.on(
       '-add-new-contents',
       (
@@ -808,7 +682,12 @@ WebContents.prototype._init = function () {
         // false is the default
         windowOpenOutlivesOpenerOption = false;
 
-        if (disposition !== 'foreground-tab' && disposition !== 'new-window' && disposition !== 'background-tab') {
+        if (
+          disposition !== 'foreground-tab' &&
+          disposition !== 'new-window' &&
+          disposition !== 'background-tab' &&
+          disposition !== 'save-to-disk'
+        ) {
           event.preventDefault();
           return;
         }
@@ -910,6 +789,16 @@ WebContents.prototype._init = function () {
     openDialogs.clear();
   });
 
+  this.on('newListener' as any, (eventName: string | symbol) => {
+    if (eventName === 'console-message' && !this.isDestroyed()) {
+      this._setConsoleMessageObserved(true);
+    }
+  });
+  this.on('removeListener' as any, (eventName: string | symbol) => {
+    if (eventName === 'console-message' && !this.isDestroyed() && this.listenerCount('console-message') === 0) {
+      this._setConsoleMessageObserved(false);
+    }
+  });
   // TODO(samuelmaddock): remove deprecated 'console-message' arguments
   this.on('-console-message' as any, (event: Electron.Event<Electron.WebContentsConsoleMessageEventParams>) => {
     const hasDeprecatedListener = this.listeners('console-message').some((listener) => listener.length > 1);

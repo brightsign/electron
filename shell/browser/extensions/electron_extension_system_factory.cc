@@ -44,9 +44,6 @@ ElectronExtensionSystemFactory::BuildServiceInstanceForBrowserContext(
 
 BrowserContext* ElectronExtensionSystemFactory::GetBrowserContextToUse(
     BrowserContext* context) const {
-  // Redirect incognito/in-memory contexts to the original so they share the
-  // fully-initialized extension system (and its component extensions like the
-  // PDF viewer) rather than getting an uninitialized instance of their own.
   return ExtensionsBrowserClient::Get()->GetContextRedirectedToOriginal(
       context);
 }

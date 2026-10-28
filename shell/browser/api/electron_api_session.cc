@@ -43,6 +43,7 @@
 #include "content/public/browser/network_service_instance.h"
 #include "content/public/browser/preconnect_manager.h"
 #include "content/public/browser/preconnect_request.h"
+#include "content/public/browser/render_process_host.h"
 #include "content/public/browser/storage_partition.h"
 #include "gin/arguments.h"
 #include "gin/converter.h"
@@ -94,6 +95,7 @@
 #include "shell/common/gin_helper/handle.h"
 #include "shell/common/gin_helper/object_template_builder.h"
 #include "shell/common/gin_helper/promise.h"
+#include "shell/common/gin_helper/wrappable_pointer_tags.h"
 #include "shell/common/node_includes.h"
 #include "shell/common/node_util.h"
 #include "shell/common/options_switches.h"
@@ -102,7 +104,6 @@
 #include "third_party/blink/public/mojom/mediastream/media_stream.mojom.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "url/origin.h"
-#include "v8/include/v8-traced-handle.h"
 
 #if BUILDFLAG(ENABLE_ELECTRON_EXTENSIONS)
 #include "shell/browser/api/electron_api_extensions.h"
@@ -343,9 +344,9 @@ class ClearDataTask : public gin_helper::CleanedUpAtExit {
       auto error = v8::Exception::Error(
           gin::StringToV8(isolate, "Failed to clear data"));
       error.As<v8::Object>()
-          ->Set(promise_.GetContext(),
-                gin::StringToV8(isolate, "failedDataTypes"),
-                failed_data_types_array)
+          ->CreateDataProperty(promise_.GetContext(),
+                               gin::StringToV8(isolate, "failedDataTypes"),
+                               failed_data_types_array)
           .Check();
 
       promise_.Reject(error);
@@ -546,8 +547,8 @@ const void* kElectronApiSessionKey = &kElectronApiSessionKey;
 
 }  // namespace
 
-gin::WrapperInfo Session::kWrapperInfo = {{gin::kEmbedderNativeGin},
-                                          gin::kElectronSession};
+gin::WrapperInfo Session::kWrapperInfo =
+    electron::MakeWrapperInfo(electron::kElectronSession);
 
 Session::Session(v8::Isolate* isolate, ElectronBrowserContext* browser_context)
     : isolate_(isolate),
@@ -1130,6 +1131,9 @@ std::string Session::RegisterPreloadScript(
   }
 
   preload_scripts.push_back(new_preload_script);
+  // A service worker that starts after this point picks up the new preload
+  // automatically — GetServiceWorkerStartupData() rebuilds from
+  // SessionPreferences on every StartWorker.
   return new_preload_script.id;
 }
 
@@ -1335,12 +1339,11 @@ v8::Local<v8::Promise> Session::GetSharedDictionaryUsageInfo() {
   return handle;
 }
 
-v8::Local<v8::Value> Session::Cookies(v8::Isolate* isolate) {
-  if (cookies_.IsEmptyThreadSafe()) {
-    auto handle = Cookies::Create(isolate, browser_context());
-    cookies_.Reset(isolate, handle.ToV8());
+api::Cookies* Session::Cookies(v8::Isolate* isolate) {
+  if (!cookies_) {
+    cookies_ = Cookies::Create(isolate, browser_context());
   }
-  return cookies_.Get(isolate);
+  return cookies_;
 }
 
 api::Extensions* Session::Extensions(v8::Isolate* isolate) {
@@ -1365,7 +1368,8 @@ api::ServiceWorkerContext* Session::ServiceWorkerContext() {
 
 WebRequest* Session::WebRequest(v8::Isolate* isolate) {
   if (!web_request_)
-    web_request_ = WebRequest::Create(isolate, base::PassKey<Session>{});
+    web_request_ = WebRequest::Create(isolate, base::PassKey<Session>{},
+                                      browser_context()->GetWeakPtr());
   return web_request_;
 }
 
