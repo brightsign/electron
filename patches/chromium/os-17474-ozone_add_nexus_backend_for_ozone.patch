@@ -99,6 +99,32 @@ index f08d8343a6bb665be57c9e6766476c71efa47143..1efd23730c9bc56db3641ba06627daff
      "SUPPORTS_OZONE_WAYLAND=$ozone_platform_wayland",
      "SUPPORTS_OZONE_X11=$ozone_platform_x11",
    ]
+diff --git a/ui/events/ozone/device/device_manager_manual.cc b/ui/events/ozone/device/device_manager_manual.cc
+index 0df9c9089b2a0ca5c5d23426d73f9c25560e6cc8..b2b3fe0305fee7e15d12eb836d233c82e1ddef03 100644
+--- a/ui/events/ozone/device/device_manager_manual.cc
++++ b/ui/events/ozone/device/device_manager_manual.cc
+@@ -4,6 +4,8 @@
+ 
+ #include "ui/events/ozone/device/device_manager_manual.h"
+ 
++#include <unistd.h>
++
+ #include "base/files/file_enumerator.h"
+ #include "base/functional/bind.h"
+ #include "base/functional/callback.h"
+@@ -27,6 +29,12 @@ void ScanDevicesOnWorkerThread(std::vector<base::FilePath>* result) {
+                                  FILE_PATH_LITERAL("event*[0-9]"));
+   for (base::FilePath path = file_enum.Next(); !path.empty();
+        path = file_enum.Next()) {
++    // Without udev, hotplug may change a node's group after it appears.
++    // Leaving it out until it can be opened lets the attribute change that
++    // grants access report it.
++    if (access(path.value().c_str(), R_OK | W_OK) != 0) {
++      continue;
++    }
+     result->push_back(path);
+   }
+ }
 diff --git a/ui/events/ozone/layout/xkb/xkb_keyboard_layout_engine.cc b/ui/events/ozone/layout/xkb/xkb_keyboard_layout_engine.cc
 index 3b5762f66dfda8e2962cb8e6ece740c30cb44862..5cc561b46633b00beb49003e7fec408c815b137d 100644
 --- a/ui/events/ozone/layout/xkb/xkb_keyboard_layout_engine.cc
@@ -540,10 +566,10 @@ index 0000000000000000000000000000000000000000..9b00520881ac5259bbba53591418ce80
 +#endif  //  UI_OZONE_PLATFORM_NEXUS_NEXUS_CURSOR_H
 diff --git a/ui/ozone/platform/nexus/nexus_screen.cc b/ui/ozone/platform/nexus/nexus_screen.cc
 new file mode 100644
-index 0000000000000000000000000000000000000000..3da767d7c3ca27f675bf043be80dce0cb573b827
+index 0000000000000000000000000000000000000000..77529dc37f2f1ca467d149f26211504c6991fc7e
 --- /dev/null
 +++ b/ui/ozone/platform/nexus/nexus_screen.cc
-@@ -0,0 +1,80 @@
+@@ -0,0 +1,82 @@
 +// Copyright 2019 The Chromium Authors. All rights reserved.
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
@@ -556,7 +582,9 @@ index 0000000000000000000000000000000000000000..3da767d7c3ca27f675bf043be80dce0c
 +namespace ui {
 +
 +NexusScreen::NexusScreen() {
-+  NxClient_Join(nullptr);
++  if (NEXUS_Error rc = NxClient_Join(nullptr); rc != NEXUS_SUCCESS) {
++    LOG(ERROR) << "NxClient_Join failed: " << rc;
++  }
 +  static constexpr int64_t kNexusDisplayId = 1;
 +  NxClient_DisplaySettings settings;
 +  NxClient_GetDisplaySettings(&settings);

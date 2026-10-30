@@ -714,14 +714,6 @@ ElectronBrowserContext::GetFileSystemAccessPermissionContext() {
   return FileSystemAccessPermissionContextFactory::GetForBrowserContext(this);
 }
 
-uid_t ElectronBrowserContext::GetUIDForRenderer() const {
-  uid_t uid = 0;
-  base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
-  base::StringToUint(
-      command_line->GetSwitchValueASCII(switches::kRendererProcessUid), &uid);
-  return uid;
-}
-
 std::vector<gid_t> ElectronBrowserContext::GetGroupsForRenderer() const {
   std::vector<gid_t> gids;
   base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
