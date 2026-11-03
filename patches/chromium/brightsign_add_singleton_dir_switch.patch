@@ -1,0 +1,51 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Tariq Bashir <tbashir@brightsign.biz>
+Date: Fri, 16 Oct 2026 16:30:00 +0100
+Subject: Brightsign: Add --singleton-dir switch for ProcessSingleton symlinks
+
+Allows the singleton socket/lock/cookie symlinks to be placed in a
+directory other than user-data-dir, for filesystems without symlink support.
+
+diff --git a/chrome/browser/process_singleton_posix.cc b/chrome/browser/process_singleton_posix.cc
+index 664f3168546880d9ebce7cace7b78a176567b8db..f94c90bde30788658c31452a7db1e71cc7913ca9 100644
+--- a/chrome/browser/process_singleton_posix.cc
++++ b/chrome/browser/process_singleton_posix.cc
+@@ -874,9 +874,35 @@ ProcessSingleton::ProcessSingleton(
+     : notification_callback_(notification_callback),
+       additional_data_(additional_data),
+       current_pid_(base::GetCurrentProcId()) {
+-  socket_path_ = user_data_dir.Append(chrome::kSingletonSocketFilename);
+-  lock_path_ = user_data_dir.Append(chrome::kSingletonLockFilename);
+-  cookie_path_ = user_data_dir.Append(chrome::kSingletonCookieFilename);
++  // The singleton socket, lock and cookie are symlinks, which some
++  // filesystems (e.g. FAT on an SD card) cannot hold. Allow them to live in a
++  // different directory.
++  base::FilePath singleton_dir = user_data_dir;
++  const base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
++  if (command_line->HasSwitch("singleton-dir")) {
++    base::FilePath dir = command_line->GetSwitchValuePath("singleton-dir");
++    if (!dir.empty()) {
++      base::ScopedAllowBlocking allow_blocking;
++      // Store an absolute path so cleanup is unaffected by a later chdir().
++      if (!dir.IsAbsolute()) {
++        base::FilePath cwd;
++        if (base::GetCurrentDirectory(&cwd)) {
++          dir = cwd.Append(dir);
++        } else {
++          LOG(ERROR) << "Unable to resolve --singleton-dir " << dir;
++        }
++      }
++      // Never fall back to user_data_dir: if the directory is unusable, lock
++      // acquisition fails rather than letting instances use different locks.
++      if (!base::CreateDirectory(dir)) {
++        LOG(ERROR) << "Unable to create --singleton-dir " << dir;
++      }
++      singleton_dir = dir;
++    }
++  }
++  socket_path_ = singleton_dir.Append(chrome::kSingletonSocketFilename);
++  lock_path_ = singleton_dir.Append(chrome::kSingletonLockFilename);
++  cookie_path_ = singleton_dir.Append(chrome::kSingletonCookieFilename);
+ 
+   kill_callback_ = base::BindRepeating(&ProcessSingleton::KillProcess,
+                                        base::Unretained(this));

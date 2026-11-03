@@ -10,6 +10,11 @@
 #include <string_view>
 #include <utility>
 
+#if BUILDFLAG(IS_LINUX)
+#include <linux/capability.h>
+#include <sys/prctl.h>
+#endif
+
 #include "base/apple/bundle_locations.h"
 #include "base/base_switches.h"
 #include "base/command_line.h"
@@ -171,6 +176,16 @@ const size_t ElectronMainDelegate::kNonWildcardDomainNonPortSchemesSize =
 
 std::optional<int> ElectronMainDelegate::BasicStartupComplete() {
   auto* command_line = base::CommandLine::ForCurrentProcess();
+
+#if BUILDFLAG(IS_LINUX)
+  // The launcher hands the browser CAP_SETGID as an ambient capability so it
+  // survives exec. Lower it so child processes launched by exec don't inherit
+  // it; the zygote re-raises it for itself. OS-22521.
+  if (!command_line->HasSwitch(::switches::kProcessType) &&
+      command_line->HasSwitch(switches::kRendererProcessGids)) {
+    prctl(PR_CAP_AMBIENT, PR_CAP_AMBIENT_LOWER, CAP_SETGID, 0, 0);
+  }
+#endif
 
 #if BUILDFLAG(IS_WIN)
   v8_crashpad_support::SetUp();

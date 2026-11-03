@@ -23,15 +23,15 @@ end, it still cannot figure out the timezone name from POSIX date time
 format, but it doesn't throw an exception when queried.
 
 diff --git a/content/zygote/zygote_linux.cc b/content/zygote/zygote_linux.cc
-index 3bbfaf0c6f24866ff262827d849b799a1f7c69c2..9cdb1c35c9a3f3c43ec8c6997122b99ce8ccb7f4 100644
+index 23c291566856c7680514679123be48b4b6c11a7c..da41588df7b2a91218ff1e9401f3c4e2ca042854 100644
 --- a/content/zygote/zygote_linux.cc
 +++ b/content/zygote/zygote_linux.cc
-@@ -568,8 +568,6 @@ base::ProcessId Zygote::ReadArgsAndFork(base::PickleIterator iter,
+@@ -564,8 +564,6 @@ base::ProcessId Zygote::ReadArgsAndFork(base::PickleIterator iter,
    std::u16string timezone_id;
    if (!iter.ReadString16(&timezone_id))
      return -1;
 -  icu::TimeZone::adoptDefault(icu::TimeZone::createTimeZone(
 -      icu::UnicodeString(false, timezone_id.data(), timezone_id.length())));
  
-   if (!iter.ReadUInt32(&uid))
+   if (!iter.ReadInt(&numfds))
      return -1;
