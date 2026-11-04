@@ -8,6 +8,7 @@
 #include <string>
 #include <vector>
 
+#include "base/command_line.h"
 #include "base/memory/ptr_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
@@ -26,6 +27,7 @@
 #include "ui/base/hit_test.h"
 #include "ui/compositor/compositor.h"
 #include "ui/views/widget/widget.h"
+#include "ui/views/views_switches.h"
 
 #if !BUILDFLAG(IS_MAC)
 #include "shell/browser/ui/views/frameless_view.h"
@@ -187,8 +189,11 @@ void NativeWindow::InitFromOptions(const gin_helper::Dictionary& options) {
   if (double val; options.Get(options::kOpacity, &val))
     SetOpacity(val);
 
-  if (bool val; options.Get(options::kAlwaysOnTop, &val) && val)
-    SetAlwaysOnTop(ui::ZOrderLevel::kFloatingWindow);
+  if (!base::CommandLine::ForCurrentProcess()->HasSwitch(
+          views::switches::kUseFixedZOrdering)) {
+    if (bool val; options.Get(options::kAlwaysOnTop, &val) && val)
+      SetAlwaysOnTop(ui::ZOrderLevel::kFloatingWindow);
+  }
 
   bool fullscreenable = true;
   bool fullscreen = false;

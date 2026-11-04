@@ -9,6 +9,7 @@
 #include <utility>
 #include <vector>
 
+#include "base/command_line.h"
 #include "base/task/single_thread_task_runner.h"
 #include "content/public/common/color_parser.h"
 #include "electron/buildflags/buildflags.h"
@@ -33,6 +34,7 @@
 #include "shell/common/node_includes.h"
 #include "shell/common/node_util.h"
 #include "shell/common/options_switches.h"
+#include "ui/views/views_switches.h"
 
 #if defined(TOOLKIT_VIEWS)
 #include "shell/browser/native_window_views.h"
@@ -576,14 +578,19 @@ bool BaseWindow::IsClosable() const {
 }
 
 void BaseWindow::SetAlwaysOnTop(bool top, gin::Arguments* args) {
-  std::string level = "floating";
-  int relative_level = 0;
-  args->GetNext(&level);
-  args->GetNext(&relative_level);
+  // Ignore this if fixed Z ordering is enabled via command line switch.
+  // We will keep the one set in Widget::InitParams::EffectiveZOrderLevel.
+  if (!base::CommandLine::ForCurrentProcess()->HasSwitch(
+          views::switches::kUseFixedZOrdering)) {
+    std::string level = "floating";
+    int relative_level = 0;
+    args->GetNext(&level);
+    args->GetNext(&relative_level);
 
-  ui::ZOrderLevel z_order =
-      top ? ui::ZOrderLevel::kFloatingWindow : ui::ZOrderLevel::kNormal;
-  window_->SetAlwaysOnTop(z_order, level, relative_level);
+    ui::ZOrderLevel z_order =
+        top ? ui::ZOrderLevel::kFloatingWindow : ui::ZOrderLevel::kNormal;
+    window_->SetAlwaysOnTop(z_order, level, relative_level);
+  }
 }
 
 bool BaseWindow::IsAlwaysOnTop() const {
