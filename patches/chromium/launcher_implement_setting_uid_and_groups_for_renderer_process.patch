@@ -30,18 +30,22 @@ index e18dde678ef769b7786028a785a76a72323cc0db..605796cac762c9a0600d57460f4d81fa
  
  #if BUILDFLAG(IS_MAC) || (BUILDFLAG(IS_IOS) && BUILDFLAG(USE_BLINK))
 diff --git a/base/process/launch_posix.cc b/base/process/launch_posix.cc
-index b24968647b25319f62b2ced4060db355cc2d6ad1..d16ce375b643eff04edc553a9998858af8244e30 100644
+index b24968647b25319f62b2ced4060db355cc2d6ad1..b90686454d7aa195b7ae73a505c72203770cd594 100644
 --- a/base/process/launch_posix.cc
 +++ b/base/process/launch_posix.cc
-@@ -19,6 +19,7 @@
+@@ -19,6 +19,11 @@
  #include <sys/types.h>
  #include <sys/wait.h>
  #include <unistd.h>
 +#include <grp.h>
++#if defined(__linux__)
++#include <linux/capability.h>
++#include <sys/syscall.h>
++#endif
  
  #include <iterator>
  #include <limits>
-@@ -409,6 +410,18 @@ Process LaunchProcess(const std::vector<std::string>& argv,
+@@ -409,6 +414,22 @@ Process LaunchProcess(const std::vector<std::string>& argv,
        }
      }
  
@@ -50,12 +54,16 @@ index b24968647b25319f62b2ced4060db355cc2d6ad1..d16ce375b643eff04edc553a9998858a
 +      gid = options.groups[0];
 +      PCHECK(0 == setgroups(options.groups.size(),options.groups.data()));
 +    }
-+    if (options.uid > 0)
-+      PCHECK(0 == prctl (PR_SET_KEEPCAPS, 1));
 +    if (gid > 0)
-+      PCHECK(0 == setgid(gid));
-+    if (options.uid > 0)
-+      PCHECK(0 == setuid(options.uid));
++      PCHECK(0 == setresgid(gid, gid, gid));
++    if (options.uid > 0) {
++      PCHECK(0 == setresuid(options.uid, options.uid, options.uid));
++      struct __user_cap_header_struct hdr = {_LINUX_CAPABILITY_VERSION_3, 0};
++      struct __user_cap_data_struct data[2] = {};
++      PCHECK(0 == syscall(SYS_capset, &hdr, data));
++      PCHECK(0 == prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0));
++      CHECK(setuid(0) != 0);
++    }
 +
      ResetChildSignalHandlersToDefaults();
      SetSignalMask(orig_sigmask);
@@ -291,7 +299,7 @@ index 47d0eed6bc95cb7b034fe07473defb5a70e95de3..8954fea7876f8fd9f383d9df8e43b246
    // Declare that this process has CPU security mitigations enabled (see
    // RendererSandboxedProcessLauncherDelegate::EnableCpuSecurityMitigations).
 diff --git a/content/zygote/zygote_linux.cc b/content/zygote/zygote_linux.cc
-index bac30c699bfd2b94d5d8cd31834270f928e04571..53a206d1a0e665fecafda278a6e2bb2f15a638b2 100644
+index bac30c699bfd2b94d5d8cd31834270f928e04571..0a372298166ae166b1fb72d49a4d7e3b29d951ce 100644
 --- a/content/zygote/zygote_linux.cc
 +++ b/content/zygote/zygote_linux.cc
 @@ -13,6 +13,7 @@
@@ -340,7 +348,7 @@ index bac30c699bfd2b94d5d8cd31834270f928e04571..53a206d1a0e665fecafda278a6e2bb2f
    if (!iter.ReadInt(&numfds))
      return -1;
    if (numfds != static_cast<int>(fds.size()))
-@@ -619,6 +635,18 @@ base::ProcessId Zygote::ReadArgsAndFork(base::PickleIterator iter,
+@@ -619,6 +635,20 @@ base::ProcessId Zygote::ReadArgsAndFork(base::PickleIterator iter,
      // SetProcessTitleFromCommandLine in ChromeMain, so we can pass NULL here
      // (we don't have the original argv at this point).
      SetProcessTitleFromCommandLine(nullptr);
@@ -350,12 +358,14 @@ index bac30c699bfd2b94d5d8cd31834270f928e04571..53a206d1a0e665fecafda278a6e2bb2f
 +      gid = groups[0];
 +      PCHECK(0 == setgroups(groups.size(),groups.data()));
 +    }
-+    if (uid > 0)
-+      PCHECK(0 == prctl (PR_SET_KEEPCAPS, 1));
 +    if (gid > 0)
-+      PCHECK(0 == setgid(gid));
-+    if (uid > 0)
-+      PCHECK(0 == setuid(uid));
++      PCHECK(0 == setresgid(gid, gid, gid));
++    if (uid > 0) {
++      PCHECK(0 == setresuid(uid, uid, uid));
++      CHECK(sandbox::Credentials::DropAllCapabilitiesOnCurrentThread());
++      PCHECK(0 == prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0));
++      CHECK(setuid(0) != 0);
++    }
    } else if (child_pid < 0) {
      LOG(ERROR) << "Zygote could not fork: process_type " << process_type
                 << " numfds " << numfds << " child_pid " << child_pid;

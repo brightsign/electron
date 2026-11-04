@@ -24,10 +24,10 @@ Note: This patch is based on the QtWebEngine change
 I56506a41eb9c224b83ca529dce6d888d3fe00cfc.
 
 diff --git a/base/process/launch_posix.cc b/base/process/launch_posix.cc
-index d16ce375b643eff04edc553a9998858af8244e30..50e8238239aa31a4d8503ee183a40f5ee10b5909 100644
+index b90686454d7aa195b7ae73a505c72203770cd594..bbdffb33fd0c943c7d71111d49964e8b23ecad29 100644
 --- a/base/process/launch_posix.cc
 +++ b/base/process/launch_posix.cc
-@@ -40,6 +40,7 @@
+@@ -44,6 +44,7 @@
  #include "base/process/environment_internal.h"
  #include "base/process/process.h"
  #include "base/process/process_metrics.h"
@@ -35,9 +35,9 @@ index d16ce375b643eff04edc553a9998858af8244e30..50e8238239aa31a4d8503ee183a40f5e
  #include "base/synchronization/waitable_event.h"
  #include "base/threading/platform_thread.h"
  #include "base/threading/platform_thread_internal_posix.h"
-@@ -422,6 +423,14 @@ Process LaunchProcess(const std::vector<std::string>& argv,
-     if (options.uid > 0)
-       PCHECK(0 == setuid(options.uid));
+@@ -430,6 +431,14 @@ Process LaunchProcess(const std::vector<std::string>& argv,
+       CHECK(setuid(0) != 0);
+     }
  
 +    // We use quite a few file descriptors for our IPC as well as disk the disk
 +    // cache, and the default limit on Apple is low (256), so bump it up.
@@ -51,7 +51,7 @@ index d16ce375b643eff04edc553a9998858af8244e30..50e8238239aa31a4d8503ee183a40f5e
      SetSignalMask(orig_sigmask);
  
 diff --git a/content/zygote/zygote_linux.cc b/content/zygote/zygote_linux.cc
-index 53a206d1a0e665fecafda278a6e2bb2f15a638b2..03e6f35014cd88bc64bf947e25a54f2912d889e1 100644
+index 0a372298166ae166b1fb72d49a4d7e3b29d951ce..40d8c0f2ca733462f16c423c44340233988f6ae8 100644
 --- a/content/zygote/zygote_linux.cc
 +++ b/content/zygote/zygote_linux.cc
 @@ -33,6 +33,7 @@
@@ -62,10 +62,10 @@ index 53a206d1a0e665fecafda278a6e2bb2f15a638b2..03e6f35014cd88bc64bf947e25a54f29
  #include "base/time/time.h"
  #include "base/trace_event/trace_event.h"
  #include "build/build_config.h"
-@@ -647,6 +648,14 @@ base::ProcessId Zygote::ReadArgsAndFork(base::PickleIterator iter,
-       PCHECK(0 == setgid(gid));
-     if (uid > 0)
-       PCHECK(0 == setuid(uid));
+@@ -649,6 +650,14 @@ base::ProcessId Zygote::ReadArgsAndFork(base::PickleIterator iter,
+       PCHECK(0 == prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0));
+       CHECK(setuid(0) != 0);
+     }
 +
 +    // We use quite a few file descriptors for our IPC as well as disk the disk
 +    // cache, and the default limit on Apple is low (256), so bump it up.
