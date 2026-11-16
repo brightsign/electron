@@ -871,6 +871,17 @@ std::shared_ptr<node::Environment> NodeBindings::CreateEnvironment(
                                          v8::kEmbedderDataTypeTagDefault);
   };
 
+  // NODE_CHANNEL_FD names an IPC fd that a parent Node passed to the browser
+  // process only. Children forked before the browser's Node bootstrap could
+  // delete it (the zygote and its renderers) inherit the variable but not the
+  // fd, and Node would otherwise open whatever has that number as its IPC pipe
+  // -- on Linux, often libuv's own epoll fd, which aborts in epoll_ctl().
+  if (browser_env_ != BrowserEnvironment::kBrowser) {
+    auto environment = base::Environment::Create();
+    environment->UnSetVar("NODE_CHANNEL_FD");
+    environment->UnSetVar("NODE_CHANNEL_SERIALIZATION_MODE");
+  }
+
   std::string init_script = "electron/js2c/" + process_type + "_init";
 
   args.insert(args.begin() + 1, init_script);
